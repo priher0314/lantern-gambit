@@ -1,12 +1,12 @@
-﻿// 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
+// 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
-import { BATTLES, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, OBJECTIVES } from './core/data.js';
-import { createRun, battleOptions, recordBattle, rollRewards, applyReward, advance } from './core/run.js';
+import { BATTLES, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, OBJECTIVES, RELICS } from './core/data.js';
+import { createRun, battleOptions, recordBattle, rollRewards, rollStartRelics, applyReward, advance } from './core/run.js';
 import { judge, lateLimit } from './core/timing.js';
 import { shotForReel } from './core/slot.js';
 import { hashSeed } from './core/rng.js';
 import { FX } from './render/fx.js';
-import { W, computeLayout, cellPos, laneAt, reelRect, LANE_SPACING } from './render/layout.js';
+import { W, computeLayout, cellPos, laneAt, reelRect, leverRect, LANE_SPACING } from './render/layout.js';
 import { Renderer, REEL_CELL } from './render/scene.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -21,6 +21,41 @@ const EL_COLORS = {
   ice: ['#ffffff', '#d6f3ff', '#9fdcff'],
 };
 
+const CONCEPTS = {
+  reroll: {
+    kicker: '알아두기', title: '다시 굴리기', glyph: '↻', color: '#d9a0ff',
+    lines: [
+      { label: '언제', text: '결과가 아쉬울 때, 공격하기 전에 릴 3개를 전부 다시 돌린다. 버튼의 구슬이 이번 턴에 남은 횟수.' },
+      { label: '대가', text: '버튼에 적힌 일이 먼저 일어난다(적 전진·분노·새 적 등장). 눈 표식이 붙은 적이 그 대상.' },
+      { label: '보상', text: '굴릴 때마다 "금빛 강화" 릴이 1개 늘어난다. 위험을 감수한 만큼 공격이 세진다.' },
+    ],
+  },
+  gild: {
+    kicker: '알아두기', title: '금빛 강화', glyph: '✦', color: '#ffd27a',
+    lines: [
+      { label: '효과', text: '"금빛 강화"가 붙은 릴의 공격은 피해 +1, 고유 능력 +1 (절단=관통 수, 파동=옆 피해, 동결=턴 수, 전격=연쇄 수, 등불=방어막).' },
+      { label: '얻는 법', text: '① 다시 굴릴 때마다 +1개  ② 퍼펙트 막기·회피로 얻은 "불씨"가 다음 턴에 금빛 릴이 된다.' },
+    ],
+  },
+};
+
+const INTENT_TEXT = {
+  move: (it) => `${it.steps}칸 앞으로 온다.`,
+  brace: () => '다음 차례의 강타를 준비한다. 그 전에 처치하거나 얼리면 취소된다.',
+  aim: () => '조준한다. 그다음 차례에 불씨를 쏜다. 얼리면 조준이 풀린다.',
+  charge: () => '"사격 준비(충전)"에 들어간다. 충전하는 동안 심장이 드러나 받는 피해 +2, 그다음 차례에 연속 발사.',
+  summon: () => '우산 도깨비를 불러낸다.',
+  shift: () => '옆 레인으로 옮겨 간다.',
+  frozen: () => '얼어붙어 행동하지 못한다. 절단·파동·되치기로 치면 파쇄(+3 피해)!',
+  wait: (it) => (it.slow ? '느려서 이번에는 움직이지 않는다.' : '앞이 막혀 기다린다.'),
+  attack: (it) => {
+    if (it.style === 'heavy') return `강타 (${it.dmg} 피해) — 붉은 고리. 회피 추천.`;
+    if (it.style === 'volley') return `불씨 ${it.hits}발 연속 발사 (각 ${it.dmg} 피해) — 한 발씩 막기.`;
+    if (it.style === 'ranged') return `불씨 발사 (${it.dmg} 피해) — 주황 고리. 막기.`;
+    return `공격 (${it.dmg} 피해) — 금빛 고리. 막기로 되치기.`;
+  },
+};
+
 export class Game {
   constructor(canvas, audio, store, overlay) {
     this.canvas = canvas;
@@ -29,6 +64,14 @@ export class Game {
     this.overlay = overlay;
     this.renderer = new Renderer(canvas);
     this.fx = new FX();
+    this.uiFx = new FX(); // 슬롯·버튼 위에 그리는 이펙트(흔들리지 않음)
+    this.lever = { pull: 0, t: -1, ok: false };
+    this.slotJolt = 0;
+    this.card = null;
+    this.cardQueue = [];
+    this.relicPulse = {};
+    this.hold = null;
+    this.battleCount = BATTLES.length;
     this.mode = 'title';
     this.views = new Map();
     this.projs = [];
@@ -58,6 +101,8 @@ export class Game {
     this.settings = s;
     this.fx.opts.shake = s.shake;
     this.fx.opts.flash = s.flash;
+    this.uiFx.opts.shake = s.shake;
+    this.uiFx.opts.flash = s.flash;
     this.audio.setVolume({ bgm: s.bgm, sfx: s.sfx, mute: s.mute });
   }
 
@@ -66,7 +111,7 @@ export class Game {
     // 탭이 숨겨진 상태로 로드되면 크기가 0일 수 있다 → 기본값으로 대체
     const vw = window.innerWidth || document.documentElement.clientWidth || 540;
     const vh = window.innerHeight || document.documentElement.clientHeight || 960;
-    const H = clamp(Math.round((W * vh) / vw), 900, 1200);
+    const H = clamp(Math.round((W * vh) / vw), 960, 1200);
     const scale = Math.min(vw / W, vh / H);
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     this.cssScale = scale;
@@ -74,7 +119,8 @@ export class Game {
     this.renderer.resize(this.L, scale * dpr);
     this.canvas.style.width = `${W * scale}px`;
     this.canvas.style.height = `${H * scale}px`;
-    this.gearRect = { x: W - 54, y: 12, w: 42, h: 42 };
+    this.gearRect = { x: W - 50, y: 12, w: 40, h: 42 };
+    this.helpRect = { x: W - 96, y: 12, w: 40, h: 42 };
     this.overlay.fit(W * scale, H * scale, scale);
     if (!this.player.x) this.player.x = W / 2;
   }
@@ -117,7 +163,140 @@ export class Game {
     if (devStage > 0 && devStage < BATTLES.length) this.run.stage = devStage;
     this.store.meta.runs = (this.store.meta.runs || 0) + 1;
     this.store.save();
-    this.startBattle();
+    this.mode = 'reward';
+    this.st = null;
+    this.views.clear();
+    this.card = null;
+    this.cardQueue = [];
+    this.overlay.showPick({
+      kicker: '출발 준비',
+      title: '첫 유물을 고르세요',
+      req: '유물이 이번 도전의 싸움 방식(빌드)을 정합니다',
+      ids: rollStartRelics(this.run),
+      go: `${BATTLES[this.run.stage].night}으로 — ${BATTLES[this.run.stage].name}`,
+      run: this.run,
+      used: this.store.meta.relicsUsed || [],
+    }, (id) => {
+      this.takeReward(id);
+      this.startBattle();
+    });
+  }
+
+  takeReward(id) {
+    applyReward(this.run, id);
+    this.audio.play('buy');
+    if (RELICS[id]) {
+      const u = new Set(this.store.meta.relicsUsed || []);
+      u.add(id);
+      this.store.meta.relicsUsed = [...u];
+      this.store.save();
+    }
+  }
+
+  relicRect(i) {
+    return { x: 12 + i * 32, y: this.L.hudH + 5, w: 28, h: 28 };
+  }
+
+  buzz(ms) {
+    if (!this.settings.shake || !navigator.vibrate) return;
+    try {
+      navigator.vibrate(ms);
+    } catch {
+      /* 진동 미지원 */
+    }
+  }
+
+  // ───── 설명 카드 ─────
+  showCard(card) {
+    this.card = { ...card, t0: this.now(), more: this.cardQueue.length };
+    this.audio.play('card');
+  }
+
+  nextCard() {
+    if (this.card || !this.cardQueue.length) return;
+    if (this.mode !== 'battle' || !(this.ui.phase === 'spin' || this.ui.phase === 'aim')) return;
+    this.showCard(this.cardQueue.shift());
+  }
+
+  closeCard() {
+    this.card = null;
+    this.audio.play('ui');
+    this.nextCard();
+  }
+
+  conceptCard(key) {
+    const id = 'card-' + key;
+    if (this.tipsSeen.has(id)) return;
+    this.tipsSeen.add(id);
+    this.store.meta.tips = [...this.tipsSeen];
+    this.store.save();
+    this.cardQueue.push(key === 'block' ? this.enemyCard('mask', null, '정면 공격이 막혔다!') : CONCEPTS[key]);
+  }
+
+  enemyCard(type, e, kicker) {
+    const sp = ENEMIES[type];
+    const lines = [{ label: '행동', text: sp.act }, { label: '공략', text: sp.how, color: '#8fffe2' }];
+    if (e && this.intents && this.intents[e.id]) {
+      const it = this.intents[e.id];
+      lines.push({ label: '다음 행동', text: (INTENT_TEXT[it.kind] || (() => ''))(it), color: '#ffb0a0' });
+    }
+    return { kicker: kicker || (e ? '적 정보' : '새로운 적 등장'), title: sp.name, enemy: type, color: '#ffb0a0', lines };
+  }
+
+  relicCard(id) {
+    const R = RELICS[id];
+    return { kicker: `유물 · ${R.build} 빌드`, title: R.name, relic: id, color: R.color, lines: [{ label: '효과', text: R.desc }] };
+  }
+
+  queueIntros() {
+    const seen = new Set(this.store.meta.seenEnemies || []);
+    let changed = false;
+    for (const e of this.st.enemies) {
+      if (!e.alive || seen.has(e.type)) continue;
+      seen.add(e.type);
+      changed = true;
+      this.cardQueue.push(this.enemyCard(e.type));
+    }
+    if (changed) {
+      this.store.meta.seenEnemies = [...seen];
+      this.store.save();
+    }
+  }
+
+  enemyAtPoint(p) {
+    let best = null;
+    for (const v of this.views.values()) {
+      if (v.dying > 0) continue;
+      const q = this.renderer.viewPos(v);
+      if (Math.abs(p.x - q.x) < 40 * q.s + 6 && p.y < q.y + 12 && p.y > q.y - 105 * q.k) {
+        if (!best || v.row > best.row) best = v;
+      }
+    }
+    return best;
+  }
+
+  inspectEnemy(v) {
+    const e = this.st && B.byId(this.st, v.id);
+    if (!e || !e.alive) return;
+    this.showCard(this.enemyCard(e.type, e));
+  }
+
+  openGuide() {
+    const st = this.st;
+    this.overlay.showGuide({ types: [...new Set(st.enemies.map((e) => e.type))], relics: st.relics });
+  }
+
+  pullLever() {
+    if (this.lever.t >= 0 || this.card) return;
+    const ok = this.mode === 'battle' && this.ui.phase === 'spin' && !this.busy;
+    this.lever.t = 0;
+    this.lever.ok = ok;
+    this.audio.play(ok ? 'lever' : 'deny');
+    if (ok) {
+      this.buzz(25);
+      this.slotJolt = 1;
+      this.doSpin();
+    }
   }
 
   async startBattle() {
@@ -150,7 +329,9 @@ export class Game {
     this.ui.preview = null;
     this.audio.setIntensity(0);
     this.refresh();
-    this.tip('spin', '점괘 북을 돌려 이번 턴의 공격을 얻으세요.');
+    this.queueIntros();
+    this.nextCard();
+    this.tip('spin', '오른쪽 레버를 당겨 이번 턴의 공격을 뽑으세요.');
   }
 
   // ─────────────── 갱신(예고·위험·정보) ───────────────
@@ -185,25 +366,32 @@ export class Game {
     }
     if (ui.phase === 'aim' && ui.sel != null && st.shots[ui.sel]) {
       const sh = st.shots[ui.sel];
-      let text = shotDesc(sh.symbol, sh.tier, sh.gild);
-      if (ui.preview) {
+      let text = (sh.gild ? '✦금빛 ' : '') + shotDesc(sh.symbol, sh.tier, sh.gild);
+      let color = SYMBOLS[sh.symbol].fx;
+      if (ui.preview && sh.symbol !== 'lantern') {
         const per = Object.values(ui.preview.summary.per);
         const dmg = per.reduce((a, p) => a + p.dmg, 0);
         const kills = per.filter((p) => p.killed).length;
-        if (sh.symbol !== 'lantern') text = `예상 피해 ${dmg}${kills ? ` · 처치 ${kills}` : ''}${per.some((p) => p.blocked) ? ' · 막힘!' : ''}`;
+        if (per.some((p) => p.blocked) && dmg === 0) {
+          text = '탈에 막힌다! 옆 레인 파동 · 전격 연쇄 · 회피 뒤 공격이 통한다';
+          color = '#50f0be';
+        } else {
+          text = `예상 피해 ${dmg}${kills ? ` · 처치 ${kills}` : ''}${per.some((p) => p.blocked) ? ' · 일부 막힘' : ''}`;
+        }
+      } else if (!ui.preview && sh.symbol !== 'lantern') {
+        text += '  ▶ 레인을 누르세요';
       }
-      this.info = { title: SHOT_NAMES[sh.symbol][sh.tier] + (sh.gild ? ' ✦' : ''), text, color: SYMBOLS[sh.symbol].fx };
+      this.info = { title: SHOT_NAMES[sh.symbol][sh.tier], text, color };
       return;
     }
-    if (ui.phase === 'spin') this.info = { text: '돌리기를 눌러 점괘를 읽으세요' };
+    if (ui.phase === 'spin') this.info = { text: '오른쪽 레버를 당겨 공격을 뽑으세요  (적을 길게 누르면 정보)' };
     else if (ui.phase === 'spinning') this.info = { text: '…' };
     else if (ui.phase === 'react' && ui.react) {
       const st2 = ui.react.attack.style;
       this.info = st2 === 'heavy'
-        ? { title: '붉은 고리!', text: '원에 닿는 순간 회피 (막기로는 버티기 어렵다)', color: '#ff6a6a' }
-        : { title: '금빛 고리!', text: '원에 닿는 순간 막기 → 퍼펙트면 되치기', color: '#ffcc33' };
+        ? { title: '붉은 고리!', text: '원에 닿는 순간 [회피] (막기로는 버티기 어렵다)', color: '#ff6a6a' }
+        : { title: '금빛 고리!', text: '원에 닿는 순간 [막기] → 정확하면 되치기', color: '#ffcc33' };
     } else if (ui.phase === 'enemy') this.info = { text: '금빛 고리 = 막기로 되치기  ·  붉은 고리 = 회피', color: '#ffd27a' };
-    else if (ui.phase === 'counter') this.info = { text: '되치기는 방패를 무시하고 레인 전체를 꿰뚫는다', color: '#ffd84a' };
     else this.info = null;
   }
 
@@ -211,41 +399,43 @@ export class Game {
     const L = this.L;
     const st = this.st;
     const ui = this.ui;
-    const y = L.btn.y + 14;
-    const h = 82;
+    const y = L.btn.y + 10;
+    const h = 78;
     const btns = [];
     if (this.mode !== 'battle' || !st) return btns;
     const enemyMode = ui.phase === 'enemy' || ui.phase === 'react' || ui.phase === 'counter';
     if (enemyMode) {
       const live = ui.phase === 'react' && !ui.react?.input;
       const heavy = ui.react?.attack.style === 'heavy';
-      btns.push({ id: 'guard', x: 20, y, w: 244, h, label: '막기', sub: '넓은 판정 · 퍼펙트=되치기', style: 'guard', icon: 'shield', enabled: live, hot: live && !heavy, key: 'J / Space', big: true });
-      btns.push({ id: 'dodge', x: 276, y, w: 244, h, label: '회피', sub: '좁은 판정 · 성공=적 노출', style: 'dodge', icon: 'move', enabled: live, hot: live && heavy, key: 'K / Shift', big: true });
+      btns.push({ id: 'guard', x: 14, y, w: 252, h, label: '막기', sub: '넓은 판정 · 퍼펙트=되치기', style: 'guard', icon: 'shield', enabled: live, hot: live && !heavy, key: 'J / Space', big: true });
+      btns.push({ id: 'dodge', x: 274, y, w: 252, h, label: '회피', sub: '좁은 판정 · 성공=적 노출', style: 'dodge', icon: 'move', enabled: live, hot: live && heavy, key: 'K / Shift', big: true });
       return btns;
     }
-    const canRe = B.canReroll(st) && ui.phase === 'aim' && !this.busy;
-    let omenText = '돌린 뒤 사용 가능';
-    if (ui.phase === 'aim') {
-      if (st.shotsFired > 0) omenText = '공격 후에는 불가';
-      else if (st.rerollsLeft <= 0) omenText = '이번 턴 소진';
-      else {
-        const d = B.describeOmen(st, st.omens[st.rerollCount]);
-        omenText = `대가: ${d ? d.text : '?'}`;
-      }
+    const aim = ui.phase === 'aim';
+    const canRe = aim && B.canReroll(st) && !this.busy;
+    const maxRe = 2 + (st.relics.includes('gamblerCoin') ? 1 : 0);
+    let sub;
+    let sub2 = null;
+    let subColors = null;
+    const myTurn = aim || ui.phase === 'busy';
+    if (!myTurn) sub = '레버를 당긴 뒤, 결과가 아쉬우면 사용';
+    else if (st.shotsFired > 0) sub = '이미 공격을 시작해서 이번 턴은 불가';
+    else if (st.rerollsLeft <= 0) sub = '이번 턴 횟수를 다 썼다';
+    else {
+      const d = B.describeOmen(st, st.omens[st.rerollCount]);
+      sub = `대가: ${d ? d.text : '?'}`;
+      sub2 = '보상: 금빛 강화 릴 +1 (공격 강화)';
+      subColors = ['#ffb8c8', '#ffe08a'];
     }
-    btns.push({ id: 'reroll', x: 20, y, w: 200, h, label: `도박 ${st.rerollsLeft}`, sub: canRe ? `${omenText} · 금빛+1` : omenText, style: 'gamble', enabled: canRe, key: 'R' });
-    if (ui.phase === 'spin' || ui.phase === 'spinning') {
-      btns.push({ id: 'spin', x: 232, y, w: 288, h, label: '돌리기', sub: st.player.embers ? `불씨 ${st.player.embers} → 금빛 릴` : null, style: 'primary', enabled: ui.phase === 'spin' && !this.busy, hot: ui.phase === 'spin' && !this.busy, key: 'Space', big: true });
-    } else {
-      const left = B.shotsLeft(st);
-      const confirm = ui.confirmEnd;
-      btns.push({
-        id: 'end', x: 232, y, w: 288, h,
-        label: confirm ? '정말 종료?' : '턴 종료',
-        sub: left ? (confirm ? `남은 공격 ${left}개를 버립니다` : `남은 공격 ${left}개`) : '모든 공격 완료',
-        style: confirm ? 'primary' : 'secondary', enabled: ui.phase === 'aim' && !this.busy, key: 'Enter',
-      });
-    }
+    btns.push({ id: 'reroll', x: 14, y, w: 322, h, label: '다시 굴리기', pips: myTurn ? st.rerollsLeft : maxRe, pipMax: maxRe, sub, sub2, subColors, style: 'gamble', enabled: canRe, key: 'R' });
+    const left = B.shotsLeft(st);
+    const confirm = ui.confirmEnd;
+    btns.push({
+      id: 'end', x: 346, y, w: 180, h,
+      label: confirm ? '정말 종료?' : '턴 종료',
+      sub: !myTurn ? '공격한 뒤 사용' : left ? (confirm ? `공격 ${left}개를 버림` : `남은 공격 ${left}개`) : '공격 완료',
+      style: confirm ? 'primary' : 'secondary', enabled: aim && !this.busy, key: 'Enter',
+    });
     return btns;
   }
 
@@ -269,11 +459,27 @@ export class Game {
     const p = this.toLogical(e.clientX, e.clientY);
     const touch = e.pointerType !== 'mouse';
     if (this.mode !== 'battle') return;
-    const g = this.gearRect;
-    if (p.x >= g.x && p.x <= g.x + g.w && p.y >= g.y && p.y <= g.y + g.h) {
-      if (this.ui.react || this.ui.counter) return; // 반응 도중에는 열지 않는다(판정 손실 방지)
-      this.overlay.openSettings();
+    if (this.card) {
+      if (this.now() - this.card.t0 > 250) this.closeCard();
       return;
+    }
+    const inR = (r, pad = 0) => p.x >= r.x - pad && p.x <= r.x + r.w + pad && p.y >= r.y - pad && p.y <= r.y + r.h + pad;
+    const reacting = this.ui.react || this.ui.counter; // 반응 도중에는 다른 창을 열지 않는다(판정 손실 방지)
+    if (inR(this.gearRect)) {
+      if (!reacting) this.overlay.openSettings();
+      return;
+    }
+    if (inR(this.helpRect)) {
+      if (!reacting) this.openGuide();
+      return;
+    }
+    if (!reacting && this.st) {
+      for (let i = 0; i < this.st.relics.length; i++) {
+        if (inR(this.relicRect(i), 3)) {
+          this.showCard(this.relicCard(this.st.relics[i]));
+          return;
+        }
+      }
     }
     for (const b of this.buttons) {
       if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h + 8) {
@@ -286,6 +492,10 @@ export class Game {
         return;
       }
     }
+    if (inR(leverRect(this.L))) {
+      this.pullLever();
+      return;
+    }
     // 릴(공격 패) 선택
     for (let i = 0; i < 3; i++) {
       const r = reelRect(this.L, i);
@@ -294,9 +504,24 @@ export class Game {
         return;
       }
     }
-    // 레인
+    // 레인 (적을 길게 누르면 정보 카드)
     const lane = laneAt(this.L, p.x, p.y);
-    if (lane >= 0) this.tapLane(lane, touch);
+    if (lane >= 0) {
+      const v = this.enemyAtPoint(p);
+      if (v && !reacting) this.hold = { id: v.id, at: this.now() };
+      this.tapLane(lane, touch);
+    }
+  }
+
+  onPointerUp() {
+    this.hold = null;
+  }
+
+  // 마우스 오른쪽 클릭 = 적 정보
+  onContext(e) {
+    if (this.mode !== 'battle' || this.card || this.ui.react || this.ui.counter) return;
+    const v = this.enemyAtPoint(this.toLogical(e.clientX, e.clientY));
+    if (v) this.inspectEnemy(v);
   }
 
   onPointerMove(e) {
@@ -331,7 +556,12 @@ export class Game {
       if (['1', '2', '3'].includes(k)) this.pickCounter(Number(k) - 1);
       return;
     }
-    if (k === ' ') { e.preventDefault(); if (ui.phase === 'spin') this.press('spin'); }
+    if (this.card) {
+      this.closeCard();
+      return;
+    }
+    if (k === ' ') { e.preventDefault(); if (ui.phase === 'spin') this.pullLever(); }
+    if (k === 'h' || k === '?') this.openGuide();
     if (k === 'r') this.press('reroll');
     if (k === 'enter') this.press('end');
     if (['q', 'w', 'e'].includes(k)) this.selectReel('qwe'.indexOf(k), true);
@@ -340,7 +570,7 @@ export class Game {
 
   press(id) {
     const ui = this.ui;
-    if (id === 'spin') return this.doSpin();
+    if (id === 'spin') return this.pullLever();
     if (id === 'reroll') return this.doReroll();
     if (id === 'end') {
       if (ui.phase !== 'aim' || this.busy) return;
@@ -434,6 +664,9 @@ export class Game {
     this.ui.sel = this.st.shots.findIndex((s) => !s.used);
     this.ui.armedLane = -1;
     this.updatePreview();
+    if (this.st.reels.some((r) => r.gilded)) this.conceptCard('gild');
+    if (this.st.turn >= 2 || this.run.stage > 0) this.conceptCard('reroll');
+    this.nextCard();
     this.tip('aim', '릴을 골라 공격을 정하고, 레인을 눌러 조준하세요.');
   }
 
@@ -444,27 +677,43 @@ export class Game {
       this.reels.forEach((r, i) => {
         r.spinning = true;
         r.tween = null;
-        r.vel = 28 + i * 2;
-        r.stopAt = now + 0.5 + i * 0.28 + (isReroll ? -0.1 : 0);
+        r.vel = 30 + i * 2;
+        r.stopAt = now + 0.55 + i * 0.3 + (isReroll ? -0.12 : 0);
         r.target = ev.reels[i].stop;
         r.gilded = ev.reels[i].gilded;
         r.landed = false;
       });
       this.spinDone = () => {
-        const tiers = ev.shots.map((s) => s.tier);
-        const top = Math.max(...tiers);
+        const top = Math.max(...ev.shots.map((s) => s.tier));
+        const rects = [0, 1, 2].map((i) => reelRect(this.L, i));
         if (top === 3) {
           const sh = ev.shots[0];
           this.audio.play('jackpot');
-          this.fx.flash('#ffe08a', 0.45);
+          this.fx.flash('#ffe08a', 0.5);
+          this.fx.shake(3);
+          this.slotJolt = 1.6;
+          this.buzz(120);
           this.showBanner(`잭팟! ${SHOT_NAMES[sh.symbol][3]}`, '세 문양이 하나로', 1.6, '#ffe08a', 40);
           this.reels.forEach((r) => (r.flashT = 1));
+          for (const rc of rects) {
+            this.uiFx.burst(rc.x + rc.w / 2, rc.y + rc.h / 2, { n: 26, speed: 340, color: ['#ffe08a', '#ffffff', '#ffb347', SYMBOLS[sh.symbol].fx], kind: 'streak', size: 4.5, life: 0.7, g: 300 });
+            this.uiFx.ring(rc.x + rc.w / 2, rc.y + rc.h / 2, { r0: 20, r1: 130, color: '#ffe08a', w: 7, life: 0.5 });
+          }
         } else if (top === 2) {
-          this.audio.play('link', { tier: 2 });
           const sh = ev.shots.find((s) => s.tier === 2);
-          sh.reels.forEach((i) => (this.reels[i].flashT = 0.8));
+          this.audio.play('link', { tier: 2 });
+          this.slotJolt = 1.1;
+          this.buzz(45);
+          sh.reels.forEach((i) => (this.reels[i].flashT = 0.9));
+          const a = rects[sh.reels[0]];
+          const b = rects[sh.reels[1]];
+          const mx = (a.x + a.w + b.x) / 2;
+          const my = a.y + a.h / 2;
+          this.uiFx.burst(mx, my, { n: 22, speed: 260, color: ['#ff8a5a', '#ffe08a', '#ffffff'], kind: 'streak', size: 4, life: 0.5 });
+          this.uiFx.ring(mx, my, { r0: 10, r1: 90, color: '#ff8a5a', w: 6, life: 0.4 });
+          this.uiFx.text(mx, a.y - 16, `연결! ${SHOT_NAMES[sh.symbol][2]}`, { color: '#ffd27a', size: 24, font: 'num', life: 1.1, vy: -24 });
         }
-        this.waitReal(top >= 2 ? 380 : 120).then(resolve);
+        this.waitReal(top >= 2 ? 420 : 120).then(resolve);
       };
     });
   }
@@ -494,6 +743,14 @@ export class Game {
           r.tween = null;
           r.bump = 1;
           this.audio.play('reelStop', { i });
+          {
+            const rc = reelRect(this.L, i);
+            this.slotJolt = 1;
+            this.buzz(18);
+            this.uiFx.burst(rc.x + rc.w / 2, rc.y + rc.h + 2, { n: 12, speed: 200, color: ['#ffe08a', '#ffffff', '#d8a548'], kind: 'streak', size: 3.5, life: 0.32, angle: Math.PI / 2, spread: 2.8 });
+            this.uiFx.burst(rc.x + rc.w / 2, rc.y - 2, { n: 6, speed: 120, color: ['#ffe08a', '#d8a548'], kind: 'streak', size: 3, life: 0.25, angle: -Math.PI / 2, spread: 2.4 });
+            r.flashT = Math.max(r.flashT, 0.35);
+          }
           if (r.gilded) {
             this.audio.play('gild');
             r.flashT = 0.6;
@@ -544,8 +801,10 @@ export class Game {
     ui.sel = st.shots.findIndex((s) => !s.used);
     if (ui.sel < 0) ui.sel = null;
     this.updatePreview();
+    this.nextCard();
     if (ui.sel == null) {
       await this.wait(250);
+      while (this.card) await this.wait(100);
       this.enemyPhase();
     }
   }
@@ -617,7 +876,8 @@ export class Game {
     if (!r || r.input || r.done) return; // 첫 입력만 인정
     const t = this.now();
     const offset = t - r.impact;
-    const grade = judge(action, offset, r.assist);
+    const shoes = action === 'dodge' && this.st.relics.includes('shadowShoes') ? 1.3 : 1;
+    const grade = judge(action, offset, r.assist * shoes);
     r.input = { action, grade, offset };
     const P = this.player;
     if (action === 'guard') {
@@ -772,6 +1032,8 @@ export class Game {
     const st = this.st;
     this.busy = true;
     this.ui.phase = 'over';
+    this.card = null;
+    this.cardQueue = [];
     this.refresh();
     await this.wait(500);
     if (st.result === 'win') {
@@ -780,20 +1042,26 @@ export class Game {
       recordBattle(this.run, st);
       await this.waitReal(1700);
       const last = this.run.stage >= BATTLES.length - 1;
+      this.store.meta.best = Math.max(this.store.meta.best || 0, this.run.stage + 1);
       if (last) {
         this.store.meta.wins = (this.store.meta.wins || 0) + 1;
-        this.store.meta.best = Math.max(this.store.meta.best || 0, BATTLES.length);
         this.store.save();
         this.mode = 'result';
-        this.overlay.showResult(true, this.run);
+        this.overlay.showResult(true, this.run, this.store.meta);
       } else {
-        this.store.meta.best = Math.max(this.store.meta.best || 0, this.run.stage + 1);
         this.store.save();
         this.mode = 'reward';
-        const opts = rollRewards(this.run);
-        this.overlay.showReward(opts, this.run, (id) => {
-          applyReward(this.run, id);
-          this.audio.play('buy');
+        const next = BATTLES[this.run.stage + 1];
+        this.overlay.showPick({
+          kicker: `${this.def.night} · ${this.def.name} 돌파`,
+          title: '보상을 하나 고르세요',
+          req: `필수 선택 · 체력 ${this.run.hp}/${this.run.maxHp}`,
+          ids: rollRewards(this.run),
+          go: `${next.night}으로 — ${next.name}`,
+          run: this.run,
+          used: this.store.meta.relicsUsed || [],
+        }, (id) => {
+          this.takeReward(id);
           advance(this.run);
           this.startBattle();
         });
@@ -802,9 +1070,10 @@ export class Game {
       this.audio.play('lose');
       this.showBanner('등불이 꺼졌다…', '행렬이 다리를 건넜다', 2, '#ff8a7a', 40);
       recordBattle(this.run, st);
+      this.store.save();
       await this.waitReal(2000);
       this.mode = 'result';
-      this.overlay.showResult(false, this.run);
+      this.overlay.showResult(false, this.run, this.store.meta);
     }
   }
 
@@ -859,7 +1128,7 @@ export class Game {
         const p = cellPos(L, nv.lane, nv.row);
         this.audio.play('spawn');
         fx.burst(p.x, p.y - 20, { n: 10, speed: 70, color: ev.src === 'omen' ? ['#a050ff', '#e0b0ff'] : ['#9a8fd0', '#c9b8ff'], kind: 'glow', size: 6, life: 0.6, vy: -40 });
-        if (ev.src === 'omen') fx.text(p.x, p.y - 70, '흉조!', { color: '#e0b0ff', size: 22, font: 'num' });
+        if (ev.src === 'omen') fx.text(p.x, p.y - 70, '대가로 등장', { color: '#e0b0ff', size: 20, font: 'num' });
         this.tween(nv, { spawnT: 1 }, 380);
         if (ENEMIES[nv.type].boss) {
           this.audio.play('bossPhase');
@@ -871,10 +1140,33 @@ export class Game {
       }
       case 'turn':
         break;
+      case 'relic': {
+        // 어떤 유물이 왜 발동했는지 보여준다: HUD 배지 반짝 + 이름 표시
+        const R = RELICS[ev.relic];
+        if (!R) break;
+        this.relicPulse[ev.relic] = 1;
+        this.audio.play('relic');
+        let x = this.player.x;
+        let y = L.playerY - 130;
+        if (ev.to) {
+          const a = cellPos(L, ev.from.lane, ev.from.row);
+          const b = cellPos(L, ev.to.lane, ev.to.row);
+          fx.bolt(a.x, a.y - 40 * a.k, b.x, b.y - 40 * b.k, { color: '#ffe45c', color2: '#ffffff', w: 4, life: 0.3 });
+          x = (a.x + b.x) / 2;
+          y = (a.y + b.y) / 2 - 70;
+        } else if (v) {
+          const ip = this.impactPoint(v);
+          x = ip.x;
+          y = ip.y - 92;
+        }
+        fx.text(x, y, `◆ ${R.name}`, { color: R.color, size: 19, font: 'num', life: 1.2, vy: -26 });
+        await this.wait(90);
+        break;
+      }
       case 'omen': {
         this.audio.play('omen');
         fx.flash('#6a20c0', 0.18);
-        this.showBanner('흉조', ev.desc?.text || '', 1.1, '#e0b0ff', 30);
+        this.showBanner('다시 굴린 대가', ev.desc?.text || '', 1.2, '#e0b0ff', 28);
         await this.wait(420);
         break;
       }
@@ -939,7 +1231,10 @@ export class Game {
         v.blockT = 1;
         this.audio.play('block');
         fx.burst(ip.x, ip.y, { n: 14, speed: 240, color: ['#ffffff', '#50f0be'], kind: 'streak', size: 4, life: 0.3, angle: Math.PI / 2, spread: 2.4 });
-        fx.text(ip.x, ip.y - 44, '막힘!', { color: '#50f0be', size: 26, font: 'num' });
+        fx.text(ip.x, ip.y - 50, '정면 막힘!', { color: '#50f0be', size: 26, font: 'num' });
+        fx.text(ip.x, ip.y - 24, '옆·연쇄·회피로 뚫어라', { color: '#c8fff0', size: 15, font: 'ui', delay: 0.25, life: 1.5, vy: -14 });
+        fx.impact(ip.x, ip.y, 44, '#50f0be');
+        this.conceptCard('block');
         fx.shake(1);
         this.hitstop = Math.max(this.hitstop, 0.05);
         await this.wait(160);
@@ -952,8 +1247,11 @@ export class Game {
         v.dyingStart = true;
         this.tween(v, { dying: 1 }, big ? 1100 : 520, (t) => t);
         this.audio.play('kill', { big });
-        this.hitstop = Math.max(this.hitstop, big ? 0.3 : 0.07);
-        fx.shake(big ? 4 : 2);
+        this.hitstop = Math.max(this.hitstop, big ? 0.3 : 0.13);
+        fx.shake(big ? 4 : 3);
+        fx.punchIn(big ? 0.06 : 0.03);
+        fx.impact(ip.x, ip.y, big ? 150 : 80, '#ffe08a');
+        this.buzz(big ? 200 : 40);
         if (big) fx.flash('#fff4c0', 0.6);
         const cols = { kasa: ['#e2453c', '#b8302e', '#f3d38a', '#ffe0c0'], mask: ['#f5ecd9', '#ffffff', '#352a64', '#e2453c'], archer: ['#ffbf52', '#fff4c4', '#e0682a'], elder: ['#ffb04a', '#fff2c0', '#ff5a6e', '#ffffff'] }[ev.etype];
         fx.burst(ip.x, ip.y, { n: big ? 70 : 26, speed: big ? 420 : 260, color: cols, kind: 'paper', size: big ? 7 : 5, life: big ? 1.4 : 0.9, g: 420, drag: 0.94, add: false, vr: 14 });
@@ -1243,59 +1541,67 @@ export class Game {
     const fx = this.fx;
     const ip = this.impactPoint(v);
     const cur = this.cur;
-    if (cur && cur.proj && ev.src !== 'shard' && ev.src !== 'splash' && ev.src !== 'chain') {
+    if (cur && cur.proj && ev.src !== 'shard' && ev.src !== 'splash' && ev.src !== 'chain' && ev.src !== 'relic') {
       await this.flyTo(cur.proj, ip.x, ip.y);
-    } else if (cur && cur.spark && ev.src !== 'chain') {
-      fx.bolt(cur.x, cur.y, ip.x, ip.y, { color: '#ffe45c', color2: '#b77cff', w: 4, life: 0.3, segs: 12 });
+    } else if (cur && cur.spark && ev.src !== 'chain' && ev.src !== 'relic') {
+      fx.bolt(cur.x, cur.y, ip.x, ip.y, { color: '#ffe45c', color2: '#b77cff', w: 5, life: 0.32, segs: 12 });
       cur.spark = false;
     } else if (cur && cur.global) {
       await this.wait(55);
     }
     const el = ev.el;
     const cols = EL_COLORS[el] || EL_COLORS.blade;
-    v.flash = 1;
-    v.knock = 10 + Math.min(14, ev.dmg * 2);
-    v.squash = 0.5;
-    v.hpShown = ev.hp;
+    const minor = ev.src === 'shard' || ev.src === 'splash' || ev.src === 'chain' || ev.src === 'relic';
     const strong = ev.dmg >= 5 || ev.tags.includes('shatter');
-    // 원소별 타격 이펙트
+    // 몸이 밀려나고(넉백) 찌그러지고(스쿼시) 떨린다
+    v.flash = 1.5;
+    v.knock = 16 + Math.min(24, ev.dmg * 3.5);
+    v.squash = 0.85;
+    v.jit = minor ? 0.08 : 0.18;
+    v.hpShown = ev.hp;
+    fx.impact(ip.x, ip.y, (minor ? 26 : 38) + ev.dmg * 7, cols[1]);
     if (el === 'blade' || el === 'counter') {
-      fx.slash(ip.x, ip.y, { ang: -0.5 + Math.random() * 0.3, len: el === 'counter' ? 80 : 60, color: cols[1], w: el === 'counter' ? 12 : 8 });
-      fx.slash(ip.x, ip.y, { ang: -0.45, len: 40, color: '#ffffff', w: 4, life: 0.15 });
-      fx.burst(ip.x, ip.y, { n: 14, speed: 360, color: cols, kind: 'streak', size: 4, life: 0.3, angle: -Math.PI / 2, spread: 2.2 });
+      fx.slash(ip.x, ip.y, { ang: -0.5 + Math.random() * 0.3, len: el === 'counter' ? 96 : 72, color: cols[1], w: el === 'counter' ? 14 : 10 });
+      fx.slash(ip.x, ip.y, { ang: -0.45, len: 48, color: '#ffffff', w: 5, life: 0.16 });
+      fx.burst(ip.x, ip.y, { n: 18, speed: 420, color: cols, kind: 'streak', size: 4.5, life: 0.32, angle: -Math.PI / 2, spread: 2.2 });
     } else if (el === 'wave') {
-      fx.burst(ip.x, ip.y, { n: 12, speed: 220, color: cols, kind: 'dot', size: 3.5, life: 0.45, g: 400 });
+      fx.burst(ip.x, ip.y, { n: 16, speed: 260, color: cols, kind: 'dot', size: 4, life: 0.5, g: 420 });
     } else if (el === 'frost' || el === 'ice') {
-      fx.burst(ip.x, ip.y, { n: 10, speed: 200, color: cols, kind: 'shard', size: 4, life: 0.45, add: false });
+      fx.burst(ip.x, ip.y, { n: 12, speed: 230, color: cols, kind: 'shard', size: 4.5, life: 0.5, add: false });
     } else if (el === 'spark') {
-      fx.burst(ip.x, ip.y, { n: 12, speed: 300, color: cols, kind: 'streak', size: 3, life: 0.25 });
+      fx.burst(ip.x, ip.y, { n: 16, speed: 340, color: cols, kind: 'streak', size: 3.5, life: 0.28 });
       this.audio.play('chain');
     }
-    fx.ring(ip.x, ip.y, { r0: 6, r1: 30 + ev.dmg * 6, color: cols[1], w: 4, life: 0.25 });
+    // 종이 조각이 튄다(맞았다는 물리적 느낌)
+    fx.burst(ip.x, ip.y, { n: minor ? 3 : 6 + ev.dmg, speed: 200, color: ['#f3e6c8', '#e2453c', '#ffffff'], kind: 'paper', size: 3.5, life: 0.6, g: 520, drag: 0.95, add: false, vr: 16, vy: -120 });
+    fx.ring(ip.x, ip.y, { r0: 8, r1: 36 + ev.dmg * 8, color: cols[1], w: 5, life: 0.28 });
     if (ev.tags.includes('shatter')) {
       this.audio.play('shatter');
-      fx.burst(ip.x, ip.y, { n: 30, speed: 420, color: ['#ffffff', '#d6f3ff', '#7cc8ff'], kind: 'shard', size: 7, life: 0.7, g: 300, add: false });
-      fx.ring(ip.x, ip.y, { r0: 10, r1: 110, color: '#bfe6ff', w: 7, life: 0.45 });
-      fx.text(ip.x, ip.y - 78, '파쇄!', { color: '#bfe6ff', size: 34, font: 'num' });
+      fx.burst(ip.x, ip.y, { n: 34, speed: 460, color: ['#ffffff', '#d6f3ff', '#7cc8ff'], kind: 'shard', size: 7, life: 0.75, g: 300, add: false });
+      fx.ring(ip.x, ip.y, { r0: 10, r1: 130, color: '#bfe6ff', w: 8, life: 0.5 });
+      fx.text(ip.x, ip.y - 84, '파쇄!', { color: '#bfe6ff', size: 38, font: 'num' });
+      fx.flash('#bfe6ff', 0.18);
       v.frozen = 0;
     }
     if (ev.tags.includes('shieldBreak')) {
-      fx.text(ip.x, ip.y - 110, '탈 파괴!', { color: '#ffffff', size: 28, font: 'num', delay: 0.1 });
+      fx.text(ip.x, ip.y - 116, '탈 파괴!', { color: '#ffffff', size: 28, font: 'num', delay: 0.1 });
       fx.burst(ip.x, ip.y, { n: 18, speed: 300, color: ['#f5ecd9', '#ffffff'], kind: 'paper', size: 6, life: 0.9, g: 400, add: false });
       v.shieldBroken = true;
     }
-    if (ev.tags.includes('exposed')) fx.text(ip.x - 44, ip.y - 30, '×2', { color: '#d9a0ff', size: 26, font: 'num' });
-    if (ev.tags.includes('weak')) fx.text(ip.x - 44, ip.y - 30, '심장 +2', { color: '#ffe08a', size: 22, font: 'num' });
-    if (ev.tags.includes('exposed')) v.exposed = false;
-    const big = ev.dmg >= 5;
-    fx.text(ip.x + (Math.random() - 0.5) * 20, ip.y - 46, `${ev.dmg}`, {
-      color: big ? '#ffe08a' : '#ffffff', size: 28 + Math.min(18, ev.dmg * 2.2), font: 'num', vy: -90,
+    if (ev.tags.includes('exposed')) {
+      fx.text(ip.x - 46, ip.y - 30, '노출 ×2', { color: '#d9a0ff', size: 24, font: 'num' });
+      v.exposed = false;
+    }
+    if (ev.tags.includes('weak')) fx.text(ip.x - 46, ip.y - 30, '심장 +2', { color: '#ffe08a', size: 22, font: 'num' });
+    fx.text(ip.x + (Math.random() - 0.5) * 22, ip.y - 50, `${ev.dmg}`, {
+      color: ev.dmg >= 5 ? '#ffe08a' : '#ffffff', size: 32 + Math.min(26, ev.dmg * 3), font: 'num', vy: -110,
     });
     this.audio.play('hit', { dmg: ev.dmg });
-    const minor = ev.src === 'shard' || ev.src === 'splash' || ev.src === 'chain';
-    this.hitstop = Math.max(this.hitstop, minor ? 0.03 : Math.min(0.12, 0.04 + ev.dmg * 0.012));
+    this.hitstop = Math.max(this.hitstop, minor ? 0.04 : Math.min(0.17, 0.075 + ev.dmg * 0.016));
     fx.shake(strong ? 3 : minor ? 1 : 2);
-    await this.wait(minor ? 45 : 85);
+    if (!minor) fx.punchIn(Math.min(0.035, 0.01 + ev.dmg * 0.004));
+    this.buzz(minor ? 8 : 14 + ev.dmg * 5);
+    await this.wait(minor ? 50 : 95);
   }
 
   syncViews() {
@@ -1383,6 +1689,10 @@ export class Game {
       v.knock *= 0.8 ** (dt * 60);
       v.squash *= 0.85 ** (dt * 60);
       v.blockT = Math.max(0, v.blockT - dt * 3);
+      if (v.jit > 0) {
+        v.jit -= realDt;
+        v.jx = v.jit > 0 ? (Math.random() - 0.5) * 9 : 0;
+      }
       if (v.charge && v.type === 'archer' && !this.ui.react) v.chargeA = 0.35 + Math.sin(v.t * 6) * 0.1;
       else if (!v.charge && !this.ui.react) v.chargeA *= 0.9;
     }
@@ -1431,6 +1741,33 @@ export class Game {
       if (p.trail.length > 10) p.trail.shift();
     }
     this.projs = this.projs.filter((p) => p.alpha > 0);
+    // 레버 움직임(당김 → 스프링 복귀)
+    const lv = this.lever;
+    if (lv.t >= 0) {
+      lv.t += realDt;
+      if (!lv.ok) {
+        lv.pull = Math.max(0, Math.sin(lv.t * 40) * 0.07);
+        if (lv.t > 0.22) { lv.t = -1; lv.pull = 0; }
+      } else if (lv.t < 0.1) {
+        lv.pull = lv.t / 0.1;
+      } else {
+        const k = (lv.t - 0.1) / 0.5;
+        lv.pull = Math.max(-0.06, (1 - k) * Math.cos(k * Math.PI * 1.6));
+        if (k >= 1) { lv.t = -1; lv.pull = 0; }
+      }
+    }
+    this.slotJolt = Math.max(0, this.slotJolt - realDt * 7 - this.slotJolt * realDt * 6);
+    for (const k in this.relicPulse) this.relicPulse[k] = Math.max(0, this.relicPulse[k] - realDt * 1.5);
+    this.uiFx.update(realDt, realDt);
+    // 적을 길게 누르면 정보 카드
+    if (this.hold && this.now() - this.hold.at > 430) {
+      const hv = this.views.get(this.hold.id);
+      this.hold = null;
+      if (hv && !this.card && !this.ui.react && !this.ui.counter && this.mode === 'battle') {
+        this.ui.armedLane = -1;
+        this.inspectEnemy(hv);
+      }
+    }
     this.updateReels(realDt);
     this.updateReaction();
     if (this.ui.counter && this.now() >= this.ui.counter.deadline) this.pickCounter(this.ui.counter.hover ?? this.ui.counter.def);

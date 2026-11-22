@@ -1,6 +1,6 @@
-// 한 판(런) 진행: 전투 순서, 체력 이월, 릴 구성, 보상
+// 한 판(런) 진행: 전투 순서, 체력 이월, 릴 구성, 유물, 보상
 import { randInt, shuffle } from './rng.js';
-import { BATTLES, BASE_STRIP, REWARDS } from './data.js';
+import { BATTLES, BASE_STRIP, REWARDS, RELICS, RELIC_IDS } from './data.js';
 
 export function createRun(seed) {
   const run = {
@@ -10,7 +10,7 @@ export function createRun(seed) {
     hp: 16,
     maxHp: 16,
     strips: [],
-    perks: { startEmbers: 0, startGuard: 0 },
+    relics: [],
     picks: [],
     totals: { kills: 0, perfect: 0, counters: 0, jackpots: 0, shatters: 0, dmgDealt: 0, turns: 0 },
   };
@@ -28,8 +28,7 @@ export function battleOptions(run) {
     hp: run.hp,
     maxHp: run.maxHp,
     strips: run.strips,
-    embers: run.perks.startEmbers,
-    guard: run.perks.startGuard,
+    relics: run.relics,
   };
 }
 
@@ -46,19 +45,37 @@ export function recordBattle(run, st) {
   t.turns += st.stats.turns;
 }
 
-export function rollRewards(run) {
-  const pool = Object.keys(REWARDS).filter((k) => {
-    if (k === 'embers' && run.perks.startEmbers >= 2) return false;
-    if (k === 'hat' && run.perks.startGuard >= 3) return false;
-    if (k === 'heal' && run.hp >= run.maxHp) return false;
-    return true;
-  });
+function pickSome(run, pool, n) {
+  const p = pool.slice();
   const out = [];
-  while (out.length < 3 && pool.length) out.push(pool.splice(randInt(run, pool.length), 1)[0]);
+  while (out.length < n && p.length) out.push(p.splice(randInt(run, p.length), 1)[0]);
   return out;
 }
 
+// 보상 정보(유물이든 일반 보상이든 같은 모양으로)
+export function rewardInfo(id) {
+  if (RELICS[id]) return { id, relic: true, ...RELICS[id] };
+  return { id, relic: false, ...REWARDS[id] };
+}
+
+// 런 시작: 유물 3개 중 하나를 고른다 → 빌드의 출발점
+export function rollStartRelics(run) {
+  return pickSome(run, RELIC_IDS, 3);
+}
+
+// 전투 보상: 새 유물 2개 + 일반 보상 1개
+export function rollRewards(run) {
+  const relics = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id)), 2);
+  const utils = Object.keys(REWARDS).filter((k) => !(k === 'heal' && run.hp >= run.maxHp));
+  return [...relics, ...pickSome(run, utils, 3 - relics.length)];
+}
+
 export function applyReward(run, id) {
+  if (RELICS[id]) {
+    if (!run.relics.includes(id)) run.relics.push(id);
+    run.picks.push(id);
+    return;
+  }
   const r = REWARDS[id];
   if (!r) throw new Error('unknown reward ' + id);
   if (id === 'heal') run.hp = Math.min(run.maxHp, run.hp + 7);
@@ -73,8 +90,6 @@ export function applyReward(run, id) {
       return c;
     });
   }
-  if (id === 'embers') run.perks.startEmbers = 2;
-  if (id === 'hat') run.perks.startGuard = 3;
   run.picks.push(id);
 }
 

@@ -147,9 +147,26 @@ export class Audio {
     this.noise({ dur: 0.025, vol: 0.12, f: 3200 * pitch, q: 8 });
   }
   s_reelStop({ i = 0 } = {}) {
-    this.tone({ type: 'sine', f: 150 - i * 12, f2: 55, dur: 0.22, vol: 0.5 });
-    this.noise({ dur: 0.06, vol: 0.25, f: 1800, q: 1.5 });
-    this.tone({ type: 'triangle', f: 520 + i * 70, dur: 0.12, vol: 0.06 });
+    // 묵직한 "쿵" + 금속 걸쇠 "철컥"
+    this.tone({ type: 'sine', f: 170 - i * 14, f2: 42, dur: 0.3, vol: 0.75 });
+    this.tone({ type: 'square', f: 90, f2: 50, dur: 0.07, vol: 0.12, filter: { f: 700 } });
+    this.noise({ dur: 0.05, vol: 0.4, f: 2400, q: 1.2 });
+    this.noise({ t: 0.03, dur: 0.09, vol: 0.2, type: 'highpass', f: 4500 });
+    this.tone({ type: 'triangle', f: 660 + i * 110, dur: 0.18, vol: 0.09 });
+  }
+  s_lever() {
+    this.noise({ dur: 0.07, vol: 0.45, f: 1500, q: 1 });
+    this.tone({ type: 'sine', f: 220, f2: 70, dur: 0.16, vol: 0.5 });
+    this.tone({ type: 'sawtooth', f: 60, f2: 240, t: 0.1, dur: 0.28, vol: 0.09, filter: { f: 900 } }); // 스프링
+    this.noise({ t: 0.16, dur: 0.05, vol: 0.3, f: 2600, q: 2 });
+  }
+  s_relic() {
+    [0, 7, 12].forEach((n, k) => this.tone({ type: 'sine', f: 880 * 2 ** (n / 12), t: k * 0.035, dur: 0.3, vol: 0.09 }));
+    this.tone({ type: 'triangle', f: 440, dur: 0.12, vol: 0.08 });
+  }
+  s_card() {
+    this.noise({ dur: 0.12, vol: 0.12, type: 'highpass', f: 3000 });
+    this.tone({ type: 'triangle', f: 587, f2: 880, dur: 0.12, vol: 0.08 });
   }
   s_link({ tier = 2 } = {}) {
     const base = tier === 3 ? 523 : 440;
@@ -223,9 +240,13 @@ export class Audio {
     [0, 4, 7, 12].forEach((n, k) => this.tone({ type: 'triangle', f: 523 * 2 ** (n / 12), t: k * 0.07, dur: 0.4, vol: 0.08 }));
   }
   s_hit({ dmg = 2 } = {}) {
-    const v = Math.min(0.6, 0.28 + dmg * 0.05);
-    this.tone({ type: 'sine', f: 160, f2: 45, dur: 0.18, vol: v });
-    this.noise({ dur: 0.1, vol: v * 0.6, type: 'bandpass', f: 1200, q: 0.8 });
+    // 저음 몸통 + 찢어지는 중음 + 짧은 "딱" → 피해가 클수록 낮고 크게
+    const v = Math.min(0.85, 0.4 + dmg * 0.07);
+    const f = Math.max(90, 190 - dmg * 12);
+    this.tone({ type: 'sine', f, f2: 38, dur: 0.22 + dmg * 0.012, vol: v });
+    this.tone({ type: 'square', f: f * 1.5, f2: 60, dur: 0.06, vol: v * 0.16, filter: { f: 1400 } });
+    this.noise({ dur: 0.035, vol: v * 0.8, type: 'highpass', f: 2800 });
+    this.noise({ t: 0.01, dur: 0.14, vol: v * 0.55, type: 'bandpass', f: 900, f2: 300, q: 0.7 });
   }
   s_block() {
     this.tone({ type: 'square', f: 300, f2: 280, dur: 0.12, vol: 0.08 });
@@ -238,6 +259,8 @@ export class Audio {
     this.tone({ type: 'sine', f: 200, f2: 60, dur: 0.25, vol: 0.35 });
   }
   s_kill({ big = false } = {}) {
+    this.tone({ type: 'sine', f: 110, f2: 34, dur: 0.4, vol: 0.6 });
+    this.noise({ dur: 0.05, vol: 0.5, type: 'highpass', f: 3500 });
     this.noise({ dur: 0.3, vol: 0.3, type: 'bandpass', f: 2200, f2: 500, q: 0.7 }); // 종이 찢김
     this.tone({ type: 'sine', f: 300, f2: 60, dur: 0.3, vol: 0.35 });
     this.tone({ type: 'triangle', f: 880, f2: 1760, t: 0.05, dur: 0.15, vol: 0.06 });

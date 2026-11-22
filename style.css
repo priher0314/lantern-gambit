@@ -170,3 +170,68 @@ body { display: flex; align-items: center; justify-content: center; }
 .settings .row.chk { justify-content: flex-start; }
 .settings input[type="range"] { width: 55%; accent-color: var(--gold); }
 .settings input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--gold); }
+
+/* ───── 유물 ───── */
+.relic-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 4px 3px 0;
+  padding: 3px 10px 3px 3px;
+  border-radius: 99px;
+  border: 1.5px solid var(--c);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f3e6c8;
+  font-size: 0.88em;
+  white-space: nowrap;
+}
+.relic-chip i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7em;
+  height: 1.7em;
+  border-radius: 50%;
+  background: #170d22;
+  border: 1.5px solid var(--c);
+  color: var(--c);
+  font-style: normal;
+  font-family: "Black Han Sans", sans-serif;
+}
+.relic-chip.dim { opacity: 0.75; border-style: dashed; }
+.relic-big {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3a2440, #170d22);
+  border: 2.5px solid var(--c);
+  color: var(--c);
+  font-style: normal;
+  font-family: "Black Han Sans", sans-serif;
+  font-size: 30px;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--c) 45%, transparent);
+}
+.rw-card.is-relic { border-color: color-mix(in srgb, var(--c) 60%, transparent); }
+.rw-name small { margin-left: 8px; font-family: "Jua", sans-serif; font-size: 0.72em; color: #d8a548; opacity: 0.9; }
+.rw-name .new { margin-left: 6px; padding: 1px 7px; border-radius: 99px; background: #e2453c; color: #fff; font-style: normal; font-family: "Jua", sans-serif; font-size: 0.68em; vertical-align: 2px; }
+.rw-build, .rs-build { margin: 0 0 10px; text-align: left; line-height: 1.9; }
+.rw-build > span, .rs-build > span { margin-right: 8px; color: var(--gold); font-size: 0.85em; }
+.rs-build { text-align: center; }
+.rs-dex { margin-top: 4px; color: var(--gold); font-size: 0.88em; }
+.rs-next { margin: 10px 0 4px; padding: 10px; border-radius: 12px; border: 1px dashed rgba(216, 165, 72, 0.5); background: rgba(0, 0, 0, 0.25); }
+.rs-next b { display: block; margin-bottom: 4px; font-weight: normal; font-family: "Black Han Sans", sans-serif; color: var(--gold-hi); }
+.rs-next > span { display: block; font-size: 0.82em; opacity: 0.7; }
+
+/* ───── 길잡이 ───── */
+.guide { text-align: left; }
+.guide h3 { margin: 14px 0 6px; font-family: "Black Han Sans", sans-serif; font-weight: normal; font-size: 1.05em; color: var(--gold-hi); border-bottom: 1px solid rgba(216, 165, 72, 0.3); padding-bottom: 4px; }
+.gl { display: flex; gap: 10px; padding: 4px 0; line-height: 1.4; }
+.gl b { flex: 0 0 9.2em; font-weight: normal; font-family: "Black Han Sans", sans-serif; font-size: 0.92em; }
+.gl span { font-size: 0.9em; opacity: 0.92; }
+.ge { padding: 6px 0; border-bottom: 1px solid rgba(216, 165, 72, 0.12); line-height: 1.45; }
+.ge b { display: block; font-weight: normal; font-family: "Black Han Sans", sans-serif; color: #ffb0a0; }
+.ge span { display: block; font-size: 0.9em; opacity: 0.92; }
+.ge .how { color: #8fffe2; margin-top: 2px; }

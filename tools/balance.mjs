@@ -1,10 +1,10 @@
-﻿// 밸런스 측정: 실력이 다른 봇들로 런 승률·평균 남은 체력을 본다.  node tools/balance.mjs
+// 밸런스 측정: 실력이 다른 봇들로 런 승률·평균 남은 체력을 본다.  node tools/balance.mjs
 import {
   createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn,
   nextEnemyStep, resolveReaction, resolveCounter,
 } from '../src/core/battle.js';
 import { BATTLES } from '../src/core/data.js';
-import { createRun, battleOptions, rollRewards, applyReward, recordBattle, advance } from '../src/core/run.js';
+import { createRun, battleOptions, rollRewards, rollStartRelics, applyReward, recordBattle, advance } from '../src/core/run.js';
 import { rand, randInt } from '../src/core/rng.js';
 
 const PROFILES = {
@@ -20,6 +20,7 @@ function score(sum) {
 
 function playRun(seed, P) {
   const run = createRun(seed);
+  applyReward(run, rollStartRelics(run)[0]);
   const r = { rng: seed * 101 + 7 };
   const reached = [];
   for (let stage = 0; stage < BATTLES.length; stage++) {
@@ -70,11 +71,11 @@ function playRun(seed, P) {
 for (const [name, P] of Object.entries(PROFILES)) {
   const N = 400;
   let wins = 0;
-  const lostAt = [0, 0, 0];
-  const turns = [0, 0, 0];
-  const hpAfter = [0, 0, 0];
-  const cnt = [0, 0, 0];
-  const atk = [0, 0, 0];
+  const lostAt = [0, 0, 0, 0, 0];
+  const turns = [0, 0, 0, 0, 0];
+  const hpAfter = [0, 0, 0, 0, 0];
+  const cnt = [0, 0, 0, 0, 0];
+  const atk = [0, 0, 0, 0, 0];
   for (let s = 1; s <= N; s++) {
     const res = playRun(s, P);
     if (res.win) wins++;

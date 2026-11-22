@@ -1,5 +1,6 @@
-// HTML 오버레이 화면: 타이틀, 플레이 방법, 보상 선택, 결과, 설정
-import { REWARDS, BATTLES, SYMBOLS } from '../core/data.js';
+// HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
+import { BATTLES, SYMBOLS, ENEMIES, RELICS, RELIC_IDS } from '../core/data.js';
+import { rewardInfo } from '../core/run.js';
 import { drawSymbol, drawIcon } from '../render/art.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -20,12 +21,17 @@ function iconCanvas(kind, size = 56) {
   g.stroke();
   if (SYMBOLS[kind]) drawSymbol(g, kind, size / 2, size / 2, size * 0.32);
   else {
-    const map = { heal: ['heart', '#ff6a7a'], maxhp: ['plus', '#ff6a7a'], ember: ['ember', '#ffb347'], guard: ['shield', '#ffd27a'] };
+    const map = { heal: ['heart', '#ff6a7a'], maxhp: ['plus', '#ff6a7a'] };
     const [ic, col] = map[kind] || ['dots', '#fff'];
     drawIcon(g, ic, size / 2, size / 2, size * 0.55, col);
   }
   return c;
 }
+
+const relicChip = (id, cls = '') => {
+  const R = RELICS[id];
+  return `<span class="relic-chip ${cls}" style="--c:${R.color}"><i>${R.glyph}</i>${R.name}</span>`;
+};
 
 export class Overlay {
   constructor(root, hooks) {
@@ -54,6 +60,7 @@ export class Overlay {
   }
 
   showTitle(meta) {
+    const used = (meta.relicsUsed || []).length;
     const p = this.panel(`
       <div class="title-logo">
         <div class="logo-en">LANTERN GAMBIT</div>
@@ -65,8 +72,9 @@ export class Overlay {
         <button class="btn" data-a="howto">플레이 방법</button>
         <button class="btn" data-a="settings">설정</button>
       </div>
-      <div class="title-meta">${meta.runs ? `도전 ${meta.runs}회 · 완주 ${meta.wins || 0}회` : '첫 번째 밤'}</div>
-      <div class="title-foot">Phase 1 프로토타입 · 소리를 켜고 플레이하세요</div>
+      <div class="title-meta">${meta.runs ? `도전 ${meta.runs}회 · 완주 ${meta.wins || 0}회 · 최고 ${meta.best || 0}/${BATTLES.length}밤` : '첫 번째 도전'}</div>
+      <div class="title-meta">유물 도감 ${used}/${RELIC_IDS.length}</div>
+      <div class="title-foot">소리를 켜고 플레이하세요</div>
     `, 'title');
     p.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
@@ -81,19 +89,21 @@ export class Overlay {
     });
   }
 
-  showHowTo(back) {
-    const p = this.panel(`
-      <h2>플레이 방법</h2>
+  howToHtml() {
+    return `
       <div class="howto">
-        <div class="ht"><b>1. 돌리기</b><span>점괘 북 3개가 이번 턴의 공격이 된다. 이웃한 두 칸이 같으면 <em>연결 강화</em>, 셋이 같으면 <em>잭팟</em>.</span></div>
-        <div class="ht"><b>2. 도박</b><span>마음에 안 들면 다시 굴린다. 대가(흉조)는 버튼에 미리 보인다. 대신 <em>금빛 릴</em>이 늘어 공격이 강해진다.</span></div>
-        <div class="ht"><b>3. 조준</b><span>릴을 고르고 레인을 누른다(터치는 두 번). 미리보기 피해 = 실제 피해. <em>동결 후 절단 = 파쇄</em>처럼 순서가 중요!</span></div>
-        <div class="ht"><b>4. 받아치기</b><span>적 공격의 고리가 원에 닿는 순간:<br><em class="g">금빛</em> → 막기 (퍼펙트면 원하는 레인으로 되치기)<br><em class="r">붉은빛</em> → 회피 (적이 노출되어 다음 피해 ×2)</span></div>
-        <div class="ht"><b>적</b><span><em>우산 도깨비</em>: 체력이 가득하면 두 칸씩 뛴다 · <em>탈 방패병</em>: 정면 공격 무효, 측면/연쇄로 · <em>불씨 초롱</em>: 조준 후 발사, 동결로 끊기</span></div>
-        <div class="ht"><b>조작키</b><span>Space 돌리기·막기 / R 도박 / Q W E 릴 / 1 2 3 레인 / K 회피 / Enter 턴 종료</span></div>
-      </div>
-      <button class="btn btn-primary" data-a="back">확인</button>
-    `, 'howto-panel');
+        <div class="ht"><b>1. 레버</b><span>슬롯 옆 레버를 당기면 릴 3개가 이번 턴의 공격이 된다. 이웃한 두 칸이 같으면 <em>연결 강화</em>, 셋이 같으면 <em>잭팟</em>.</span></div>
+        <div class="ht"><b>2. 다시 굴리기</b><span>결과가 아쉬우면 공격 전에 다시 굴린다(턴마다 2번). <em class="r">대가</em>는 버튼에 미리 적혀 있고, <em>보상</em>으로 "금빛 강화" 릴이 1개 늘어난다.</span></div>
+        <div class="ht"><b>금빛 강화</b><span>그 릴의 공격이 피해 +1, 고유 능력 +1. 퍼펙트 막기·회피로 얻는 <em>불씨</em>도 다음 턴 금빛 릴이 된다.</span></div>
+        <div class="ht"><b>3. 조준</b><span>릴을 고르고 레인을 누른다(터치는 두 번). 미리보기 숫자 = 실제 피해. <em>동결 → 절단 = 파쇄</em>처럼 순서가 중요!</span></div>
+        <div class="ht"><b>4. 받아치기</b><span>적 공격의 고리가 원에 닿는 순간:<br><em class="g">금빛·주황</em> → 막기 (정확하면 원하는 레인으로 되치기)<br><em class="r">붉은빛</em> → 회피 (적이 노출되어 다음 피해 2배)</span></div>
+        <div class="ht"><b>적 정보</b><span>적을 <em>길게 누르면</em>(마우스는 우클릭) 행동과 공략법이 나온다. 화면 위 <em>?</em> 버튼에서도 볼 수 있다.</span></div>
+        <div class="ht"><b>조작키</b><span>Space 레버·막기 / R 다시 굴리기 / Q W E 릴 / 1 2 3 레인 / K 회피 / Enter 턴 종료 / H 길잡이</span></div>
+      </div>`;
+  }
+
+  showHowTo(back) {
+    const p = this.panel(`<h2>플레이 방법</h2>${this.howToHtml()}<button class="btn btn-primary" data-a="back">확인</button>`, 'howto-panel');
     p.addEventListener('click', (e) => {
       if (e.target.closest('[data-a="back"]')) {
         this.hooks.sound('ui');
@@ -102,21 +112,65 @@ export class Overlay {
     });
   }
 
-  showReward(ids, run, onPick) {
+  // 전투 중 길잡이: 예고 읽는 법 + 지금 전투의 적 + 내 유물
+  showGuide({ types, relics }) {
+    const legend = [
+      ['#d9e2ff', 'N칸 전진', '이번 차례에 그만큼 다가온다'],
+      ['#ffcc33', '공격 N', '금빛 고리 — 막기로 받고 되치기'],
+      ['#ff4d5e', '강타 준비 / 강타 N', '준비 다음 차례에 붉은 고리 — 회피'],
+      ['#ff9a3d', '조준 중 / 발사 N', '조준 다음 차례에 주황 고리 — 막기'],
+      ['#ffe08a', '사격 준비', '장로가 충전에 들어감 — 그동안 받는 피해 +2'],
+      ['#9fdcff', '얼음', '행동 불가 — 절단·파동으로 치면 파쇄'],
+    ];
+    const p = this.panel(`
+      <h2>길잡이</h2>
+      <div class="guide">
+        <h3>적 머리 위 예고 읽는 법</h3>
+        ${legend.map(([c, a, b]) => `<div class="gl"><b style="color:${c}">${a}</b><span>${b}</span></div>`).join('')}
+        <h3>이 전투의 적</h3>
+        ${types.map((t) => `<div class="ge"><b>${ENEMIES[t].name}</b><span>${ENEMIES[t].act}</span><span class="how">공략: ${ENEMIES[t].how}</span></div>`).join('')}
+        <h3>내 유물</h3>
+        ${relics.length ? relics.map((id) => `<div class="ge">${relicChip(id)}<span>${RELICS[id].desc}</span></div>`).join('') : '<div class="ge"><span>아직 없음</span></div>'}
+        <h3>기본 규칙</h3>
+        ${this.howToHtml()}
+      </div>
+      <button class="btn btn-primary" data-a="close">닫기</button>
+    `, 'guide-panel');
+    this.hooks.pause(true);
+    p.addEventListener('click', (e) => {
+      if (e.target.closest('[data-a="close"]')) {
+        this.hooks.sound('ui');
+        this.hooks.pause(false);
+        this.clear();
+      }
+    });
+  }
+
+  // 유물/보상 고르기(필수 선택). o: { kicker, title, req, ids, go, run, used }
+  showPick(o, onPick) {
     let picked = null;
+    const run = o.run;
+    const cards = o.ids.map((id) => {
+      const r = rewardInfo(id);
+      const isNew = r.relic && !o.used.includes(id);
+      return `<button class="rw-card ${r.relic ? 'is-relic' : ''}" data-id="${id}" style="--c:${r.relic ? r.color : '#d8a548'}">
+        <span class="rw-ic">${r.relic ? `<i class="relic-big">${r.glyph}</i>` : ''}</span>
+        <span class="rw-name">${r.name}${r.relic ? `<small>유물 · ${r.build}</small>` : '<small>보급품</small>'}${isNew ? '<em class="new">처음</em>' : ''}</span>
+        <span class="rw-desc">${r.desc}</span>
+      </button>`;
+    }).join('');
     const p = this.panel(`
       <div class="rw-head">
-        <div class="rw-night">${BATTLES[run.stage].name} 돌파</div>
-        <h2>보상을 하나 고르세요</h2>
-        <div class="rw-req">필수 선택 · 체력 ${run.hp}/${run.maxHp}</div>
+        <div class="rw-night">${o.kicker}</div>
+        <h2>${o.title}</h2>
+        <div class="rw-req">${o.req}</div>
       </div>
-      <div class="rw-cards">
-        ${ids.map((id) => `<button class="rw-card" data-id="${id}"><span class="rw-ic"></span><span class="rw-name">${REWARDS[id].name}</span><span class="rw-desc">${REWARDS[id].desc}</span></button>`).join('')}
-      </div>
-      <button class="btn btn-primary rw-go" disabled>다음 밤으로 — ${BATTLES[run.stage + 1].name}</button>
+      ${run.relics.length ? `<div class="rw-build"><span>지금 빌드</span>${run.relics.map((id) => relicChip(id)).join('')}</div>` : ''}
+      <div class="rw-cards">${cards}</div>
+      <button class="btn btn-primary rw-go" disabled>${o.go}</button>
     `, 'reward');
-    p.querySelectorAll('.rw-card').forEach((el) => {
-      $('.rw-ic', el).appendChild(iconCanvas(REWARDS[el.dataset.id].icon));
+    p.querySelectorAll('.rw-card:not(.is-relic)').forEach((el) => {
+      $('.rw-ic', el).appendChild(iconCanvas(rewardInfo(el.dataset.id).icon));
     });
     const go = $('.rw-go', p);
     p.addEventListener('click', (e) => {
@@ -135,11 +189,18 @@ export class Overlay {
     });
   }
 
-  showResult(win, run) {
+  showResult(win, run, meta) {
     const t = run.totals;
+    const used = meta.relicsUsed || [];
+    const unseen = RELIC_IDS.filter((id) => !used.includes(id));
+    const reached = win ? BATTLES.length : run.stage;
+    const hint = unseen.length
+      ? `<div class="rs-next"><b>다음엔 이런 빌드는 어때요?</b><div>${unseen.slice(0, 3).map((id) => relicChip(id, 'dim')).join('')}</div><span>아직 써보지 않은 유물 ${unseen.length}개</span></div>`
+      : '<div class="rs-next"><b>모든 유물을 써봤습니다!</b><span>이제 조합을 바꿔 더 빠르게 완주해 보세요.</span></div>';
     const p = this.panel(`
       <h2 class="${win ? 'win' : 'lose'}">${win ? '행렬을 막아냈다!' : '등불이 꺼졌다'}</h2>
-      <div class="rs-sub">${win ? '세 번의 밤을 모두 지켜냈습니다.' : `${BATTLES[run.stage].name}에서 쓰러졌습니다.`}</div>
+      <div class="rs-sub">${win ? `${BATTLES.length}번의 밤을 모두 지켜냈습니다.` : `${BATTLES[run.stage].night} — ${BATTLES[run.stage].name}에서 쓰러졌습니다. (${reached}/${BATTLES.length}밤 돌파)`}</div>
+      <div class="rs-build"><span>이번 빌드</span>${run.relics.length ? run.relics.map((id) => relicChip(id)).join('') : '없음'}</div>
       <div class="rs-grid">
         <div><b>${t.kills}</b><span>처치</span></div>
         <div><b>${t.perfect}</b><span>퍼펙트</span></div>
@@ -148,9 +209,10 @@ export class Overlay {
         <div><b>${t.shatters}</b><span>파쇄</span></div>
         <div><b>${t.turns}</b><span>턴</span></div>
       </div>
-      <div class="rs-picks">${run.picks.length ? '고른 보상: ' + run.picks.map((id) => REWARDS[id].name).join(' · ') : ''}</div>
+      <div class="rs-dex">유물 도감 ${used.length}/${RELIC_IDS.length} · 도전 ${meta.runs || 1}회 · 완주 ${meta.wins || 0}회</div>
+      ${hint}
       <div class="title-btns">
-        <button class="btn btn-primary" data-a="again">다시 도전</button>
+        <button class="btn btn-primary" data-a="again">다른 빌드로 다시 도전</button>
         <button class="btn" data-a="title">타이틀로</button>
       </div>
     `, 'result');
@@ -167,13 +229,12 @@ export class Overlay {
   openSettings(back) {
     const s = this.hooks.getSettings();
     const inBattle = !back;
-    const wasOpen = this.layer.innerHTML;
     const p = this.panel(`
       <h2>설정</h2>
       <label class="row">배경음악 <input type="range" min="0" max="1" step="0.05" data-k="bgm" value="${s.bgm}"></label>
       <label class="row">효과음 <input type="range" min="0" max="1" step="0.05" data-k="sfx" value="${s.sfx}"></label>
       <label class="row chk"><input type="checkbox" data-k="mute" ${s.mute ? 'checked' : ''}> 전체 음소거</label>
-      <label class="row chk"><input type="checkbox" data-k="shake" ${s.shake ? 'checked' : ''}> 화면 흔들림</label>
+      <label class="row chk"><input type="checkbox" data-k="shake" ${s.shake ? 'checked' : ''}> 화면 흔들림·진동</label>
       <label class="row chk"><input type="checkbox" data-k="flash" ${s.flash ? 'checked' : ''}> 강한 번쩍임</label>
       <label class="row chk"><input type="checkbox" data-k="assist" ${s.assist ? 'checked' : ''}> 타이밍 보조 (판정 넓게·예고 길게)</label>
       <div class="title-btns">
@@ -204,6 +265,5 @@ export class Overlay {
         this.hooks.title();
       }
     });
-    void wasOpen;
   }
 }

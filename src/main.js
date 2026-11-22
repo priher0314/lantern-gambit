@@ -1,4 +1,4 @@
-﻿import { Game } from './game.js';
+import { Game } from './game.js';
 import { Audio } from './audio/audio.js';
 import { Overlay } from './ui/overlay.js';
 import { loadStore } from './save.js';
@@ -70,7 +70,11 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   if (!paused) game.onPointerMove(e);
 });
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (!paused) game.onContext(e);
+});
+for (const t of ['pointerup', 'pointercancel', 'pointerleave']) canvas.addEventListener(t, () => game.onPointerUp());
 window.addEventListener('keydown', (e) => {
   if (!paused) game.onKey(e);
 });

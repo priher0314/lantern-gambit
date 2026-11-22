@@ -33,6 +33,8 @@ export class FX {
     this.bolts = [];
     this.texts = [];
     this.slashes = [];
+    this.impacts = [];
+    this.punch = 0;
     this.shakeAmp = 0;
     this.shakeT = 0;
     this.shakeDur = 1;
@@ -65,6 +67,17 @@ export class FX {
 
   hurt(a = 0.6) {
     this.vignette = Math.max(this.vignette, this.opts.flash ? a : a * 0.4);
+  }
+
+  // 타격 순간의 십자 섬광
+  impact(x, y, size = 40, color = '#ffffff') {
+    this.impacts.push({ x, y, size, color, life: 0.14, max: 0.14, rot: Math.random() * 0.8 });
+  }
+
+  // 전장이 순간적으로 살짝 확대되는 "펀치"
+  punchIn(v) {
+    if (!this.opts.shake) return;
+    this.punch = Math.max(this.punch, v);
   }
 
   particle(p) {
@@ -127,6 +140,9 @@ export class FX {
       this.ox = this.oy = 0;
     }
     this.flashA = Math.max(0, this.flashA - realDt * 2.8);
+    this.punch = Math.max(0, this.punch - realDt * 0.22 - this.punch * realDt * 9);
+    for (const im of this.impacts) im.life -= realDt;
+    this.impacts = this.impacts.filter((im) => im.life > 0);
     this.vignette = Math.max(0, this.vignette - realDt * 1.4);
 
     for (const p of this.parts) {
@@ -232,6 +248,29 @@ export class FX {
       ctx.globalCompositeOperation = 'source-over';
     }
     ctx.globalAlpha = 1;
+    // 타격 섬광
+    for (const im of this.impacts) {
+      const k = im.life / im.max;
+      ctx.save();
+      ctx.translate(im.x, im.y);
+      ctx.rotate(im.rot);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = Math.min(1, k * 1.5);
+      const s = im.size * (1.25 - k * 0.5);
+      for (let i = 0; i < 2; i++) {
+        ctx.rotate(Math.PI / 2 * i);
+        ctx.fillStyle = i ? im.color : '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(-s, 0);
+        ctx.quadraticCurveTo(0, -s * 0.16, s, 0);
+        ctx.quadraticCurveTo(0, s * 0.16, -s, 0);
+        ctx.fill();
+      }
+      ctx.drawImage(glowSprite(im.color), -s * 0.7, -s * 0.7, s * 1.4, s * 1.4);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
     // 번개
     for (const b of this.bolts) {
       const k = b.life / b.max;
@@ -294,6 +333,7 @@ export class FX {
     this.bolts.length = 0;
     this.texts.length = 0;
     this.slashes.length = 0;
+    this.impacts.length = 0;
   }
 }
 
