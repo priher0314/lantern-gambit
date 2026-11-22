@@ -1,5 +1,5 @@
 // HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
-import { BATTLES, SYMBOLS, ENEMIES, RELICS, RELIC_IDS } from '../core/data.js';
+import { BATTLES, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS } from '../core/data.js';
 import { rewardInfo } from '../core/run.js';
 import { drawSymbol, drawIcon, drawRelicIcon } from '../render/art.js';
 
@@ -155,6 +155,8 @@ export class Overlay {
         ${legend.map(([c, a, b]) => `<div class="gl"><b style="color:${c}">${a}</b><span>${b}</span></div>`).join('')}
         <h3>이 전투의 적</h3>
         ${types.map((t) => `<div class="ge"><b>${ENEMIES[t].name}</b><span>${ENEMIES[t].act}</span><span class="how">공략: ${ENEMIES[t].how}</span></div>`).join('')}
+        <h3>원소 반응 (순서가 중요)</h3>
+        ${REACTIONS.map(([a, n, d]) => `<div class="gl"><b style="color:#8fffe2">${a}</b><span><em>${n}</em> — ${d}</span></div>`).join('')}
         <h3>내 유물</h3>
         ${relics.length ? relics.map((id) => `<div class="ge">${relicChip(id)}<span>${RELICS[id].desc}</span></div>`).join('') : '<div class="ge"><span>아직 없음</span></div>'}
         <h3>기본 규칙</h3>
@@ -178,10 +180,10 @@ export class Overlay {
     const run = o.run;
     const cards = o.ids.map((id) => {
       const r = rewardInfo(id);
-      const isNew = r.relic && !o.used.includes(id);
+      const isNew = r.relic && !r.upgrade && !o.used.includes(id);
       return `<button class="rw-card ${r.relic ? 'is-relic' : ''}" data-id="${id}" style="--c:${r.relic ? r.color : '#d8a548'}">
-        <span class="rw-ic">${r.relic ? `<canvas class="relic-cv" data-relic="${id}" data-size="56"></canvas>` : ''}</span>
-        <span class="rw-name">${r.name}${r.relic ? `<small>유물 · ${r.build}</small>` : '<small>보급품</small>'}${isNew ? '<em class="new">처음</em>' : ''}</span>
+        <span class="rw-ic">${r.relic ? `<canvas class="relic-cv" data-relic="${r.relicId}" data-size="56"></canvas>` : ''}</span>
+        <span class="rw-name">${r.name}${r.upgrade ? '<small>가진 유물 강화</small>' : r.relic ? `<small>유물 · ${r.build}</small>` : '<small>보급품</small>'}${isNew ? '<em class="new">처음</em>' : ''}</span>
         <span class="rw-desc">${r.desc}</span>
       </button>`;
     }).join('');
@@ -231,10 +233,11 @@ export class Overlay {
         <div><b>${t.kills}</b><span>처치</span></div>
         <div><b>${t.perfect}</b><span>퍼펙트</span></div>
         <div><b>${t.counters}</b><span>되치기</span></div>
-        <div><b>${t.jackpots}</b><span>잭팟</span></div>
+        <div><b>${t.jackpots + t.bingos}</b><span>잭팟·빙고</span></div>
         <div><b>${t.shatters}</b><span>파쇄</span></div>
         <div><b>${t.turns}</b><span>턴</span></div>
       </div>
+      <div class="rs-score"><b>${t.score.toLocaleString()}</b>점 ${t.score >= (meta.bestScore || 0) ? '<em>최고 기록!</em>' : `<span>최고 ${(meta.bestScore || 0).toLocaleString()}</span>`}</div>
       <div class="rs-dex">유물 도감 ${used.length}/${RELIC_IDS.length} · 도전 ${meta.runs || 1}회 · 완주 ${meta.wins || 0}회</div>
       ${hint}
       <div class="title-btns">

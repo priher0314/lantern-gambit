@@ -221,6 +221,11 @@ body { display: flex; align-items: center; justify-content: center; }
 .rw-build, .rs-build { margin: 0 0 10px; text-align: left; line-height: 1.9; }
 .rw-build > span, .rs-build > span { margin-right: 8px; color: var(--gold); font-size: 0.85em; }
 .rs-build { text-align: center; }
+.rs-score { margin: 6px 0 2px; font-size: 1.05em; }
+.rs-score b { font-family: "Black Han Sans", sans-serif; font-weight: normal; font-size: 1.9em; color: var(--gold-hi); }
+.rs-score em { margin-left: 8px; font-style: normal; color: #ff8a7a; }
+.rs-score span { margin-left: 8px; opacity: 0.6; font-size: 0.85em; }
+.gl em { font-style: normal; color: #ffe08a; }
 .rs-dex { margin-top: 4px; color: var(--gold); font-size: 0.88em; }
 .rs-next { margin: 10px 0 4px; padding: 10px; border-radius: 12px; border: 1px dashed rgba(216, 165, 72, 0.5); background: rgba(0, 0, 0, 0.25); }
 .rs-next b { display: block; margin-bottom: 4px; font-weight: normal; font-family: "Black Han Sans", sans-serif; color: var(--gold-hi); }

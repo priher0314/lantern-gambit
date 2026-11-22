@@ -7,12 +7,13 @@ export function createRun(seed) {
     seed: seed >>> 0 || 1,
     rng: seed >>> 0 || 1,
     stage: 0,
-    hp: 16,
-    maxHp: 16,
+    hp: 15,
+    maxHp: 15,
     strips: [],
     relics: [],
+    relicLv: {},
     picks: [],
-    totals: { kills: 0, perfect: 0, counters: 0, jackpots: 0, shatters: 0, dmgDealt: 0, turns: 0 },
+    totals: { kills: 0, perfect: 0, counters: 0, jackpots: 0, bingos: 0, shatters: 0, dmgDealt: 0, turns: 0, score: 0 },
   };
   run.strips = [0, 1, 2].map(() => makeStrip(run));
   return run;
@@ -40,6 +41,7 @@ export function battleOptions(run) {
     maxHp: run.maxHp,
     strips: run.strips,
     relics: run.relics,
+    relicLv: run.relicLv,
   };
 }
 
@@ -54,6 +56,9 @@ export function recordBattle(run, st) {
   t.shatters += st.stats.shatters;
   t.dmgDealt += st.stats.dmgDealt;
   t.turns += st.stats.turns;
+  t.bingos += st.stats.bingos || 0;
+  // 점수: 피해·연속 처치·빙고(전투 중 누적) + 퍼펙트·되치기 + 남은 체력(승리 시)
+  t.score += st.score + st.stats.perfect * 100 + st.stats.counters * 60 + (st.result === 'win' ? st.player.hp * 20 : 0);
 }
 
 function pickSome(run, pool, n) {
@@ -65,7 +70,11 @@ function pickSome(run, pool, n) {
 
 // 보상 정보(유물이든 일반 보상이든 같은 모양으로)
 export function rewardInfo(id) {
-  if (RELICS[id]) return { id, relic: true, ...RELICS[id] };
+  if (id.startsWith('up:')) {
+    const r = RELICS[id.slice(3)];
+    return { id, relic: true, upgrade: true, relicId: id.slice(3), ...r, name: r.name + ' II', desc: '강화: ' + r.up };
+  }
+  if (RELICS[id]) return { id, relic: true, relicId: id, ...RELICS[id] };
   return { id, relic: false, ...REWARDS[id] };
 }
 
@@ -78,10 +87,19 @@ export function rollStartRelics(run) {
 export function rollRewards(run) {
   const relics = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id)), 2);
   const utils = Object.keys(REWARDS).filter((k) => !(k === 'heal' && run.hp >= run.maxHp));
-  return [...relics, ...pickSome(run, utils, 3 - relics.length)];
+  const out = [...relics, ...pickSome(run, utils, 3 - relics.length)];
+  // 가진 유물이 있으면 60% 확률로 마지막 칸이 "유물 강화(II)"가 된다
+  const upgradable = run.relics.filter((id) => (run.relicLv[id] || 1) < 2);
+  if (upgradable.length && randInt(run, 10) < 6) out[out.length - 1] = 'up:' + upgradable[randInt(run, upgradable.length)];
+  return out;
 }
 
 export function applyReward(run, id) {
+  if (id.startsWith('up:')) {
+    run.relicLv[id.slice(3)] = 2;
+    run.picks.push(id);
+    return;
+  }
   if (RELICS[id]) {
     if (!run.relics.includes(id)) run.relics.push(id);
     run.picks.push(id);

@@ -1323,6 +1323,117 @@ export function drawRelicIcon(ctx, id, x, y, r) {
       ctx.fillRect(-r * 0.35, r * 0.42, r * 1.05, r * 0.14);
       break;
     }
+    case 'venomFang': { // 독니
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.6, -r * 0.8);
+      ctx.quadraticCurveTo(r * 0.5, -r * 0.6, r * 0.1, r * 0.95);
+      ctx.quadraticCurveTo(-r * 0.1, -r * 0.1, -r * 0.6, -r * 0.8);
+      ctx.fillStyle = '#f6f0e4';
+      ctx.fill();
+      ink2(r * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(r * 0.5, r * 0.1);
+      ctx.bezierCurveTo(r * 0.9, r * 0.5, r * 0.8, r * 0.95, r * 0.5, r * 0.95);
+      ctx.bezierCurveTo(r * 0.2, r * 0.95, r * 0.1, r * 0.5, r * 0.5, r * 0.1);
+      ctx.fillStyle = '#8fd63a';
+      ctx.fill();
+      ink2(r * 0.09);
+      break;
+    }
+    case 'stormRune': { // 구름 + 번개
+      ctx.beginPath();
+      ctx.arc(-r * 0.4, -r * 0.2, r * 0.42, 0, TAU);
+      ctx.arc(r * 0.1, -r * 0.45, r * 0.5, 0, TAU);
+      ctx.arc(r * 0.5, -r * 0.1, r * 0.38, 0, TAU);
+      ctx.fillStyle = '#8a7ad0';
+      ctx.fill();
+      ink2(r * 0.1);
+      ctx.fillStyle = '#8a7ad0';
+      ctx.fillRect(-r * 0.5, -r * 0.35, r * 1.0, r * 0.4);
+      ctx.beginPath();
+      ctx.moveTo(r * 0.15, r * 0.05);
+      ctx.lineTo(-r * 0.3, r * 0.55);
+      ctx.lineTo(0, r * 0.55);
+      ctx.lineTo(-r * 0.18, r * 1.0);
+      ctx.lineTo(r * 0.38, r * 0.4);
+      ctx.lineTo(r * 0.08, r * 0.4);
+      ctx.closePath();
+      ctx.fillStyle = '#ffe45c';
+      ctx.fill();
+      ink2(r * 0.08);
+      break;
+    }
+    case 'bingoBell': { // 금방울 + 별
+      ctx.beginPath();
+      ctx.arc(0, r * 0.1, r * 0.75, 0, TAU);
+      const g = ctx.createLinearGradient(0, -r, 0, r);
+      g.addColorStop(0, '#fff0b0');
+      g.addColorStop(1, '#c8861e');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ink2(r * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.5, r * 0.25);
+      ctx.lineTo(r * 0.5, r * 0.25);
+      ctx.moveTo(0, r * 0.25);
+      ctx.lineTo(0, r * 0.7);
+      ctx.lineWidth = r * 0.1;
+      ctx.strokeStyle = INK;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, -r * 0.82, r * 0.18, 0, TAU);
+      ctx.fillStyle = '#e2453c';
+      ctx.fill();
+      ink2(r * 0.07);
+      break;
+    }
+    case 'iceMirror': { // 얼음 거울
+      ctx.beginPath();
+      ctx.moveTo(0, -r);
+      ctx.lineTo(r * 0.75, -r * 0.35);
+      ctx.lineTo(r * 0.6, r * 0.7);
+      ctx.lineTo(0, r);
+      ctx.lineTo(-r * 0.6, r * 0.7);
+      ctx.lineTo(-r * 0.75, -r * 0.35);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(-r, -r, r, r);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(1, '#6ab8f0');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ink2(r * 0.12);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = r * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.3, -r * 0.4);
+      ctx.lineTo(r * 0.1, -r * 0.7);
+      ctx.moveTo(-r * 0.35, 0);
+      ctx.lineTo(r * 0.35, -r * 0.5);
+      ctx.stroke();
+      break;
+    }
+    case 'comboFlute': { // 피리 + 음표
+      ctx.save();
+      ctx.rotate(-0.6);
+      ctx.beginPath();
+      ctx.roundRect(-r * 0.95, -r * 0.16, r * 1.9, r * 0.32, r * 0.14);
+      ctx.fillStyle = '#c9a46a';
+      ctx.fill();
+      ink2(r * 0.1);
+      ctx.fillStyle = INK;
+      for (const hx of [-0.4, -0.05, 0.3, 0.62]) {
+        ctx.beginPath();
+        ctx.arc(hx * r, 0, r * 0.07, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+      ctx.fillStyle = '#ff9ac0';
+      ctx.beginPath();
+      ctx.ellipse(r * 0.45, r * 0.6, r * 0.2, r * 0.15, -0.4, 0, TAU);
+      ctx.fill();
+      ctx.fillRect(r * 0.58, r * 0.05, r * 0.08, r * 0.55);
+      break;
+    }
     case 'oilFlask': { // 호리병
       ctx.beginPath();
       ctx.moveTo(-r * 0.2, -r * 0.95);
@@ -1343,5 +1454,101 @@ export function drawRelicIcon(ctx, id, x, y, r) {
       break;
     }
   }
+  ctx.restore();
+}
+
+// ───── 북 도깨비 (지그재그 이동형) ─────
+// a: { t, flash, frozen, close(0~1 북채 들어올림), lean, squash, hop, fury, exposed, poison }
+export function drawDrum(ctx, x, y, k, a) {
+  const T = tinter(a);
+  const t = a.t || 0;
+  ctx.save();
+  ctx.translate(x, y);
+  shadow(ctx, 26 * k);
+  const hop = a.frozen ? 0 : Math.abs(Math.sin(t * 6)) * 5 * k;
+  ctx.translate(0, -hop - (a.hop || 0));
+  const sq = a.squash || 0;
+  ctx.scale(1 + sq * 0.16, 1 - sq * 0.16);
+  ctx.rotate((a.lean || 0) + (a.frozen ? 0 : Math.sin(t * 3) * 0.06));
+  const close = a.close || 0;
+  // 다리
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.roundRect(s * 11 * k - 5 * k, -16 * k, 10 * k, 16 * k, 4 * k);
+    fillInk(ctx, T('#2a1a3a'), 2.4 * k);
+  }
+  // 북채 든 팔
+  const wig = a.frozen ? 0 : Math.sin(t * 9) * 0.35;
+  for (const s of [-1, 1]) {
+    ctx.save();
+    ctx.translate(s * 28 * k, -44 * k);
+    ctx.rotate(s * (0.9 - close * 1.5) + (s > 0 ? wig : -wig) * (1 - close));
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -26 * k);
+    ink(ctx, 6 * k);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -26 * k);
+    ctx.lineWidth = 3 * k;
+    ctx.strokeStyle = T('#c78a52');
+    ctx.stroke();
+    ellipse(ctx, 0, -28 * k, 5.5 * k, 5.5 * k);
+    fillInk(ctx, T('#f3e6c8'), 2 * k);
+    ctx.restore();
+  }
+  // 북 몸통(나무 테)
+  ellipse(ctx, 0, -42 * k, 31 * k, 29 * k);
+  fillInk(ctx, T(a.fury ? '#c0281e' : '#9a3a2a'), 3.2 * k);
+  // 금장 못
+  ctx.fillStyle = T('#e8c070');
+  for (let i = 0; i < 10; i++) {
+    const an = (i / 10) * TAU;
+    ctx.beginPath();
+    ctx.arc(Math.cos(an) * 27 * k, -42 * k + Math.sin(an) * 25 * k, 2 * k, 0, TAU);
+    ctx.fill();
+  }
+  // 북 가죽(얼굴)
+  ellipse(ctx, 0, -42 * k, 22.5 * k, 20.5 * k);
+  fillInk(ctx, T('#f6ead0'), 2.4 * k);
+  // 뿔
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(s * 12 * k, -67 * k);
+    ctx.lineTo(s * 20 * k, -82 * k);
+    ctx.lineTo(s * 23 * k, -64 * k);
+    ctx.closePath();
+    fillInk(ctx, T('#ffd27a'), 2.2 * k);
+  }
+  // 눈
+  const angry = close > 0.2 || a.fury;
+  for (const s of [-1, 1]) {
+    ellipse(ctx, s * 9 * k, -46 * k, 5 * k, 6 * k);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ink(ctx, 1.8 * k);
+    ellipse(ctx, s * 9 * k, -45 * k, 2.4 * k, 3 * k);
+    ctx.fillStyle = a.exposed ? '#a55cff' : INK;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(s * 3 * k, angry ? -51 * k : -54 * k);
+    ctx.lineTo(s * 15 * k, angry ? -56 * k : -54 * k);
+    ink(ctx, 2.6 * k);
+  }
+  // 입
+  ctx.beginPath();
+  ctx.moveTo(-11 * k, -35 * k);
+  ctx.quadraticCurveTo(0, -24 * k, 11 * k, -35 * k);
+  ctx.closePath();
+  fillInk(ctx, '#3a0d18', 2 * k);
+  ctx.fillStyle = '#fff6e6';
+  for (const tx of [-7, 7]) {
+    ctx.beginPath();
+    ctx.moveTo((tx - 2.5) * k, -35 * k);
+    ctx.lineTo(tx * k, -29 * k);
+    ctx.lineTo((tx + 2.5) * k, -35 * k);
+    ctx.fill();
+  }
+  if (a.frozen) frostOverlay(ctx, k, 62 * k);
   ctx.restore();
 }

@@ -160,7 +160,19 @@ export class Audio {
     this.tone({ type: 'sawtooth', f: 60, f2: 240, t: 0.1, dur: 0.28, vol: 0.09, filter: { f: 900 } }); // 스프링
     this.noise({ t: 0.16, dur: 0.05, vol: 0.3, f: 2600, q: 2 });
   }
-  s_bingo() {
+  s_cutin({ big = false } = {}) {
+    this.noise({ dur: 0.35, vol: 0.3, type: 'bandpass', f: 400, f2: 3200, q: 1.2 });
+    this.tone({ type: 'sawtooth', f: big ? 80 : 120, f2: big ? 320 : 360, dur: 0.4, vol: 0.12, filter: { f: 1400 } });
+    if (big) this.gong(0.25, 0.4);
+  }
+  s_combo({ n = 2 } = {}) {
+    const base = 660 * 2 ** ((Math.min(8, n) - 2) * 2 / 12);
+    [0, 4, 7].forEach((s, k) => this.tone({ type: 'triangle', f: base * 2 ** (s / 12), t: k * 0.045, dur: 0.3, vol: 0.13 }));
+    this.taiko(0, 0.35);
+  }
+  s_bingo({ level = 1 } = {}) {
+    if (level >= 2) [0, 5, 9, 12, 17, 21, 24, 29].forEach((n, k) => this.tone({ type: 'square', f: 392 * 2 ** (n / 12), t: 0.3 + k * 0.06, dur: 0.25, vol: 0.05, filter: { f: 2600 } }));
+    if (level >= 3) { this.gong(0.5, 0.5); this.taiko(0.2, 0.5); this.taiko(0.45, 0.5); this.taiko(0.7, 0.6); }
     [0, 4, 7, 12, 16, 19, 24].forEach((n, k) => this.tone({ type: 'triangle', f: 523 * 2 ** (n / 12), t: k * 0.05, dur: 0.5, vol: 0.14 }));
     [0, 7, 12].forEach((n, k) => this.tone({ type: 'square', f: 1046 * 2 ** (n / 12), t: 0.35 + k * 0.07, dur: 0.18, vol: 0.05, filter: { f: 3000 } }));
     this.gong(0, 0.3);

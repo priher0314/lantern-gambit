@@ -93,22 +93,27 @@ export function shotDesc(symbol, tier, gild = 0) {
 
 export const ENEMIES = {
   kasa: {
-    name: '우산 도깨비', hp: 6, atk: 3, reach: 4,
+    name: '우산 도깨비', hp: 8, atk: 3, reach: 4,
     act: '체력이 가득하면 2칸씩 뛴다.',
     how: '한 대만 쳐도 느려진다. 공격은 [막기].',
   },
   mask: {
-    name: '탈 방패병', hp: 10, atk: 5, shield: true, shieldHp: 2,
+    name: '탈 방패병', hp: 12, atk: 5, shield: true, shieldHp: 2,
     act: '탈 방패가 정면 공격을 2번 막는다.',
     how: '두 번 치면 탈이 깨진다. 옆 파동·전격 연쇄·중독은 바로 통한다.',
   },
+  drum: {
+    name: '북 도깨비', hp: 7, atk: 3, reach: 4,
+    act: '지그재그로 레인을 바꾸며 다가온다.',
+    how: '머리 위 예고의 화살표가 다음 레인. 그 레인을 미리 노려라.',
+  },
   archer: {
-    name: '불씨 초롱', hp: 5, atk: 3, post: 1,
+    name: '불씨 초롱', hp: 6, atk: 3, post: 1,
     act: '한 턴 조준한 뒤 불씨를 쏜다.',
     how: '얼리면 조준이 풀린다. 불씨는 [막기].',
   },
   elder: {
-    name: '등롱 장로', hp: 50, atk: 3, boss: true,
+    name: '등롱 장로', hp: 64, atk: 3, boss: true,
     act: '소환 → 이동 → 충전 → 연속 발사를 반복.',
     how: '충전 중엔 받는 피해 +2. 발사는 한 발씩 [막기].',
   },
@@ -128,8 +133,9 @@ export const BATTLES = [
     intro: '행렬의 선두가 다리에 올랐다. 모두 쓰러뜨려라.',
     waves: [
       { at: 1, units: [['kasa', 0, 2], ['kasa', 2, 1], ['kasa', 1, 0]] },
-      { at: 3, units: [['kasa', 1, 0], ['archer', 2, 0], ['kasa', 0, 0]] },
-      { at: 5, units: [['kasa', 0, 0], ['archer', 1, 0], ['kasa', 2, 1], ['kasa', 2, 0]] },
+      { at: 2, units: [['drum', 0, 0], ['archer', 2, 0]] },
+      { at: 4, units: [['kasa', 1, 0], ['drum', 2, 0], ['kasa', 0, 0]] },
+      { at: 6, units: [['archer', 1, 0], ['kasa', 2, 1], ['kasa', 0, 0], ['drum', 1, 1]] },
     ],
   },
   {
@@ -138,12 +144,12 @@ export const BATTLES = [
     pullWaves: false,
     intro: '끝없는 탈춤 행렬. 7턴 동안 쓰러지지 마라.',
     waves: [
-      { at: 1, units: [['mask', 1, 3], ['kasa', 0, 1], ['kasa', 2, 1]] },
+      { at: 1, units: [['mask', 1, 3], ['kasa', 0, 2], ['kasa', 2, 2], ['drum', 1, 0]] },
       { at: 2, units: [['kasa', 2, 0], ['archer', 0, 0], ['kasa', 1, 0]] },
-      { at: 3, units: [['kasa', 1, 0], ['kasa', 0, 0]] },
+      { at: 3, units: [['drum', 1, 0], ['kasa', 0, 0], ['archer', 2, 0]] },
       { at: 4, units: [['mask', 2, 0], ['kasa', 1, 0], ['archer', 0, 0]] },
-      { at: 5, units: [['kasa', 0, 0], ['archer', 1, 0], ['kasa', 2, 0]] },
-      { at: 6, units: [['mask', 0, 0], ['kasa', 1, 0], ['kasa', 2, 0]] },
+      { at: 5, units: [['kasa', 0, 0], ['drum', 1, 0], ['kasa', 2, 0]] },
+      { at: 6, units: [['mask', 0, 0], ['kasa', 1, 0], ['kasa', 2, 0], ['archer', 1, 1]] },
     ],
   },
   {
@@ -151,22 +157,23 @@ export const BATTLES = [
     objective: { type: 'annihilate' },
     intro: '불씨 초롱 떼가 탈 방패병 뒤에 숨어 쏜다. 모두 쓰러뜨려라.',
     waves: [
-      { at: 1, units: [['mask', 0, 2], ['archer', 0, 0], ['kasa', 2, 3], ['archer', 2, 0], ['kasa', 1, 1]] },
-      { at: 3, units: [['archer', 1, 0], ['kasa', 0, 0], ['kasa', 2, 0]] },
-      { at: 5, units: [['mask', 1, 1], ['archer', 0, 0], ['archer', 2, 0], ['kasa', 1, 0]] },
+      { at: 1, units: [['mask', 0, 2], ['archer', 0, 0], ['drum', 2, 2], ['archer', 2, 0], ['kasa', 1, 1]] },
+      { at: 3, units: [['archer', 1, 0], ['kasa', 0, 0], ['drum', 2, 0], ['mask', 1, 1]] },
+      { at: 5, units: [['mask', 1, 1], ['archer', 0, 0], ['archer', 2, 0], ['kasa', 1, 0], ['drum', 0, 1]] },
     ],
   },
   {
     id: 'b4', name: '북소리 고개', night: '넷째 밤',
-    objective: { type: 'survive', turns: 6 },
+    objective: { type: 'survive', turns: 7 },
     pullWaves: false,
-    intro: '행렬 본대가 한꺼번에 밀려온다. 6턴만 버텨라.',
+    intro: '행렬 본대가 한꺼번에 밀려온다. 7턴만 버텨라.',
     waves: [
-      { at: 1, units: [['kasa', 0, 2], ['kasa', 1, 2], ['kasa', 2, 2], ['mask', 1, 0]] },
-      { at: 2, units: [['archer', 0, 0], ['archer', 2, 0], ['kasa', 1, 0]] },
+      { at: 1, units: [['drum', 0, 2], ['kasa', 1, 3], ['drum', 2, 2], ['mask', 1, 1], ['archer', 0, 0]] },
+      { at: 2, units: [['archer', 2, 0], ['kasa', 1, 0], ['drum', 0, 0]] },
       { at: 3, units: [['mask', 0, 0], ['mask', 2, 0], ['kasa', 1, 0]] },
-      { at: 4, units: [['kasa', 0, 0], ['kasa', 1, 0], ['kasa', 2, 0], ['archer', 1, 0]] },
-      { at: 5, units: [['kasa', 0, 0], ['mask', 1, 0], ['kasa', 2, 0], ['archer', 0, 0]] },
+      { at: 4, units: [['drum', 0, 0], ['kasa', 1, 0], ['kasa', 2, 0], ['archer', 1, 1]] },
+      { at: 5, units: [['kasa', 0, 0], ['mask', 1, 0], ['drum', 2, 0], ['archer', 0, 1]] },
+      { at: 6, units: [['kasa', 0, 0], ['kasa', 1, 0], ['kasa', 2, 0], ['drum', 1, 1]] },
     ],
   },
   {
@@ -175,9 +182,11 @@ export const BATTLES = [
     pullWaves: false,
     intro: '행렬을 이끄는 등롱 장로가 나타났다. 장로를 꺼뜨려라.',
     waves: [
-      { at: 1, units: [['elder', 1, 0], ['kasa', 0, 2], ['mask', 1, 3], ['kasa', 2, 1]] },
-      { at: 3, units: [['archer', 2, 0], ['kasa', 0, 0]] },
-      { at: 6, units: [['mask', 2, 0], ['archer', 0, 0]] },
+      { at: 1, units: [['elder', 1, 0], ['kasa', 0, 2], ['mask', 1, 3], ['drum', 2, 1]] },
+      { at: 3, units: [['archer', 2, 0], ['kasa', 0, 0], ['drum', 1, 1]] },
+      { at: 5, units: [['mask', 2, 0], ['archer', 0, 0]] },
+      { at: 7, units: [['drum', 0, 0], ['kasa', 2, 0], ['archer', 1, 1]] },
+      { at: 9, units: [['mask', 0, 0], ['drum', 2, 0], ['kasa', 1, 1]] },
     ],
   },
 ];
@@ -210,4 +219,28 @@ export const RELICS = {
   shadowShoes: { name: '그림자 신', color: '#8fe8ff', build: '회피', proc: '회피 → 반격', desc: '회피가 쉬워진다 · 회피하면 그 적에게 2 피해' },
   oilFlask: { name: '등잔 기름병', color: '#ff9a5a', build: '방어막', proc: '방어막 사용 → 회복', desc: '방어막 기술을 쓸 때 체력 +1 · 방어막 최대 +2' },
 };
+Object.assign(RELICS, {
+  venomFang: { name: '독니', color: '#a6f04a', build: '중독', proc: '중독된 적 처치 → 전염', desc: '중독 +2 · 중독된 적이 죽으면 주변에 중독 2' },
+  stormRune: { name: '뇌운 부적', color: '#b77cff', build: '전격·반응', proc: '', desc: '전격 연쇄 +1 · 감전 폭발 피해 +2' },
+  bingoBell: { name: '빙고 방울', color: '#ffe08a', build: '빙고', proc: '빙고 → 방어막·금빛', desc: '빙고·잭팟이 뜨면 방어막 +2, 다음 턴 금빛 +1' },
+  iceMirror: { name: '얼음 거울', color: '#bfe6ff', build: '동결', proc: '', desc: '동결 +1턴 · 얼어붙은 적이 받는 피해 +1' },
+  comboFlute: { name: '신명 피리', color: '#ff9ac0', build: '연속 처치', proc: '연속 처치 → 회복', desc: '한 턴에 2번째 처치부터 처치마다 체력 +1' },
+});
+// 유물 강화(II 단계) 설명
+const RELIC_UP = {
+  frostbite: '주변 동결이 2턴으로', thunderDrum: '번개 피해 2 → 4', counterMirror: '되치기 +4 · 방어막 +2',
+  gamblerCoin: '다시 굴리기 +2회 · 방어막 +2', emberWick: '금빛 릴 2개로 시작 · 금빛 피해 +2', tideBell: '파동 옆 피해 +2',
+  whetstone: '절단 관통 +2 · 방어막 +2', shadowShoes: '회피 반격 2 → 4', oilFlask: '체력 +2 · 방어막 최대 +4',
+  venomFang: '중독 +4 · 전염 4', stormRune: '연쇄 +2 · 폭발 +4', bingoBell: '방어막 +4',
+  iceMirror: '동결 +2턴 · 피해 +2', comboFlute: '처치마다 체력 +2',
+};
+for (const k in RELIC_UP) RELICS[k].up = RELIC_UP[k];
 export const RELIC_IDS = Object.keys(RELICS);
+
+// 원소 반응(길잡이 표시용)
+export const REACTIONS = [
+  ['동결 → 절단·파동', '파쇄', '+3 피해, 주변에 얼음 파편'],
+  ['중독 → 전격', '감전 폭발', '중독 수치만큼 추가 피해가 주변까지 터진다'],
+  ['동결 → 전격', '초전도', '+1 피해, 연쇄 +1'],
+  ['중독 → 파동', '독 확산', '파동에 휩쓸린 적에게 중독이 번진다'],
+];

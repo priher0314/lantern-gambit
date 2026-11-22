@@ -12,7 +12,11 @@ import { WINDUP } from './timing.js';
 
 const clone = (o) => structuredClone(o);
 export const has = (st, id) => st.relics.includes(id);
-export const guardCap = (st) => GUARD_CAP + (has(st, 'oilFlask') ? 2 : 0);
+// 유물 단계(없으면 0, 기본 1, 강화 2)
+export const lv = (st, id) => (st.relics.includes(id) ? st.relicLv[id] || 1 : 0);
+export const guardCap = (st) => GUARD_CAP + 2 * lv(st, 'oilFlask');
+const NEIGHBORS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+const around = (st, e) => NEIGHBORS.map(([dl, dr]) => enemyAt(st, e.lane + dl, e.row + dr)).filter(Boolean);
 let shotPower = 1; // 방패를 깎는 힘(연결·빙고·잭팟 기술은 2)
 function relicEvent(st, events, relic, extra = {}) {
   events.push({ type: 'relic', relic, ...extra });
@@ -30,7 +34,7 @@ function addGuard(st, n, events, relic) {
 
 function applyFreeze(st, e, turns, events) {
   const sp = ENEMIES[e.type];
-  const f = sp.boss ? 1 : turns;
+  const f = sp.boss ? 1 : turns + lv(st, 'iceMirror');
   e.frozen = Math.max(e.frozen, f);
   events.push({ type: 'freeze', id: e.id, turns: e.frozen });
   if (e.charge || e.braced) {
@@ -51,10 +55,14 @@ export function createBattle(def, opt) {
     turn: 0,
     phase: 'spin', // spin | aim | enemy | over
     relics: (opt.relics || []).slice(),
+    relicLv: { ...(opt.relicLv || {}) },
+    score: 0,
+    turnKills: 0,
+    bingoLevel: 0,
     player: {
       hp: opt.hp, maxHp: opt.maxHp,
       guard: Math.min(GUARD_CAP, opt.guard || 0),
-      embers: Math.min(EMBER_CAP, (opt.embers || 0) + ((opt.relics || []).includes('emberWick') ? 1 : 0)),
+      embers: Math.min(EMBER_CAP, (opt.embers || 0) + ((opt.relics || []).includes('emberWick') ? (opt.relicLv || {}).emberWick || 1 : 0)),
     },
     strips: opt.strips.map((s) => s.slice()),
     reels: [],
@@ -124,8 +132,9 @@ function spawnEnemy(st, type, lane, row, events, src = 'wave') {
     hp: sp.hp, maxHp: sp.hp, alive: true,
     frozen: 0, exposed: false, braced: false, charge: false,
     fury: 0, step: 0, vulnerable: false, shieldBroken: false, phase2: false,
-    shieldHp: sp.shieldHp || 0, poison: 0,
+    shieldHp: sp.shieldHp || 0, poison: 0, dir: 1,
   };
+  e.dir = cell.lane === 0 ? 1 : cell.lane === LANES - 1 ? -1 : e.id % 2 ? 1 : -1;
   st.enemies.push(e);
   if (src !== 'wave') st.totalEnemies++;
   events.push({ type: 'spawn', id: e.id, enemy: clone(e), src });
@@ -157,7 +166,8 @@ function startTurn(st, events) {
     if (nxt) spawnWave(st, nxt, events);
   }
   st.phase = 'spin';
-  st.rerollsLeft = REROLLS_PER_TURN + (has(st, 'gamblerCoin') ? 1 : 0);
+  st.rerollsLeft = REROLLS_PER_TURN + lv(st, 'gamblerCoin');
+  st.turnKills = 0;
   st.rerollCount = 0;
   st.turnGild = 0;
   st.shots = [];
@@ -230,11 +240,20 @@ function rollReels(st, gildCount, events) {
   if (top === 3) st.stats.jackpots++;
   else if (top === 2) st.stats.pairs++;
   st.bingos = evaluateLines(st.grid);
+  // 1줄 = 빙고(연결급), 2줄 = 더블 빙고(잭팟급), 3줄 이상 = 트리플 빙고(금빛 잭팟)
+  const level = st.bingos.length + (top === 3 ? 1 : 0);
+  st.bingoLevel = level;
   for (const ln of st.bingos) {
-    st.shots.push({ id: 'b' + ln.id, symbol: ln.symbol, tier: 2, reels: [], gild: 0, used: false, bonus: ln.id });
+    st.shots.push({ id: 'b' + ln.id, symbol: ln.symbol, tier: level >= 2 ? 3 : 2, reels: [], gild: level >= 3 ? 3 : 0, used: false, bonus: ln.id });
     st.stats.bingos = (st.stats.bingos || 0) + 1;
   }
-  events.push({ type: 'spin', reels: clone(st.reels), shots: clone(st.shots), grid: clone(st.grid), bingos: clone(st.bingos) });
+  if (level >= 3) for (const s of st.shots) if (s.tier === 3) s.gild = 3;
+  st.score += 150 * level * level;
+  events.push({ type: 'spin', reels: clone(st.reels), shots: clone(st.shots), grid: clone(st.grid), bingos: clone(st.bingos), level, jackpot: top === 3 });
+  if (level >= 1 && has(st, 'bingoBell')) {
+    st.player.embers = Math.min(EMBER_CAP, st.player.embers + 1);
+    addGuard(st, 2 * lv(st, 'bingoBell'), events, 'bingoBell');
+  }
 }
 
 export function spin(st) {
@@ -259,7 +278,7 @@ export function reroll(st) {
   st.rerollCount++;
   st.rerollsLeft--;
   st.stats.rerolls++;
-  if (has(st, 'gamblerCoin')) addGuard(st, 1, events, 'gamblerCoin');
+  if (has(st, 'gamblerCoin')) addGuard(st, lv(st, 'gamblerCoin'), events, 'gamblerCoin');
   rollReels(st, st.turnGild + st.rerollCount, events);
   return events;
 }
@@ -292,6 +311,21 @@ function hit(st, e, dmg, o, events, depth = 0) {
     events.push({ type: 'block', id: e.id, el: o.el, lane: e.lane, row: e.row, left: e.shieldHp, broke: e.shieldHp === 0 });
     return { blocked: true };
   }
+  // 유물 [얼음 거울]: 얼어 있던 적은 더 아프다
+  if (e.frozen > 0 || shards) bonus += lv(st, 'iceMirror');
+  // 반응 [감전 폭발]: 중독된 적에게 전격 → 중독 수치만큼 추가 피해, 주변까지 터진다
+  let detonate = 0;
+  if (o.el === 'spark' && e.poison > 0) {
+    detonate = e.poison;
+    bonus += detonate + 2 * lv(st, 'stormRune');
+    e.poison = 0;
+    tags.push('detonate');
+  }
+  // 반응 [초전도]: 얼어붙은 적에게 전격
+  if (o.el === 'spark' && e.frozen > 0) {
+    bonus += 1;
+    tags.push('conduct');
+  }
   let total = dmg + bonus;
   if (e.exposed) {
     total *= 2;
@@ -305,6 +339,7 @@ function hit(st, e, dmg, o, events, depth = 0) {
   total = Math.max(0, total);
   e.hp -= total;
   st.stats.dmgDealt += total;
+  st.score += total * 10;
   events.push({ type: 'hit', id: e.id, dmg: total, el: o.el, tags, hp: Math.max(0, e.hp), lane: e.lane, row: e.row, src: o.src || null });
 
   if (e.hp <= 0) {
@@ -312,6 +347,32 @@ function hit(st, e, dmg, o, events, depth = 0) {
     e.alive = false;
     st.kills++;
     events.push({ type: 'kill', id: e.id, etype: e.type, lane: e.lane, row: e.row });
+    // 연속 처치: 한 턴에 3번째 처치는 다음 턴 금빛 릴을 준다
+    st.turnKills++;
+    st.score += 50 * st.turnKills;
+    if (st.turnKills >= 2) {
+      const ember = st.turnKills === 3;
+      if (ember) st.player.embers = Math.min(EMBER_CAP, st.player.embers + 1);
+      events.push({ type: 'combo', n: st.turnKills, ember });
+      if (has(st, 'comboFlute')) {
+        const p = st.player;
+        const h0 = p.hp;
+        p.hp = Math.min(p.maxHp, p.hp + lv(st, 'comboFlute'));
+        if (p.hp > h0) {
+          relicEvent(st, events, 'comboFlute');
+          events.push({ type: 'heal', amount: p.hp - h0, hp: p.hp });
+        }
+      }
+    }
+    // 유물 [독니]: 중독된 적이 죽으면 주변으로 전염
+    if (e.poison > 0 && has(st, 'venomFang')) {
+      const ns = around(st, e);
+      if (ns.length) relicEvent(st, events, 'venomFang', { id: ns[0].id });
+      for (const n of ns) {
+        n.poison = Math.min(9, n.poison + 2 * lv(st, 'venomFang'));
+        events.push({ type: 'poison', id: n.id, stacks: n.poison });
+      }
+    }
     // 유물 [천둥 북]: 처치 → 가장 가까운 적에게 번개 (연쇄 깊이 제한)
     if (has(st, 'thunderDrum') && depth < 3) {
       const near = alive(st)
@@ -319,7 +380,7 @@ function hit(st, e, dmg, o, events, depth = 0) {
         .sort((a, b) => a.d - b.d || b.n.row - a.n.row || a.n.lane - b.n.lane)[0];
       if (near) {
         relicEvent(st, events, 'thunderDrum', { from: { lane: e.lane, row: e.row }, to: { lane: near.n.lane, row: near.n.row }, id: near.n.id });
-        hit(st, near.n, 2, { el: 'spark', frontal: false, src: 'relic' }, events, depth + 1);
+        hit(st, near.n, 2 * lv(st, 'thunderDrum'), { el: 'spark', frontal: false, src: 'relic' }, events, depth + 1);
       }
     }
   } else {
@@ -330,11 +391,16 @@ function hit(st, e, dmg, o, events, depth = 0) {
     }
     if (o.freeze) applyFreeze(st, e, o.freeze, events);
     if (o.poison) {
-      e.poison = Math.min(9, e.poison + o.poison);
+      e.poison = Math.min(9, e.poison + o.poison + 2 * lv(st, 'venomFang'));
       events.push({ type: 'poison', id: e.id, stacks: e.poison });
     }
   }
 
+  if (detonate && depth < 3) {
+    const ns = around(st, e);
+    events.push({ type: 'reaction', name: 'detonate', lane: e.lane, row: e.row, cells: ns.map((n) => [n.lane, n.row]) });
+    for (const n of ns) hit(st, n, detonate, { el: 'venom', frontal: false, src: 'reaction' }, events, depth + 1);
+  }
   if (shards && depth < 3) {
     const cells = [[e.lane - 1, e.row], [e.lane + 1, e.row], [e.lane, e.row - 1], [e.lane, e.row + 1]];
     events.push({ type: 'shards', lane: e.lane, row: e.row, cells: cells.filter(([l, r]) => l >= 0 && l < LANES && r >= 0 && r <= FRONT) });
@@ -344,7 +410,7 @@ function hit(st, e, dmg, o, events, depth = 0) {
       // 유물 [서리 방울]: 파편에 맞은 적도 얼어붙는다
       if (n && n.alive && has(st, 'frostbite')) {
         relicEvent(st, events, 'frostbite', { id: n.id });
-        applyFreeze(st, n, 1, events);
+        applyFreeze(st, n, lv(st, 'frostbite'), events);
       }
     }
   }
@@ -355,9 +421,10 @@ function hit(st, e, dmg, o, events, depth = 0) {
 
 function resolveShot(st, shot, lane, events) {
   const S = shotStats(shot.symbol, shot.tier, shot.gild);
-  if (shot.gild > 0 && has(st, 'emberWick')) for (const k of ['dmg', 'sideDmg']) if (S[k] != null) S[k] += 1;
-  if (shot.symbol === 'blade' && has(st, 'whetstone') && S.pierce < 99) S.pierce += 1;
-  if (shot.symbol === 'wave' && has(st, 'tideBell') && S.splash != null) S.splash += 1;
+  if (shot.gild > 0 && has(st, 'emberWick')) for (const k of ['dmg', 'sideDmg']) if (S[k] != null) S[k] += lv(st, 'emberWick');
+  if (shot.symbol === 'blade' && has(st, 'whetstone') && S.pierce < 99) S.pierce += lv(st, 'whetstone');
+  if (shot.symbol === 'wave' && has(st, 'tideBell') && S.splash != null) S.splash += lv(st, 'tideBell');
+  if (shot.symbol === 'spark' && S.jumps != null) S.jumps += lv(st, 'stormRune');
   const base = { type: 'fire', symbol: shot.symbol, tier: shot.tier, gild: shot.gild, lane, shotId: shot.id };
   const sym = shot.symbol;
 
@@ -367,7 +434,7 @@ function resolveShot(st, shot, lane, events) {
     const before = p.guard;
     p.guard = Math.min(guardCap(st), p.guard + S.guard);
     events.push({ type: 'ward', amount: p.guard - before, guard: p.guard });
-    const healAmt = S.heal + (has(st, 'oilFlask') ? 1 : 0);
+    const healAmt = S.heal + lv(st, 'oilFlask');
     if (healAmt) {
       if (has(st, 'oilFlask')) relicEvent(st, events, 'oilFlask');
       const h0 = p.hp;
@@ -418,7 +485,7 @@ function resolveShot(st, shot, lane, events) {
           el: 'blade', frontal: true, shatter: true, pierceShield: shot.tier === 3,
         }, events);
         n++;
-        if (r.killed && has(st, 'whetstone')) addGuard(st, 1, events, 'whetstone');
+        if (r.killed && has(st, 'whetstone')) addGuard(st, lv(st, 'whetstone'), events, 'whetstone');
         if (r.blocked) { endRow = t.row; break; }
         endRow = n >= S.pierce ? t.row : -1;
       }
@@ -438,6 +505,7 @@ function resolveShot(st, shot, lane, events) {
     events.push({ type: 'burst', lane, row, cells: splash, tier: shot.tier });
     // 중심과 주변 대상을 먼저 확정한다(중간에 처치·이동되어도 대상이 바뀌지 않도록)
     const splashTargets = splash.map(([l, r]) => enemyAt(st, l, r)).filter(Boolean);
+    const spread = first ? Math.ceil(first.poison / 2) : 0;
     if (first) {
       const r = hit(st, first, S.dmg, { el: 'wave', frontal: true, shatter: true }, events);
       // 유물 [파도 방울]: 직격당한 적을 한 칸 밀어낸다
@@ -449,6 +517,15 @@ function resolveShot(st, shot, lane, events) {
       }
     }
     for (const t of splashTargets) hit(st, t, S.splash, { el: 'wave', frontal: false, shatter: false, src: 'splash' }, events);
+    // 반응 [독 확산]: 중독된 적에게 파동 직격 → 휩쓸린 적에게 중독이 번진다
+    const wet = splashTargets.filter((t) => t.alive);
+    if (spread > 0 && wet.length) {
+      events.push({ type: 'reaction', name: 'spread', lane, row, cells: wet.map((t) => [t.lane, t.row]) });
+      for (const t of wet) {
+        t.poison = Math.min(9, t.poison + spread);
+        events.push({ type: 'poison', id: t.id, stacks: t.poison });
+      }
+    }
     events.push({ type: 'fireEnd', lane, row });
     return;
   }
@@ -475,9 +552,11 @@ function resolveShot(st, shot, lane, events) {
       return;
     }
     const hitSet = new Set([first.id]);
+    let jumps = S.jumps + (first.frozen > 0 ? 1 : 0);
+    let extra = first.frozen > 0 ? 1 : 0;
     hit(st, first, S.dmg, { el: 'spark', frontal: true }, events);
     let cur = { lane: first.lane, row: first.row };
-    for (let j = 0; j < S.jumps; j++) {
+    for (let j = 0; j < jumps; j++) {
       const cands = alive(st)
         .filter((e) => !hitSet.has(e.id))
         .map((e) => ({ e, d: Math.abs(e.lane - cur.lane) + Math.abs(e.row - cur.row) }))
@@ -488,6 +567,10 @@ function resolveShot(st, shot, lane, events) {
       hitSet.add(nx.id);
       events.push({ type: 'chain', from: { ...cur }, to: { lane: nx.lane, row: nx.row }, id: nx.id });
       cur = { lane: nx.lane, row: nx.row };
+      if (nx.frozen > 0 && extra < 2) {
+        jumps++;
+        extra++;
+      }
       hit(st, nx, S.jumpDmg, { el: 'spark', frontal: false, src: 'chain' }, events);
     }
     events.push({ type: 'fireEnd', lane, row: first.row });
@@ -563,6 +646,14 @@ export function decide(st, e) {
       const steps = freeSteps(st, e, want);
       return steps > 0 ? { kind: 'move', steps, hop: want === 2 } : { kind: 'wait' };
     }
+    case 'drum': {
+      if (e.row >= sp.reach) return { kind: 'attack', style: 'melee', dmg: sp.atk + e.fury };
+      let dir = e.dir || 1;
+      if (e.lane + dir < 0 || e.lane + dir >= LANES) dir = -dir;
+      if (!enemyAt(st, e.lane + dir, e.row + 1)) return { kind: 'move', steps: 1, toLane: e.lane + dir, dir };
+      if (!enemyAt(st, e.lane, e.row + 1)) return { kind: 'move', steps: 1 };
+      return { kind: 'wait' };
+    }
     case 'mask': {
       if (e.row >= FRONT) return e.braced ? { kind: 'attack', style: 'heavy', dmg: sp.atk + e.fury } : { kind: 'brace' };
       if ((st.turn + e.id) % 2 === 0) {
@@ -601,7 +692,10 @@ export function computeIntents(st) {
   for (const e of order) {
     const it = decide(c, e);
     out[e.id] = it;
-    if (it.kind === 'move') e.row += it.steps;
+    if (it.kind === 'move') {
+      e.row += it.steps;
+      if (it.toLane != null) e.lane = it.toLane;
+    }
     if (it.kind === 'shift') e.lane = it.toLane;
   }
   return out;
@@ -639,8 +733,13 @@ function execute(st, e, it, events) {
       return null;
     case 'move': {
       const from = e.row;
+      const fromLane = e.lane;
       e.row += it.steps;
-      events.push({ type: 'move', id: e.id, lane: e.lane, from, to: e.row, hop: !!it.hop });
+      if (it.toLane != null) {
+        e.lane = it.toLane;
+        e.dir = it.dir;
+      }
+      events.push({ type: 'move', id: e.id, lane: e.lane, fromLane, from, to: e.row, hop: !!it.hop });
       return null;
     }
     case 'brace':
@@ -783,13 +882,13 @@ export function resolveReaction(st, input) {
 
   events.push({ type: 'react', outcome, action, grade, style: a.style, attackerId: a.attackerId, lane: a.lane, hitIndex: a.hitIndex, ember: outcome === 'perfectGuard' || outcome === 'perfectDodge' || outcome === 'deflect' });
   applyPlayerDamage(st, dmg, events);
-  if (mirrorGuard) addGuard(st, 1, events, 'counterMirror');
+  if (mirrorGuard) addGuard(st, lv(st, 'counterMirror'), events, 'counterMirror');
 
   if (e && e.alive) {
     if (outcome === 'dodge' || outcome === 'perfectDodge') {
       if (has(st, 'shadowShoes')) {
         relicEvent(st, events, 'shadowShoes', { id: e.id });
-        hit(st, e, 2, { el: 'counter', frontal: false, pierceShield: true, src: 'relic' }, events);
+        hit(st, e, 2 * lv(st, 'shadowShoes'), { el: 'counter', frontal: false, pierceShield: true, src: 'relic' }, events);
       }
       if (e.alive) {
         e.exposed = true;
@@ -803,7 +902,7 @@ export function resolveReaction(st, input) {
     }
     if (outcome === 'deflect') {
       events.push({ type: 'fire', symbol: 'deflect', tier: 1, lane: e.lane, targetId: e.id });
-      hit(st, e, 2 + (has(st, 'counterMirror') ? 2 : 0), { el: 'counter', frontal: false, pierceShield: true, shatter: true, src: 'deflect' }, events);
+      hit(st, e, 2 + 2 * lv(st, 'counterMirror'), { el: 'counter', frontal: false, pierceShield: true, shatter: true, src: 'deflect' }, events);
       events.push({ type: 'fireEnd', lane: e.lane, row: e.row });
       st.stats.counters++;
     }
@@ -824,7 +923,7 @@ export function resolveReaction(st, input) {
   if (needCounter) {
     finishAttacker(st, a, e);
     st.pending = null;
-    st.pendingCounter = { lane: a.lane, dmg: 3 + (has(st, 'counterMirror') ? 2 : 0), attackerId: a.attackerId };
+    st.pendingCounter = { lane: a.lane, dmg: 3 + 2 * lv(st, 'counterMirror'), attackerId: a.attackerId };
     return { events, counter: { defaultLane: a.lane } };
   }
   if (a.hitIndex < a.hits && e && e.alive) {

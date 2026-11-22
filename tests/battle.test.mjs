@@ -412,3 +412,72 @@ test('3×3 빙고: 가운데 줄 외의 가로·세로·대각선', () => {
   }
   assert.ok(found);
 });
+
+test('빙고 단계: 2줄이면 보너스가 잭팟급(3단계)', () => {
+  const strip = ['frost', 'blade', 'frost', 'blade'];
+  const { st } = createBattle(mkDef([['kasa', 1, 0]]), { seed: 5, hp: 15, maxHp: 15, strips: [strip, strip, strip] });
+  let ok = false;
+  for (let i = 0; i < 60 && !ok; i++) {
+    st.phase = 'spin';
+    spin(st);
+    if (st.bingos.length === 2) {
+      ok = true;
+      assert.equal(st.bingoLevel, 2 + (st.shots[0].tier === 3 && !st.shots[0].bonus ? 1 : 0));
+      assert.ok(st.shots.filter((s) => s.bonus).every((s) => s.tier === 3));
+    }
+  }
+  assert.ok(ok);
+});
+
+test('반응: 중독+전격=감전 폭발, 동결+전격=초전도, 중독+파동=확산', () => {
+  let st = mk([['kasa', 1, 3], ['kasa', 0, 3]]);
+  st.enemies[0].poison = 3;
+  setShots(st, [['spark', 1]]);
+  let ev = fireShot(st, 0, 1);
+  const h = ev.find((e) => e.type === 'hit' && e.tags.includes('detonate'));
+  assert.equal(h.dmg, 2 + 3);
+  assert.equal(st.enemies[0].poison, 0);
+  assert.ok(ev.some((e) => e.type === 'reaction' && e.name === 'detonate'));
+  assert.ok(st.enemies[1].maxHp - st.enemies[1].hp >= 3, '옆 적도 폭발 피해');
+
+  st = mk([['kasa', 1, 3], ['kasa', 0, 3], ['kasa', 2, 3]]);
+  st.enemies[0].frozen = 1;
+  setShots(st, [['spark', 1]]);
+  ev = fireShot(st, 0, 1);
+  assert.ok(ev.find((e) => e.type === 'hit').tags.includes('conduct'));
+  assert.equal(ev.filter((e) => e.type === 'chain').length, 2, '초전도로 연쇄 +1');
+
+  st = mk([['kasa', 1, 3], ['kasa', 0, 3]]);
+  st.enemies[0].poison = 4;
+  setShots(st, [['wave', 1]]);
+  ev = fireShot(st, 0, 1);
+  assert.equal(st.enemies[1].poison, 2);
+});
+
+test('연속 처치 3번째에 불씨, 유물 강화(II)로 효과 2배, 북 도깨비 지그재그', () => {
+  let st = mk([['kasa', 0, 3], ['kasa', 1, 3], ['kasa', 2, 3]]);
+  st.enemies.forEach((e) => (e.hp = 1));
+  setShots(st, [['wave', 1]]);
+  const ev = fireShot(st, 0, 1);
+  assert.deepEqual(ev.filter((e) => e.type === 'combo').map((e) => e.n), [2, 3]);
+  assert.equal(st.player.embers, 1);
+
+  st = mk([['kasa', 1, 4], ['kasa', 1, 3]], { relics: ['thunderDrum'], relicLv: { thunderDrum: 2 } });
+  st.enemies[0].hp = 1;
+  setShots(st, [['frost', 1]]);
+  fireShot(st, 0, 1);
+  assert.equal(st.enemies[1].maxHp - st.enemies[1].hp, 4);
+
+  const run = createRun(3);
+  applyReward(run, 'thunderDrum');
+  applyReward(run, 'up:thunderDrum');
+  assert.equal(battleOptions(run).relicLv.thunderDrum, 2);
+
+  st = mk([['drum', 0, 0]]);
+  const it = computeIntents(st)[1];
+  assert.equal(it.toLane, 1);
+  setShots(st, []);
+  endPlayerTurn(st);
+  nextEnemyStep(st);
+  assert.deepEqual([st.enemies[0].lane, st.enemies[0].row], [1, 1]);
+});
