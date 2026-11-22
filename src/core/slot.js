@@ -22,3 +22,21 @@ export function evaluateReels(reels) {
 export function shotForReel(shots, reelIndex) {
   return shots.findIndex((sh) => sh.reels.includes(reelIndex));
 }
+
+// 3×3 판(grid[열][행], 행 0=위 1=가운데 2=아래)에서 같은 문양 3개가 한 줄이 되면 "빙고".
+// 가운데 가로줄은 기존 잭팟 규칙이 처리한다. 세로줄은 릴 띠 배열로 정해져 운이 아니므로 빙고에서 제외(띠에는 같은 문양이 연달아 놓이지 않는다).
+export const BINGO_LINES = [
+  { id: 'r0', cells: [[0, 0], [1, 0], [2, 0]] },
+  { id: 'r2', cells: [[0, 2], [1, 2], [2, 2]] },
+  { id: 'd0', cells: [[0, 0], [1, 1], [2, 2]] },
+  { id: 'd1', cells: [[0, 2], [1, 1], [2, 0]] },
+];
+
+export function evaluateLines(grid) {
+  const out = [];
+  for (const ln of BINGO_LINES) {
+    const [a, b, c] = ln.cells.map(([col, row]) => grid[col][row]);
+    if (a === b && b === c) out.push({ id: ln.id, symbol: a, cells: ln.cells });
+  }
+  return out;
+}

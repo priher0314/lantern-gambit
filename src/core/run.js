@@ -14,8 +14,19 @@ export function createRun(seed) {
     picks: [],
     totals: { kills: 0, perfect: 0, counters: 0, jackpots: 0, shatters: 0, dmgDealt: 0, turns: 0 },
   };
-  run.strips = [0, 1, 2].map(() => shuffle(run, BASE_STRIP));
+  run.strips = [0, 1, 2].map(() => makeStrip(run));
   return run;
+}
+
+// 같은 문양이 위아래로 붙지 않는 릴 띠
+function noRepeat(s) {
+  return s.every((v, i) => v !== s[(i + 1) % s.length]);
+}
+
+function makeStrip(run) {
+  let s = shuffle(run, BASE_STRIP);
+  for (let i = 0; i < 300 && !noRepeat(s); i++) s = shuffle(run, BASE_STRIP);
+  return s;
 }
 
 export function currentBattle(run) {
@@ -86,7 +97,9 @@ export function applyReward(run, id) {
   if (r.sym) {
     run.strips = run.strips.map((s) => {
       const c = s.slice();
-      c.splice(randInt(run, c.length + 1), 0, r.sym);
+      const ok = [];
+      for (let i = 0; i < c.length; i++) if (c[i] !== r.sym && c[(i + c.length - 1) % c.length] !== r.sym) ok.push(i);
+      c.splice(ok.length ? ok[randInt(run, ok.length)] : randInt(run, c.length + 1), 0, r.sym);
       return c;
     });
   }

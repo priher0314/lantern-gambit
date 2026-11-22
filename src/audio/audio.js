@@ -160,6 +160,21 @@ export class Audio {
     this.tone({ type: 'sawtooth', f: 60, f2: 240, t: 0.1, dur: 0.28, vol: 0.09, filter: { f: 900 } }); // 스프링
     this.noise({ t: 0.16, dur: 0.05, vol: 0.3, f: 2600, q: 2 });
   }
+  s_bingo() {
+    [0, 4, 7, 12, 16, 19, 24].forEach((n, k) => this.tone({ type: 'triangle', f: 523 * 2 ** (n / 12), t: k * 0.05, dur: 0.5, vol: 0.14 }));
+    [0, 7, 12].forEach((n, k) => this.tone({ type: 'square', f: 1046 * 2 ** (n / 12), t: 0.35 + k * 0.07, dur: 0.18, vol: 0.05, filter: { f: 3000 } }));
+    this.gong(0, 0.3);
+  }
+  s_venom() {
+    this.noise({ dur: 0.3, vol: 0.25, type: 'bandpass', f: 500, f2: 1600, q: 4 });
+    this.tone({ type: 'sine', f: 300, f2: 140, dur: 0.25, vol: 0.18 });
+    for (let i = 0; i < 4; i++) this.tone({ type: 'sine', f: 500 + Math.random() * 700, f2: 1500, t: 0.05 + i * 0.05, dur: 0.06, vol: 0.07 });
+  }
+  s_shieldBreak() {
+    this.noise({ dur: 0.35, vol: 0.5, type: 'bandpass', f: 1800, f2: 500, q: 0.8 });
+    this.tone({ type: 'square', f: 240, f2: 70, dur: 0.25, vol: 0.2, filter: { f: 1500 } });
+    for (let i = 0; i < 5; i++) this.tone({ type: 'triangle', f: 900 + Math.random() * 1600, t: i * 0.03, dur: 0.12, vol: 0.07 });
+  }
   s_relic() {
     [0, 7, 12].forEach((n, k) => this.tone({ type: 'sine', f: 880 * 2 ** (n / 12), t: k * 0.035, dur: 0.3, vol: 0.09 }));
     this.tone({ type: 'triangle', f: 440, dur: 0.12, vol: 0.08 });
@@ -247,6 +262,8 @@ export class Audio {
     this.tone({ type: 'square', f: f * 1.5, f2: 60, dur: 0.06, vol: v * 0.16, filter: { f: 1400 } });
     this.noise({ dur: 0.035, vol: v * 0.8, type: 'highpass', f: 2800 });
     this.noise({ t: 0.01, dur: 0.14, vol: v * 0.55, type: 'bandpass', f: 900, f2: 300, q: 0.7 });
+    this.tone({ type: 'sawtooth', f: 70, f2: 30, dur: 0.16, vol: v * 0.35, filter: { f: 260 } }); // 배에 울리는 저음
+    this.noise({ t: 0.05, dur: 0.22, vol: v * 0.18, type: 'lowpass', f: 500 }); // 잔향
   }
   s_block() {
     this.tone({ type: 'square', f: 300, f2: 280, dur: 0.12, vol: 0.08 });

@@ -51,7 +51,7 @@ export class FX {
   // 흔들림 단계: 1=약 2=중 3=강
   shake(level) {
     if (!this.opts.shake) return;
-    const amp = [0, 3, 6, 11, 16][level] || 3;
+    const amp = [0, 4, 8, 14, 22][level] || 4;
     if (amp >= this.shakeAmp * (this.shakeT / this.shakeDur)) {
       this.shakeAmp = amp;
       this.shakeDur = [0, 0.12, 0.2, 0.32, 0.45][level] || 0.15;
@@ -267,6 +267,19 @@ export class FX {
         ctx.fill();
       }
       ctx.drawImage(glowSprite(im.color), -s * 0.7, -s * 0.7, s * 1.4, s * 1.4);
+      // 만화식 충격선
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(1.5, s * 0.045);
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + im.rot * 3;
+        const r0 = s * (0.55 + (1 - k) * 0.5);
+        const r1 = r0 + s * (0.25 + ((i * 7) % 5) * 0.06);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+        ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+        ctx.stroke();
+      }
       ctx.restore();
     }
     ctx.globalAlpha = 1;

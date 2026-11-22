@@ -1,12 +1,12 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
-import { BATTLES, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, OBJECTIVES, RELICS } from './core/data.js';
+import { BATTLES, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, OBJECTIVES, RELICS } from './core/data.js';
 import { createRun, battleOptions, recordBattle, rollRewards, rollStartRelics, applyReward, advance } from './core/run.js';
 import { judge, lateLimit } from './core/timing.js';
 import { shotForReel } from './core/slot.js';
 import { hashSeed } from './core/rng.js';
 import { FX } from './render/fx.js';
-import { W, computeLayout, cellPos, laneAt, reelRect, leverRect, LANE_SPACING } from './render/layout.js';
+import { W, computeLayout, cellPos, laneAt, reelRect, leverRect, bingoRect, slotCell, LANE_SPACING } from './render/layout.js';
 import { Renderer, REEL_CELL } from './render/scene.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -18,41 +18,49 @@ const EL_COLORS = {
   frost: ['#ffffff', '#d6f3ff', '#7cc8ff'],
   spark: ['#ffffff', '#ffe45c', '#b77cff'],
   counter: ['#ffffff', '#ffe08a', '#ff9f1a'],
+  venom: ['#e6ff9a', '#a6f04a', '#6a2fb0'],
   ice: ['#ffffff', '#d6f3ff', '#9fdcff'],
 };
 
 const CONCEPTS = {
   reroll: {
-    kicker: '알아두기', title: '다시 굴리기', glyph: '↻', color: '#d9a0ff',
+    kicker: '알아두기', title: '다시 굴리기', color: '#d9a0ff',
     lines: [
-      { label: '언제', text: '결과가 아쉬울 때, 공격하기 전에 릴 3개를 전부 다시 돌린다. 버튼의 구슬이 이번 턴에 남은 횟수.' },
-      { label: '대가', text: '버튼에 적힌 일이 먼저 일어난다(적 전진·분노·새 적 등장). 눈 표식이 붙은 적이 그 대상.' },
-      { label: '보상', text: '굴릴 때마다 "금빛 강화" 릴이 1개 늘어난다. 위험을 감수한 만큼 공격이 세진다.' },
+      { label: '효과', text: '공격 전에 릴을 전부 다시 돌린다.' },
+      { label: '대가', text: '버튼에 적힌 일이 먼저 일어난다.', color: '#ffb8c8' },
+      { label: '보상', text: '금빛 릴 +1.', color: '#ffe08a' },
     ],
   },
   gild: {
-    kicker: '알아두기', title: '금빛 강화', glyph: '✦', color: '#ffd27a',
+    kicker: '알아두기', title: '금빛 릴', color: '#ffd27a',
     lines: [
-      { label: '효과', text: '"금빛 강화"가 붙은 릴의 공격은 피해 +1, 고유 능력 +1 (절단=관통 수, 파동=옆 피해, 동결=턴 수, 전격=연쇄 수, 등불=방어막).' },
-      { label: '얻는 법', text: '① 다시 굴릴 때마다 +1개  ② 퍼펙트 막기·회피로 얻은 "불씨"가 다음 턴에 금빛 릴이 된다.' },
+      { label: '효과', text: '그 칸의 공격이 피해 +1, 효과 +1.' },
+      { label: '얻기', text: '다시 굴리기 · 퍼펙트 막기/회피.' },
+    ],
+  },
+  bingo: {
+    kicker: '알아두기', title: '빙고!', color: '#ffe08a',
+    lines: [
+      { label: '효과', text: '가로·대각선 한 줄이 맞으면 보너스 기술 +1.' },
+      { label: '사용', text: '릴 위의 금색 줄을 눌러 고른다.' },
     ],
   },
 };
 
 const INTENT_TEXT = {
-  move: (it) => `${it.steps}칸 앞으로 온다.`,
-  brace: () => '다음 차례의 강타를 준비한다. 그 전에 처치하거나 얼리면 취소된다.',
-  aim: () => '조준한다. 그다음 차례에 불씨를 쏜다. 얼리면 조준이 풀린다.',
-  charge: () => '"사격 준비(충전)"에 들어간다. 충전하는 동안 심장이 드러나 받는 피해 +2, 그다음 차례에 연속 발사.',
-  summon: () => '우산 도깨비를 불러낸다.',
-  shift: () => '옆 레인으로 옮겨 간다.',
-  frozen: () => '얼어붙어 행동하지 못한다. 절단·파동·되치기로 치면 파쇄(+3 피해)!',
-  wait: (it) => (it.slow ? '느려서 이번에는 움직이지 않는다.' : '앞이 막혀 기다린다.'),
+  move: (it) => `${it.steps}칸 다가온다.`,
+  brace: () => '강타 준비. 다음 차례에 내려친다.',
+  aim: () => '조준. 다음 차례에 쏜다.',
+  charge: () => '충전 시작. 그동안 받는 피해 +2.',
+  summon: () => '우산 도깨비를 부른다.',
+  shift: () => '옆 레인으로 옮긴다.',
+  frozen: () => '얼어서 못 움직인다.',
+  wait: (it) => (it.slow ? '느려서 이번엔 안 움직인다.' : '앞이 막혀 기다린다.'),
   attack: (it) => {
-    if (it.style === 'heavy') return `강타 (${it.dmg} 피해) — 붉은 고리. 회피 추천.`;
-    if (it.style === 'volley') return `불씨 ${it.hits}발 연속 발사 (각 ${it.dmg} 피해) — 한 발씩 막기.`;
-    if (it.style === 'ranged') return `불씨 발사 (${it.dmg} 피해) — 주황 고리. 막기.`;
-    return `공격 (${it.dmg} 피해) — 금빛 고리. 막기로 되치기.`;
+    if (it.style === 'heavy') return `강타 ${it.dmg} — 붉은 고리, 회피!`;
+    if (it.style === 'volley') return `불씨 ${it.hits}발 (각 ${it.dmg}) — 한 발씩 막기.`;
+    if (it.style === 'ranged') return `불씨 ${it.dmg} — 막기.`;
+    return `공격 ${it.dmg} — 금빛 고리, 막기.`;
   },
 };
 
@@ -70,6 +78,7 @@ export class Game {
     this.card = null;
     this.cardQueue = [];
     this.relicPulse = {};
+    this.stamps = [];
     this.hold = null;
     this.battleCount = BATTLES.length;
     this.mode = 'title';
@@ -135,7 +144,7 @@ export class Game {
     this.views.clear();
     const demo = [['kasa', 0, 3], ['mask', 1, 2], ['archer', 2, 1], ['kasa', 2, 4]];
     demo.forEach(([type, lane, row], i) => {
-      const v = this.makeView({ id: 1000 + i, type, lane, row, hp: ENEMIES[type].hp, maxHp: ENEMIES[type].hp });
+      const v = this.makeView({ id: 1000 + i, type, lane, row, hp: ENEMIES[type].hp, maxHp: ENEMIES[type].hp, shieldHp: ENEMIES[type].shieldHp || 0 });
       v.spawnT = 1;
       this.views.set(v.id, v);
     });
@@ -148,6 +157,7 @@ export class Game {
       close: 0, raise: 0, slam: 0, chargeA: 0, puff: 0, blockT: 0,
       frozen: e.frozen || 0, exposed: !!e.exposed, fury: e.fury || 0, braced: !!e.braced, charge: !!e.charge,
       vulnerable: !!e.vulnerable, phase2: !!e.phase2, shieldBroken: !!e.shieldBroken,
+      poison: e.poison || 0, shieldHp: e.shieldHp || 0, kick: 0, pop: 0,
       spawnT: 0, dying: 0, ox: 0, oy: 0,
     };
   }
@@ -230,15 +240,15 @@ export class Game {
     this.tipsSeen.add(id);
     this.store.meta.tips = [...this.tipsSeen];
     this.store.save();
-    this.cardQueue.push(key === 'block' ? this.enemyCard('mask', null, '정면 공격이 막혔다!') : CONCEPTS[key]);
+    this.cardQueue.push(key === 'block' ? this.enemyCard('mask', null, '방패에 막혔다!') : CONCEPTS[key]);
   }
 
   enemyCard(type, e, kicker) {
     const sp = ENEMIES[type];
-    const lines = [{ label: '행동', text: sp.act }, { label: '공략', text: sp.how, color: '#8fffe2' }];
+    const lines = [{ label: '특징', text: sp.act }, { label: '공략', text: sp.how, color: '#8fffe2' }];
     if (e && this.intents && this.intents[e.id]) {
       const it = this.intents[e.id];
-      lines.push({ label: '다음 행동', text: (INTENT_TEXT[it.kind] || (() => ''))(it), color: '#ffb0a0' });
+      lines.push({ label: '다음', text: (INTENT_TEXT[it.kind] || (() => ''))(it), color: '#ffb0a0' });
     }
     return { kicker: kicker || (e ? '적 정보' : '새로운 적 등장'), title: sp.name, enemy: type, color: '#ffb0a0', lines };
   }
@@ -367,13 +377,19 @@ export class Game {
     if (ui.phase === 'aim' && ui.sel != null && st.shots[ui.sel]) {
       const sh = st.shots[ui.sel];
       let text = (sh.gild ? '✦금빛 ' : '') + shotDesc(sh.symbol, sh.tier, sh.gild);
+      if (sh.symbol === 'lantern') {
+        const cap = B.guardCap(st);
+        const gain = Math.min(cap - st.player.guard, shotStats(sh.symbol, sh.tier, sh.gild).guard);
+        text = gain > 0 ? `방어막 +${gain} (지금 ${st.player.guard}/${cap})  ▶ 한 번 더 눌러 사용` : `방어막이 이미 가득 (${cap}/${cap}) — 써도 늘지 않는다`;
+      }
       let color = SYMBOLS[sh.symbol].fx;
       if (ui.preview && sh.symbol !== 'lantern') {
         const per = Object.values(ui.preview.summary.per);
         const dmg = per.reduce((a, p) => a + p.dmg, 0);
         const kills = per.filter((p) => p.killed).length;
         if (per.some((p) => p.blocked) && dmg === 0) {
-          text = '탈에 막힌다! 옆 레인 파동 · 전격 연쇄 · 회피 뒤 공격이 통한다';
+          const left = Math.min(...per.filter((p) => p.blocked).map((p) => p.shieldLeft ?? 0));
+          text = left === 0 ? '방패를 깨뜨린다! 다음 공격부터 피해가 들어간다' : `방패에 금이 간다 (남은 방패 ${left}) — 한 번 더 치면 깨진다`;
           color = '#50f0be';
         } else {
           text = `예상 피해 ${dmg}${kills ? ` · 처치 ${kills}` : ''}${per.some((p) => p.blocked) ? ' · 일부 막힘' : ''}`;
@@ -381,7 +397,7 @@ export class Game {
       } else if (!ui.preview && sh.symbol !== 'lantern') {
         text += '  ▶ 레인을 누르세요';
       }
-      this.info = { title: SHOT_NAMES[sh.symbol][sh.tier], text, color };
+      this.info = { title: (sh.bonus ? '빙고! ' : '') + SHOT_NAMES[sh.symbol][sh.tier], text, color };
       return;
     }
     if (ui.phase === 'spin') this.info = { text: '오른쪽 레버를 당겨 공격을 뽑으세요  (적을 길게 누르면 정보)' };
@@ -424,7 +440,7 @@ export class Game {
     else {
       const d = B.describeOmen(st, st.omens[st.rerollCount]);
       sub = `대가: ${d ? d.text : '?'}`;
-      sub2 = '보상: 금빛 강화 릴 +1 (공격 강화)';
+      sub2 = '보상: 금빛 릴 +1';
       subColors = ['#ffb8c8', '#ffe08a'];
     }
     btns.push({ id: 'reroll', x: 14, y, w: 322, h, label: '다시 굴리기', pips: myTurn ? st.rerollsLeft : maxRe, pipMax: maxRe, sub, sub2, subColors, style: 'gamble', enabled: canRe, key: 'R' });
@@ -496,6 +512,16 @@ export class Game {
       this.pullLever();
       return;
     }
+    // 빙고 보너스 기술 선택(릴 위 금색 줄)
+    const brc = bingoRect(this.L);
+    if (inR(brc, 4) && this.ui.phase === 'aim' && !this.busy && this.st) {
+      const bonus = this.st.shots.map((s, i) => [s, i]).filter(([s]) => s.bonus);
+      if (bonus.length) {
+        const k = clamp(Math.floor((p.x - brc.x) / (brc.w / bonus.length)), 0, bonus.length - 1);
+        this.selectShot(bonus[k][1], touch);
+        return;
+      }
+    }
     // 릴(공격 패) 선택
     for (let i = 0; i < 3; i++) {
       const r = reelRect(this.L, i);
@@ -563,6 +589,10 @@ export class Game {
     if (k === ' ') { e.preventDefault(); if (ui.phase === 'spin') this.pullLever(); }
     if (k === 'h' || k === '?') this.openGuide();
     if (k === 'r') this.press('reroll');
+    if (k === 'b' && this.st) {
+      const bi = this.st.shots.findIndex((s) => s.bonus && !s.used);
+      if (bi >= 0) this.selectShot(bi, true);
+    }
     if (k === 'enter') this.press('end');
     if (['q', 'w', 'e'].includes(k)) this.selectReel('qwe'.indexOf(k), true);
     if (['1', '2', '3'].includes(k)) this.tapLane(Number(k) - 1, true);
@@ -583,6 +613,28 @@ export class Game {
       return this.enemyPhase();
     }
     if (id === 'guard' || id === 'dodge') return this.reactInput(id);
+  }
+
+  get guardCap() {
+    return this.st ? B.guardCap(this.st) : 6;
+  }
+
+  // 공격 패 선택(가운데 줄 릴 또는 빙고 보너스)
+  selectShot(idx, touch) {
+    const st = this.st;
+    if (this.ui.phase !== 'aim' || this.busy || !st) return;
+    const sh = st.shots[idx];
+    if (!sh || sh.used) {
+      this.audio.play('deny');
+      return;
+    }
+    if (this.ui.sel === idx && sh.symbol === 'lantern') return this.fire(1);
+    this.ui.sel = idx;
+    this.ui.armedLane = -1;
+    this.ui.confirmEnd = false;
+    this.audio.play('select');
+    if (touch) this.ui.hoverLane = -1;
+    this.updatePreview();
   }
 
   selectReel(i, touch) {
@@ -684,7 +736,7 @@ export class Game {
         r.landed = false;
       });
       this.spinDone = () => {
-        const top = Math.max(...ev.shots.map((s) => s.tier));
+        const top = Math.max(...ev.shots.filter((s) => !s.bonus).map((s) => s.tier));
         const rects = [0, 1, 2].map((i) => reelRect(this.L, i));
         if (top === 3) {
           const sh = ev.shots[0];
@@ -700,7 +752,7 @@ export class Game {
             this.uiFx.ring(rc.x + rc.w / 2, rc.y + rc.h / 2, { r0: 20, r1: 130, color: '#ffe08a', w: 7, life: 0.5 });
           }
         } else if (top === 2) {
-          const sh = ev.shots.find((s) => s.tier === 2);
+          const sh = ev.shots.find((s) => s.tier === 2 && !s.bonus);
           this.audio.play('link', { tier: 2 });
           this.slotJolt = 1.1;
           this.buzz(45);
@@ -713,7 +765,27 @@ export class Game {
           this.uiFx.ring(mx, my, { r0: 10, r1: 90, color: '#ff8a5a', w: 6, life: 0.4 });
           this.uiFx.text(mx, a.y - 16, `연결! ${SHOT_NAMES[sh.symbol][2]}`, { color: '#ffd27a', size: 24, font: 'num', life: 1.1, vy: -24 });
         }
-        this.waitReal(top >= 2 ? 420 : 120).then(resolve);
+        // 빙고: 줄이 맞은 칸마다 터지고, 보너스 기술이 추가된다
+        const bingos = ev.bingos || [];
+        if (bingos.length) {
+          this.audio.play('bingo');
+          this.fx.flash('#ffe08a', 0.4);
+          this.fx.shake(2);
+          this.slotJolt = 1.8;
+          this.buzz(140);
+          for (const b of bingos) {
+            b.cells.forEach(([c, r], k) => {
+              const q = slotCell(this.L, c, r);
+              this.uiFx.burst(q.x, q.y, { n: 18, speed: 300, color: ['#ffe08a', '#ffffff', '#ffb347', SYMBOLS[b.symbol].fx], kind: 'streak', size: 4.5, life: 0.6 + k * 0.08, g: 260 });
+              this.uiFx.ring(q.x, q.y, { r0: 14, r1: 70, color: '#ffe08a', w: 6, life: 0.4 + k * 0.08 });
+              this.uiFx.impact(q.x, q.y, 46, '#ffe08a');
+            });
+          }
+          const br = bingoRect(this.L);
+          this.uiFx.text(W / 2, this.L.info.y - 46, bingos.length > 1 ? `더블 빙고! 보너스 +${bingos.length}` : `빙고! 보너스 +${SHOT_NAMES[bingos[0].symbol][2]}`, { color: '#ffe08a', size: 30, font: 'num', life: 1.5, vy: -18 });
+          this.conceptCard('bingo');
+        }
+        this.waitReal(top >= 2 || bingos.length ? 520 : 120).then(resolve);
       };
     });
   }
@@ -821,6 +893,7 @@ export class Game {
     this.audio.setIntensity(1);
     this.refresh();
     await this.playEvents(B.endPlayerTurn(st));
+    if (st.result) return this.endBattle();
     for (let guard = 0; guard < 80; guard++) {
       const step = B.nextEnemyStep(st);
       const pre = step.done ? [] : step.events;
@@ -1140,6 +1213,25 @@ export class Game {
       }
       case 'turn':
         break;
+      case 'poison': {
+        if (!v) break;
+        v.poison = ev.stacks;
+        const ip = this.impactPoint(v);
+        this.audio.play('venom');
+        fx.burst(ip.x, ip.y, { n: 14, speed: 150, color: ['#a6f04a', '#e6ff9a', '#6a2fb0'], kind: 'dot', size: 4.5, life: 0.7, g: -120, add: false });
+        fx.text(ip.x + 34, ip.y - 26, `중독 ${ev.stacks}`, { color: '#b8ff5a', size: 20, font: 'num' });
+        await this.wait(70);
+        break;
+      }
+      case 'poisonTick': {
+        if (!v) break;
+        const ip = this.impactPoint(v);
+        this.audio.play('venom');
+        this.stamps.push({ sym: 'venom', x: ip.x, y: ip.y, size: 22 * ip.k, life: 0.45, max: 0.45, rot: 0.4 });
+        fx.text(ip.x, ip.y - 72, '중독 피해', { color: '#b8ff5a', size: 18, font: 'num' });
+        await this.wait(120);
+        break;
+      }
       case 'relic': {
         // 어떤 유물이 왜 발동했는지 보여준다: HUD 배지 반짝 + 이름 표시
         const R = RELICS[ev.relic];
@@ -1159,7 +1251,7 @@ export class Game {
           x = ip.x;
           y = ip.y - 92;
         }
-        fx.text(x, y, `◆ ${R.name}`, { color: R.color, size: 19, font: 'num', life: 1.2, vy: -26 });
+        fx.text(x, y, `◆ ${R.name}${R.proc ? ' : ' + R.proc : ''}`, { color: R.color, size: 18, font: 'num', life: 1.5, vy: -22 });
         await this.wait(90);
         break;
       }
@@ -1212,7 +1304,7 @@ export class Game {
         if (!v) break;
         v.fury += ev.amount;
         const p = this.impactPoint(v);
-        fx.text(p.x, p.y - 40, `분노 +${ev.amount}`, { color: '#ff6a6a', size: 22, font: 'num' });
+        fx.text(p.x, p.y - 40, `공격력 +${ev.amount}`, { color: '#ff6a6a', size: 22, font: 'num' });
         fx.burst(p.x, p.y, { n: 10, speed: 90, color: ['#ff3b3b', '#ff8a5a'], kind: 'glow', size: 5, vy: -60 });
         await this.wait(280);
         break;
@@ -1231,9 +1323,23 @@ export class Game {
         v.blockT = 1;
         this.audio.play('block');
         fx.burst(ip.x, ip.y, { n: 14, speed: 240, color: ['#ffffff', '#50f0be'], kind: 'streak', size: 4, life: 0.3, angle: Math.PI / 2, spread: 2.4 });
-        fx.text(ip.x, ip.y - 50, '정면 막힘!', { color: '#50f0be', size: 26, font: 'num' });
-        fx.text(ip.x, ip.y - 24, '옆·연쇄·회피로 뚫어라', { color: '#c8fff0', size: 15, font: 'ui', delay: 0.25, life: 1.5, vy: -14 });
-        fx.impact(ip.x, ip.y, 44, '#50f0be');
+        v.shieldHp = ev.left;
+        v.kick = 0.14;
+        v.knock = 12;
+        if (ev.broke) {
+          v.shieldBroken = true;
+          this.audio.play('shieldBreak');
+          fx.text(ip.x, ip.y - 54, '방패 파괴!', { color: '#ffffff', size: 32, font: 'num' });
+          fx.burst(ip.x, ip.y, { n: 26, speed: 340, color: ['#f5ecd9', '#ffffff', '#50f0be'], kind: 'paper', size: 6, life: 0.9, g: 420, add: false, vr: 16 });
+          fx.impact(ip.x, ip.y, 90, '#ffffff');
+          fx.shake(3);
+          fx.punchIn(0.03);
+          this.hitstop = Math.max(this.hitstop, 0.14);
+          this.buzz(60);
+        } else {
+          fx.text(ip.x, ip.y - 54, `방패에 금! (남은 ${ev.left})`, { color: '#50f0be', size: 22, font: 'num' });
+          fx.impact(ip.x, ip.y, 54, '#50f0be');
+        }
         this.conceptCard('block');
         fx.shake(1);
         this.hitstop = Math.max(this.hitstop, 0.05);
@@ -1252,6 +1358,7 @@ export class Game {
         fx.punchIn(big ? 0.06 : 0.03);
         fx.impact(ip.x, ip.y, big ? 150 : 80, '#ffe08a');
         this.buzz(big ? 200 : 40);
+        this.slowT = big ? 0.5 : 0.16; // 처치 순간 짧은 슬로모션
         if (big) fx.flash('#fff4c0', 0.6);
         const cols = { kasa: ['#e2453c', '#b8302e', '#f3d38a', '#ffe0c0'], mask: ['#f5ecd9', '#ffffff', '#352a64', '#e2453c'], archer: ['#ffbf52', '#fff4c4', '#e0682a'], elder: ['#ffb04a', '#fff2c0', '#ff5a6e', '#ffffff'] }[ev.etype];
         fx.burst(ip.x, ip.y, { n: big ? 70 : 26, speed: big ? 420 : 260, color: cols, kind: 'paper', size: big ? 7 : 5, life: big ? 1.4 : 0.9, g: 420, drag: 0.94, add: false, vr: 14 });
@@ -1431,7 +1538,7 @@ export class Game {
         if (ev.ember) {
           const P = this.player;
           this.audio.play('ember');
-          fx.text(150, L.hudH + 18, '+불씨 (다음 돌리기 금빛)', { color: '#ffb347', size: 17, font: 'num', delay: 0.25, vy: -10, life: 1.4 });
+          this.uiFx.text(210, L.slot.y + 14, '✦ 다음 턴 금빛 릴 +1', { color: '#ffd27a', size: 18, font: 'num', delay: 0.25, vy: -8, life: 1.5 });
         }
         break;
       case 'playerHit': {
@@ -1516,12 +1623,18 @@ export class Game {
       this.cur = { spark: true, x: m.x, y: m.y };
       return;
     }
-    const speed = { blade: 2600, frost: 1800, wave: 1400, counter: 2700 }[sym] || 2000;
-    const size = { blade: 14, frost: 11, wave: 14, counter: ev.small ? 12 : 20 }[sym] || 12;
+    const speed = { blade: 2600, frost: 1700, wave: 1300, venom: 1500, counter: 2700 }[sym] || 2000;
+    const size = { blade: 14, frost: 12, wave: 14, venom: 12, counter: ev.small ? 12 : 20 }[sym] || 12;
     if (sym === 'blade') this.audio.play('blade', { strong: ev.tier > 1 });
     else if (sym === 'wave') this.audio.play('wave');
     else if (sym === 'frost') this.audio.play('frost');
     else if (sym === 'counter') this.audio.play('counter');
+    else if (sym === 'venom') this.audio.play('venom');
+    fx.impact(sx, sy, 34, SYMBOLS[sym]?.fx || '#ffffff');
+    if (sym === 'blade' || sym === 'counter') {
+      const lx = W / 2 + (ev.lane - 1) * LANE_SPACING * 0.85;
+      fx.slash(lx, L.fieldTop + L.fieldH * 0.55, { ang: Math.PI / 2 + (ev.lane - 1) * 0.11, len: L.fieldH * 0.5, color: sym === 'counter' ? '#ffe08a' : '#cfd8ff', w: 9, life: 0.28 });
+    }
     const pr = this.spawnProj(sym, sx, sy, speed, size + (ev.gild ? 3 : 0));
     // 발사 순간: 레인 방향으로 살짝 이동
     pr.tx = W / 2 + (ev.lane - 1) * LANE_SPACING * 0.8;
@@ -1557,7 +1670,17 @@ export class Game {
     v.flash = 1.5;
     v.knock = 16 + Math.min(24, ev.dmg * 3.5);
     v.squash = 0.85;
-    v.jit = minor ? 0.08 : 0.18;
+    v.jit = minor ? 0.08 : 0.2;
+    // 맞는 쪽이 휘청이고 순간 부풀었다 돌아온다
+    v.kick = (Math.random() < 0.5 ? -1 : 1) * Math.min(0.32, 0.1 + ev.dmg * 0.03);
+    v.pop = minor ? 0.4 : 1;
+    // 어떤 기술이 맞았는지 큰 문양으로
+    const stampSym = el === 'counter' ? 'blade' : el === 'ice' ? 'frost' : el;
+    if (SYMBOLS[stampSym] && stampSym !== 'counter' && ev.src !== 'poison') {
+      this.stamps.push({ sym: stampSym, x: ip.x, y: ip.y - 4, size: (minor ? 15 : 24) * ip.k, life: 0.4, max: 0.4, rot: (Math.random() - 0.5) * 1.2 });
+    }
+    if (el === 'venom') fx.burst(ip.x, ip.y, { n: 14, speed: 240, color: ['#a6f04a', '#e6ff9a', '#6a2fb0'], kind: 'dot', size: 4.5, life: 0.55, g: 380, add: false });
+    if (el === 'frost') fx.burst(ip.x, ip.y, { n: 10, speed: 120, color: ['#ffffff', '#d6f3ff'], kind: 'glow', size: 6, life: 0.6, vy: -30 });
     v.hpShown = ev.hp;
     fx.impact(ip.x, ip.y, (minor ? 26 : 38) + ev.dmg * 7, cols[1]);
     if (el === 'blade' || el === 'counter') {
@@ -1597,7 +1720,7 @@ export class Game {
       color: ev.dmg >= 5 ? '#ffe08a' : '#ffffff', size: 32 + Math.min(26, ev.dmg * 3), font: 'num', vy: -110,
     });
     this.audio.play('hit', { dmg: ev.dmg });
-    this.hitstop = Math.max(this.hitstop, minor ? 0.04 : Math.min(0.17, 0.075 + ev.dmg * 0.016));
+    this.hitstop = Math.max(this.hitstop, minor ? 0.045 : Math.min(0.22, 0.09 + ev.dmg * 0.02));
     fx.shake(strong ? 3 : minor ? 1 : 2);
     if (!minor) fx.punchIn(Math.min(0.035, 0.01 + ev.dmg * 0.004));
     this.buzz(minor ? 8 : 14 + ev.dmg * 5);
@@ -1631,6 +1754,8 @@ export class Game {
       v.vulnerable = e.vulnerable;
       v.phase2 = e.phase2;
       v.shieldBroken = e.shieldBroken;
+      v.shieldHp = e.shieldHp;
+      v.poison = e.poison;
     }
     this.hud.hp = st.player.hp;
     this.refresh();
@@ -1638,6 +1763,7 @@ export class Game {
 
   // ─────────────── 매 프레임 ───────────────
   tickers = [];
+  slowT = 0;
   realTimers = [];
   virtualClock = null;
 
@@ -1648,7 +1774,10 @@ export class Game {
 
   update(realDt) {
     this.rt += realDt;
-    let dt = realDt * this.timeScale;
+    let dt = realDt * this.timeScale * (this.slowT > 0 ? 0.3 : 1);
+    if (this.slowT > 0) this.slowT -= realDt;
+    for (const s of this.stamps) s.life -= realDt;
+    if (this.stamps.length) this.stamps = this.stamps.filter((s) => s.life > 0);
     if (this.hitstop > 0) {
       this.hitstop -= realDt;
       dt = 0;
@@ -1689,6 +1818,12 @@ export class Game {
       v.knock *= 0.8 ** (dt * 60);
       v.squash *= 0.85 ** (dt * 60);
       v.blockT = Math.max(0, v.blockT - dt * 3);
+      v.kick = (v.kick || 0) * 0.82 ** (realDt * 60);
+      v.pop = Math.max(0, (v.pop || 0) - realDt * 7);
+      if (v.poison > 0 && !v.dying && Math.random() < dt * 3.5) {
+        const q = this.renderer.viewPos(v);
+        this.fx.particle({ x: q.x + (Math.random() - 0.5) * 34 * q.s, y: q.y - 30 * q.k - Math.random() * 30, vx: 0, vy: -38, g: -20, life: 0.8, max: 0.8, size: 3 + Math.random() * 2.5, color: '#a6f04a', kind: 'dot', add: false });
+      }
       if (v.jit > 0) {
         v.jit -= realDt;
         v.jx = v.jit > 0 ? (Math.random() - 0.5) * 9 : 0;

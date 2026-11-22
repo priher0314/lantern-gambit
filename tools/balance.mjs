@@ -42,6 +42,7 @@ function playRun(seed, P) {
       }
       if (st.result) break;
       endPlayerTurn(st);
+      if (st.result) break;
       for (;;) {
         const step = nextEnemyStep(st);
         let a = step.attack;

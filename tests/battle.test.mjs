@@ -4,7 +4,7 @@ import {
   createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn,
   nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen,
 } from '../src/core/battle.js';
-import { evaluateReels } from '../src/core/slot.js';
+import { evaluateReels, evaluateLines } from '../src/core/slot.js';
 import { BATTLES, BASE_STRIP, RELIC_IDS } from '../src/core/data.js';
 import { judge } from '../src/core/timing.js';
 import { createRun, battleOptions, rollRewards, rollStartRelics, applyReward, recordBattle, advance } from '../src/core/run.js';
@@ -95,7 +95,7 @@ test('죽은 적은 다시 피해/처치되지 않음 (잭팟 전체 공격 + �
 });
 
 test('미리보기 == 실제 결과 (무작위 상태 600회)', () => {
-  const syms = ['blade', 'wave', 'frost', 'spark', 'lantern'];
+  const syms = ['blade', 'wave', 'frost', 'spark', 'lantern', 'venom'];
   const types = ['kasa', 'mask', 'archer'];
   for (let s = 1; s <= 600; s++) {
     const r = { rng: s * 7 + 3 };
@@ -112,9 +112,10 @@ test('미리보기 == 실제 결과 (무작위 상태 600회)', () => {
     st.enemies.forEach((e) => {
       if (rand(r) < 0.3) e.frozen = 1;
       if (rand(r) < 0.2) e.exposed = true;
+      if (rand(r) < 0.2) e.poison = 2;
       e.hp = 1 + randInt(r, e.maxHp);
     });
-    setShots(st, [[syms[randInt(r, 5)], 1 + randInt(r, 3), randInt(r, 2)]]);
+    setShots(st, [[syms[randInt(r, 6)], 1 + randInt(r, 3), randInt(r, 2)]]);
     const lane = randInt(r, 3);
     const pv = previewShot(st, 0, lane);
     const real = fireShot(st, 0, lane);
@@ -132,6 +133,7 @@ test('같은 시드 + 같은 입력 = 같은 전투 (결정성)', () => {
       st.shots.forEach((_, i) => { if (!st.result) log.push(...fireShot(st, i, i % 3)); });
       if (st.result) break;
       log.push(...endPlayerTurn(st));
+      if (st.result) break;
       for (let g = 0; g < 50; g++) {
         const r = nextEnemyStep(st);
         log.push(...r.events);
@@ -208,7 +210,7 @@ test('강공격은 일반 막기로 못 막음, 방어막이 먼저 흡수', () 
   nextEnemyStep(st);
   resolveReaction(st, { action: 'guard', grade: 'good' });
   assert.equal(st.player.guard, 0);
-  assert.equal(st.player.hp, 12);
+  assert.equal(st.player.hp, 11);
 });
 
 test('타이밍 판정 창', () => {
@@ -261,6 +263,7 @@ test('봇 전체 런 300회: 예외 없이 종료, 처치 수 일관', () => {
         }
         if (st.result) break;
         endPlayerTurn(st);
+        if (st.result) break;
         for (let g = 0; g < 100; g++) {
           const step = nextEnemyStep(st);
           let a = step.attack;
@@ -349,4 +352,63 @@ test('유물 [되치기 거울]·[도박꾼의 엽전]·[달빛 숫돌]·[그림
   setShots(st, [['wave', 1]]);
   fireShot(st, 0, 1);
   assert.equal(st.enemies[0].row, 3);
+});
+
+test('탈 방패: 정면에서 두 번 맞으면 깨진다(혼자 남아도 처치 가능)', () => {
+  const st = mk([['mask', 1, 3]]);
+  setShots(st, [['blade', 1], ['blade', 1], ['blade', 1]]);
+  const e1 = fireShot(st, 0, 1);
+  assert.equal(e1.find((e) => e.type === 'block').left, 1);
+  const e2 = fireShot(st, 1, 1);
+  assert.equal(e2.find((e) => e.type === 'block').broke, true);
+  const e3 = fireShot(st, 2, 1);
+  assert.equal(e3.filter((e) => e.type === 'hit').length, 1);
+  // 연결 기술은 한 번에 깬다
+  const st2 = mk([['mask', 1, 3]]);
+  st2.phase = 'aim';
+  st2.shots = [{ id: 'x', symbol: 'blade', tier: 2, gild: 0, reels: [0, 1], used: false }];
+  assert.equal(fireShot(st2, 0, 1).find((e) => e.type === 'block').broke, true);
+});
+
+test('중독: 턴 종료마다 수치만큼 피해 후 1 감소, 방패 무시, 처치 집계', () => {
+  const st = mk([['kasa', 1, 2], ['kasa', 0, 0]]);
+  setShots(st, [['venom', 1]]);
+  fireShot(st, 0, 1);
+  const k = st.enemies[0];
+  assert.equal(k.poison, 3);
+  assert.equal(k.maxHp - k.hp, 1);
+  const ev = endPlayerTurn(st);
+  assert.ok(ev.some((e) => e.type === 'poisonTick'));
+  assert.equal(k.maxHp - k.hp, 4);
+  assert.equal(k.poison, 2);
+  // 중독으로 마지막 적이 죽으면 그 자리에서 승리
+  const st2 = mk([['kasa', 1, 2]]);
+  st2.enemies[0].hp = 2;
+  st2.enemies[0].poison = 3;
+  setShots(st2, []);
+  endPlayerTurn(st2);
+  assert.equal(st2.result, 'win');
+  assert.equal(st2.kills, 1);
+});
+
+test('3×3 빙고: 가운데 줄 외의 가로·세로·대각선', () => {
+  const g = [['blade', 'wave', 'frost'], ['spark', 'blade', 'frost'], ['venom', 'wave', 'blade']];
+  assert.deepEqual(evaluateLines(g).map((l) => l.id), ['d0']);
+  const g2 = [['frost', 'wave', 'blade'], ['frost', 'spark', 'blade'], ['frost', 'wave', 'blade']];
+  assert.deepEqual(evaluateLines(g2).map((l) => l.id).sort(), ['r0', 'r2']);
+  // 빙고가 뜨면 보너스 기술이 패에 추가된다
+  const strip = ['frost', 'blade', 'frost', 'blade'];
+  const { st } = createBattle(mkDef([['kasa', 1, 0]]), { seed: 3, hp: 15, maxHp: 15, strips: [strip, strip, strip] });
+  let found = false;
+  for (let i = 0; i < 40 && !found; i++) {
+    st.phase = 'spin';
+    spin(st);
+    found = st.shots.some((s) => s.bonus);
+    if (found) {
+      const bi = st.shots.findIndex((s) => s.bonus);
+      const pv = previewShot(st, bi, 1);
+      assert.deepEqual(pv.events, fireShot(st, bi, 1));
+    }
+  }
+  assert.ok(found);
 });

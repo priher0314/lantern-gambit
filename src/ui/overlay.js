@@ -1,7 +1,7 @@
 // HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
 import { BATTLES, SYMBOLS, ENEMIES, RELICS, RELIC_IDS } from '../core/data.js';
 import { rewardInfo } from '../core/run.js';
-import { drawSymbol, drawIcon } from '../render/art.js';
+import { drawSymbol, drawIcon, drawRelicIcon } from '../render/art.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -30,8 +30,29 @@ function iconCanvas(kind, size = 56) {
 
 const relicChip = (id, cls = '') => {
   const R = RELICS[id];
-  return `<span class="relic-chip ${cls}" style="--c:${R.color}"><i>${R.glyph}</i>${R.name}</span>`;
+  return `<span class="relic-chip ${cls}" style="--c:${R.color}"><canvas class="relic-cv" data-relic="${id}" data-size="24"></canvas>${R.name}</span>`;
 };
+
+// 유물 그림 아이콘을 캔버스에 그려 넣는다
+function paintRelics(root) {
+  root.querySelectorAll('canvas[data-relic]').forEach((c) => {
+    const size = Number(c.dataset.size) || 24;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    c.width = c.height = size * dpr;
+    c.style.width = c.style.height = size + 'px';
+    const g = c.getContext('2d');
+    g.scale(dpr, dpr);
+    const R = RELICS[c.dataset.relic];
+    g.beginPath();
+    g.arc(size / 2, size / 2, size / 2 - 1.5, 0, Math.PI * 2);
+    g.fillStyle = '#1d1128';
+    g.fill();
+    g.lineWidth = Math.max(1.5, size * 0.05);
+    g.strokeStyle = R.color;
+    g.stroke();
+    drawRelicIcon(g, c.dataset.relic, size / 2, size / 2, size * 0.3);
+  });
+}
 
 export class Overlay {
   constructor(root, hooks) {
@@ -56,6 +77,7 @@ export class Overlay {
   panel(html, cls = '') {
     this.layer.innerHTML = `<div class="ov-panel ${cls}">${html}</div>`;
     this.layer.classList.add('on');
+    paintRelics(this.layer);
     return this.layer.firstElementChild;
   }
 
@@ -92,12 +114,14 @@ export class Overlay {
   howToHtml() {
     return `
       <div class="howto">
-        <div class="ht"><b>1. 레버</b><span>슬롯 옆 레버를 당기면 릴 3개가 이번 턴의 공격이 된다. 이웃한 두 칸이 같으면 <em>연결 강화</em>, 셋이 같으면 <em>잭팟</em>.</span></div>
-        <div class="ht"><b>2. 다시 굴리기</b><span>결과가 아쉬우면 공격 전에 다시 굴린다(턴마다 2번). <em class="r">대가</em>는 버튼에 미리 적혀 있고, <em>보상</em>으로 "금빛 강화" 릴이 1개 늘어난다.</span></div>
-        <div class="ht"><b>금빛 강화</b><span>그 릴의 공격이 피해 +1, 고유 능력 +1. 퍼펙트 막기·회피로 얻는 <em>불씨</em>도 다음 턴 금빛 릴이 된다.</span></div>
-        <div class="ht"><b>3. 조준</b><span>릴을 고르고 레인을 누른다(터치는 두 번). 미리보기 숫자 = 실제 피해. <em>동결 → 절단 = 파쇄</em>처럼 순서가 중요!</span></div>
-        <div class="ht"><b>4. 받아치기</b><span>적 공격의 고리가 원에 닿는 순간:<br><em class="g">금빛·주황</em> → 막기 (정확하면 원하는 레인으로 되치기)<br><em class="r">붉은빛</em> → 회피 (적이 노출되어 다음 피해 2배)</span></div>
-        <div class="ht"><b>적 정보</b><span>적을 <em>길게 누르면</em>(마우스는 우클릭) 행동과 공략법이 나온다. 화면 위 <em>?</em> 버튼에서도 볼 수 있다.</span></div>
+        <div class="ht"><b>레버</b><span>당기면 <em>가운데 줄</em> 3칸이 이번 턴의 공격.</span></div>
+        <div class="ht"><b>연결·잭팟</b><span>가운데 줄에서 이웃 2칸이 같으면 <em>연결</em>, 3칸이면 <em>잭팟</em>.</span></div>
+        <div class="ht"><b>빙고</b><span>가로·대각선 한 줄이 맞으면 <em>보너스 기술 +1</em>.</span></div>
+        <div class="ht"><b>다시 굴리기</b><span>턴마다 2번. <em class="r">대가</em>는 버튼에 적혀 있고 <em>금빛 릴 +1</em>을 얻는다.</span></div>
+        <div class="ht"><b>금빛 릴</b><span>그 칸의 공격이 피해 +1, 효과 +1.</span></div>
+        <div class="ht"><b>조준</b><span>릴을 고르고 레인을 누른다(터치는 두 번).</span></div>
+        <div class="ht"><b>받아치기</b><span><em class="g">금빛·주황 고리</em> → 막기 (정확하면 되치기)<br><em class="r">붉은 고리</em> → 회피 (적 노출, 피해 2배)</span></div>
+        <div class="ht"><b>적 정보</b><span>적을 <em>길게 누르기</em> (마우스는 우클릭).</span></div>
         <div class="ht"><b>조작키</b><span>Space 레버·막기 / R 다시 굴리기 / Q W E 릴 / 1 2 3 레인 / K 회피 / Enter 턴 종료 / H 길잡이</span></div>
       </div>`;
   }
@@ -119,7 +143,9 @@ export class Overlay {
       ['#ffcc33', '공격 N', '금빛 고리 — 막기로 받고 되치기'],
       ['#ff4d5e', '강타 준비 / 강타 N', '준비 다음 차례에 붉은 고리 — 회피'],
       ['#ff9a3d', '조준 중 / 발사 N', '조준 다음 차례에 주황 고리 — 막기'],
-      ['#ffe08a', '사격 준비', '장로가 충전에 들어감 — 그동안 받는 피해 +2'],
+      ['#ffe08a', '사격 준비', '장로 충전 — 그동안 받는 피해 +2'],
+      ['#50f0be', '방패 N', '정면 공격을 N번 막는다 — 치면 깎인다'],
+      ['#a6f04a', '독 N', '턴이 끝날 때 N 피해, 그 뒤 1 감소'],
       ['#9fdcff', '얼음', '행동 불가 — 절단·파동으로 치면 파쇄'],
     ];
     const p = this.panel(`
@@ -154,7 +180,7 @@ export class Overlay {
       const r = rewardInfo(id);
       const isNew = r.relic && !o.used.includes(id);
       return `<button class="rw-card ${r.relic ? 'is-relic' : ''}" data-id="${id}" style="--c:${r.relic ? r.color : '#d8a548'}">
-        <span class="rw-ic">${r.relic ? `<i class="relic-big">${r.glyph}</i>` : ''}</span>
+        <span class="rw-ic">${r.relic ? `<canvas class="relic-cv" data-relic="${id}" data-size="56"></canvas>` : ''}</span>
         <span class="rw-name">${r.name}${r.relic ? `<small>유물 · ${r.build}</small>` : '<small>보급품</small>'}${isNew ? '<em class="new">처음</em>' : ''}</span>
         <span class="rw-desc">${r.desc}</span>
       </button>`;

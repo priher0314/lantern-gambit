@@ -185,6 +185,7 @@ body { display: flex; align-items: center; justify-content: center; }
   font-size: 0.88em;
   white-space: nowrap;
 }
+.relic-cv { display: block; flex: 0 0 auto; }
 .relic-chip i {
   display: inline-flex;
   align-items: center;

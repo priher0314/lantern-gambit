@@ -7,13 +7,13 @@ import {
   LANES, FRONT, GUARD_CAP, EMBER_CAP, REROLLS_PER_TURN,
   ENEMIES, shotStats,
 } from './data.js';
-import { evaluateReels } from './slot.js';
+import { evaluateReels, evaluateLines } from './slot.js';
 import { WINDUP } from './timing.js';
 
 const clone = (o) => structuredClone(o);
 export const has = (st, id) => st.relics.includes(id);
-const guardCap = (st) => GUARD_CAP + (has(st, 'oilFlask') ? 2 : 0);
-
+export const guardCap = (st) => GUARD_CAP + (has(st, 'oilFlask') ? 2 : 0);
+let shotPower = 1; // 방패를 깎는 힘(연결·빙고·잭팟 기술은 2)
 function relicEvent(st, events, relic, extra = {}) {
   events.push({ type: 'relic', relic, ...extra });
 }
@@ -124,6 +124,7 @@ function spawnEnemy(st, type, lane, row, events, src = 'wave') {
     hp: sp.hp, maxHp: sp.hp, alive: true,
     frozen: 0, exposed: false, braced: false, charge: false,
     fury: 0, step: 0, vulnerable: false, shieldBroken: false, phase2: false,
+    shieldHp: sp.shieldHp || 0, poison: 0,
   };
   st.enemies.push(e);
   if (src !== 'wave') st.totalEnemies++;
@@ -181,11 +182,12 @@ export function describeOmen(st, omen) {
   const e = omen.id ? byId(st, omen.id) : null;
   if (omen.kind === 'hasten' && e && e.alive) {
     const canMove = e.row < FRONT && !enemyAt(st, e.lane, e.row + 1);
-    return { text: canMove ? `${ENEMIES[e.type].name} 1칸 전진` : `${ENEMIES[e.type].name} 분노 +1`, id: e.id };
+    const short = canMove ? '1칸 전진' : '공격력 +1';
+    return { text: `${ENEMIES[e.type].name} ${short}`, short, id: e.id };
   }
-  if (omen.kind === 'empower' && e && e.alive) return { text: `${ENEMIES[e.type].name} 분노 +2`, id: e.id };
+  if (omen.kind === 'empower' && e && e.alive) return { text: `${ENEMIES[e.type].name} 공격력 +2`, short: '공격력 +2', id: e.id };
   const lane = omen.lane ?? (e ? e.lane : 1);
-  return { text: `${lane + 1}번 레인에 우산 도깨비 등장`, lane };
+  return { text: `${lane + 1}번 레인에 새 적 등장`, short: '새 적 등장', lane };
 }
 
 function applyOmen(st, omen, events) {
@@ -217,11 +219,22 @@ function rollReels(st, gildCount, events) {
   const idx = st.strips.map((s) => randInt(st, s.length));
   const gilded = pickDistinct(st, 3, Math.min(3, gildCount));
   st.reels = idx.map((i, k) => ({ symbol: st.strips[k][i], stop: i, gilded: gilded.includes(k) }));
+  // 3×3 판: 각 릴의 위·가운데·아래 칸. 가운데 줄이 이번 턴의 공격, 나머지 줄의 빙고는 보너스 기술.
+  st.grid = idx.map((i, k) => {
+    const s = st.strips[k];
+    const n = s.length;
+    return [s[(i + 1) % n], s[i], s[(i - 1 + n) % n]];
+  });
   st.shots = evaluateReels(st.reels);
   const top = Math.max(...st.shots.map((s) => s.tier));
   if (top === 3) st.stats.jackpots++;
   else if (top === 2) st.stats.pairs++;
-  events.push({ type: 'spin', reels: clone(st.reels), shots: clone(st.shots) });
+  st.bingos = evaluateLines(st.grid);
+  for (const ln of st.bingos) {
+    st.shots.push({ id: 'b' + ln.id, symbol: ln.symbol, tier: 2, reels: [], gild: 0, used: false, bonus: ln.id });
+    st.stats.bingos = (st.stats.bingos || 0) + 1;
+  }
+  events.push({ type: 'spin', reels: clone(st.reels), shots: clone(st.shots), grid: clone(st.grid), bingos: clone(st.bingos) });
 }
 
 export function spin(st) {
@@ -258,7 +271,7 @@ function hit(st, e, dmg, o, events, depth = 0) {
   if (!e || !e.alive) return { skipped: true };
   const sp = ENEMIES[e.type];
   const tags = [];
-  const shielded = sp.shield && !e.shieldBroken && !e.exposed && o.frontal && !o.pierceShield;
+  const shielded = sp.shield && e.shieldHp > 0 && !e.exposed && o.frontal && !o.pierceShield;
   let bonus = 0;
   let shards = false;
   if (e.frozen > 0 && o.shatter) {
@@ -269,10 +282,14 @@ function hit(st, e, dmg, o, events, depth = 0) {
     st.stats.shatters++;
     if (sp.shield && !e.shieldBroken) {
       e.shieldBroken = true;
+      e.shieldHp = 0;
       tags.push('shieldBreak');
     }
   } else if (shielded) {
-    events.push({ type: 'block', id: e.id, el: o.el, lane: e.lane, row: e.row });
+    // 탈 방패: 피해는 막지만 맞을 때마다 금이 가고, 다 깎이면 깨진다
+    e.shieldHp = Math.max(0, e.shieldHp - shotPower);
+    if (e.shieldHp === 0) e.shieldBroken = true;
+    events.push({ type: 'block', id: e.id, el: o.el, lane: e.lane, row: e.row, left: e.shieldHp, broke: e.shieldHp === 0 });
     return { blocked: true };
   }
   let total = dmg + bonus;
@@ -312,6 +329,10 @@ function hit(st, e, dmg, o, events, depth = 0) {
       events.push({ type: 'bossPhase', id: e.id });
     }
     if (o.freeze) applyFreeze(st, e, o.freeze, events);
+    if (o.poison) {
+      e.poison = Math.min(9, e.poison + o.poison);
+      events.push({ type: 'poison', id: e.id, stacks: e.poison });
+    }
   }
 
   if (shards && depth < 3) {
@@ -369,6 +390,7 @@ function resolveShot(st, shot, lane, events) {
       if (sym === 'wave') hit(st, e, S.dmg, { el: 'wave', frontal: false, shatter: true }, events);
       if (sym === 'frost') hit(st, e, S.dmg, { el: 'frost', frontal: false, freeze: S.freeze }, events);
       if (sym === 'spark') hit(st, e, S.dmg, { el: 'spark', frontal: false }, events);
+      if (sym === 'venom') hit(st, e, S.dmg, { el: 'venom', frontal: false, poison: S.poison }, events);
     }
     if (sym === 'wave') {
       for (const e of alive(st).sort((a, b) => a.row - b.row)) {
@@ -431,13 +453,13 @@ function resolveShot(st, shot, lane, events) {
     return;
   }
 
-  if (sym === 'frost') {
+  if (sym === 'frost' || sym === 'venom') {
     events.push({ ...base });
     let endRow = -1;
     const targets = laneTargets(st, lane);
     const list = S.wholeLane ? targets : targets.slice(0, 1);
     for (const t of list) {
-      const r = hit(st, t, S.dmg, { el: 'frost', frontal: true, freeze: S.freeze }, events);
+      const r = hit(st, t, S.dmg, { el: sym, frontal: true, freeze: S.freeze, poison: S.poison }, events);
       endRow = t.row;
       if (r.blocked) break;
     }
@@ -480,7 +502,9 @@ export function fireShot(st, shotIndex, lane) {
   shot.used = true;
   st.shotsFired++;
   const events = [];
+  shotPower = shot.tier >= 2 ? 2 : 1;
   resolveShot(st, shot, lane, events);
+  shotPower = 1;
   checkObjective(st, events);
   return events;
 }
@@ -503,7 +527,11 @@ export function summarize(events) {
       for (const t of ev.tags) if (!p.tags.includes(t)) p.tags.push(t);
     }
     if (ev.type === 'kill') get(ev.id).killed = true;
-    if (ev.type === 'block') get(ev.id).blocked = true;
+    if (ev.type === 'block') {
+      get(ev.id).blocked = true;
+      get(ev.id).shieldLeft = ev.left;
+    }
+    if (ev.type === 'poison') get(ev.id).poison = ev.stacks;
     if (ev.type === 'freeze') get(ev.id).frozen = ev.turns;
     if (ev.type === 'expose') get(ev.id).exposed = true;
     if (ev.type === 'ward') guard += ev.amount;
@@ -586,6 +614,15 @@ export function endPlayerTurn(st) {
   const events = [];
   for (const e of st.enemies) e.exposed = false;
   st.phase = 'enemy';
+  // 중독: 턴이 끝날 때 중독 수치만큼 피해(방패 무시), 그 뒤 1 줄어든다
+  for (const e of alive(st).sort((a, b) => b.row - a.row || a.lane - b.lane)) {
+    if (e.poison <= 0) continue;
+    events.push({ type: 'poisonTick', id: e.id });
+    hit(st, e, e.poison, { el: 'venom', frontal: false, src: 'poison' }, events);
+    if (e.alive) e.poison--;
+  }
+  checkObjective(st, events);
+  if (st.result) return events;
   st.queue = alive(st).sort((a, b) => b.row - a.row || a.lane - b.lane).map((e) => e.id);
   events.push({ type: 'enemyPhase' });
   return events;

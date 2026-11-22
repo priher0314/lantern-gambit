@@ -3,12 +3,13 @@ import { ROWS, LANES } from '../core/data.js';
 
 export const W = 540;
 export const LANE_SPACING = 166;
+export const REEL_CELL = 56; // 릴 한 칸 높이(창에 3칸이 보인다)
 
 export function computeLayout(H) {
   const L = { W, H };
   L.hudH = 66;
-  L.btn = { y: H - 102, h: 102 };
-  L.slot = { y: L.btn.y - 200, h: 200 };
+  L.btn = { y: H - 94, h: 94 };
+  L.slot = { y: L.btn.y - 258, h: 258 };
   L.info = { y: L.slot.y - 40, h: 40 };
   L.playerY = L.info.y - 6;
   L.fieldBottom = L.playerY - 84;
@@ -57,11 +58,11 @@ export function laneEdges(L, lane, y) {
 
 // 슬롯 창 위치
 export function reelRect(L, i) {
-  const w = 110;
-  const h = 122;
-  const gap = 12;
-  const x0 = 34;
-  return { x: x0 + i * (w + gap), y: L.slot.y + 30, w, h };
+  const w = 108;
+  const h = REEL_CELL * 3;
+  const gap = 10;
+  const x0 = 32;
+  return { x: x0 + i * (w + gap), y: L.slot.y + 54, w, h };
 }
 
 // 슬롯머신 몸체(릴 3개를 감싸는 사당)와 오른쪽 레버
@@ -75,4 +76,17 @@ export function leverRect(L) {
   const cab = cabinetRect(L);
   const x = cab.x + cab.w + 6;
   return { x, y: L.slot.y + 4, w: W - 8 - x, h: L.slot.h - 6, cx: x + (W - 8 - x) / 2 + 4, top: L.slot.y + 44, bottom: L.slot.y + 134 };
+}
+
+// 3×3 판의 칸 중심(col=릴, row 0=위 1=가운데 2=아래)
+export function slotCell(L, col, row) {
+  const r = reelRect(L, col);
+  return { x: r.x + r.w / 2, y: r.y + r.h / 2 + (row - 1) * REEL_CELL };
+}
+
+// 릴 위의 "빙고 기술" 줄
+export function bingoRect(L) {
+  const a = reelRect(L, 0);
+  const c = reelRect(L, 2);
+  return { x: a.x, y: L.slot.y + 25, w: c.x + c.w - a.x, h: 24 };
 }
