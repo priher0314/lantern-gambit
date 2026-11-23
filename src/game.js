@@ -1,6 +1,6 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
-import { BATTLES, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, OBJECTIVES, RELICS } from './core/data.js';
+import { BATTLES, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, OBJECTIVES, RELICS, FUSIONS, EVOLVE_AT } from './core/data.js';
 import { createRun, battleOptions, recordBattle, rollRewards, rollStartRelics, applyReward, advance } from './core/run.js';
 import { judge, lateLimit } from './core/timing.js';
 import { shotForReel, BINGO_LINES } from './core/slot.js';
@@ -256,10 +256,15 @@ export class Game {
 
   relicCard(id) {
     const R = RELICS[id];
-    const l2 = this.st && (this.st.relicLv[id] || 1) >= 2;
+    const level = this.st ? this.st.relicLv[id] || 1 : 1;
     const lines = [{ label: '효과', text: R.desc }];
-    if (l2) lines.push({ label: 'II 강화', text: R.up, color: '#ffe08a' });
-    return { kicker: `유물 · ${R.tag}`, title: R.name + (l2 ? ' II' : ''), relic: id, color: R.color, lines };
+    if (R.fusion) lines.push({ label: '재료', text: `${RELICS[R.a].name} + ${RELICS[R.b].name} (효과 유지)`, color: '#ffe08a' });
+    if (level === 2) {
+      lines.push({ label: 'II', text: R.up, color: '#ffe08a' });
+      lines.push({ label: '진화', text: `${this.st.relicProc[id] || 0}/${EVOLVE_AT}번 발동하면 III`, color: '#ff9ac0' });
+    }
+    if (level >= 3) lines.push({ label: 'III', text: '진화 완료 — 효과 3배', color: '#ff9ac0' });
+    return { kicker: `유물 · ${R.tag}`, title: R.name + (level >= 3 ? ' III' : level === 2 ? ' II' : ''), relic: id, color: R.color, lines };
   }
 
   queueIntros() {
@@ -391,7 +396,7 @@ export class Game {
       if (it && it.kind === 'brace') this.dangers.push({ lane: e.lane, row: e.row, style: 'heavy' });
     }
     this.omenMark = null;
-    if (this.ui.phase === 'aim' && B.canReroll(st)) {
+    if (this.ui.phase === 'aim' && B.canReroll(st) && !(B.has(st, 'windfall') && st.rerollCount === 0)) {
       const d = B.describeOmen(st, st.omens[st.rerollCount]);
       if (d) this.omenMark = d;
     }
@@ -471,7 +476,7 @@ export class Game {
     else if (st.rerollsLeft <= 0) sub = '이번 턴 횟수를 다 썼다';
     else {
       const d = B.describeOmen(st, st.omens[st.rerollCount]);
-      sub = `대가: ${d ? d.text : '?'}`;
+      sub = B.has(st, 'windfall') && st.rerollCount === 0 ? '대가 없음 (대박)' : `대가: ${d ? d.text : '?'}`;
       sub2 = '보상: 금빛 릴 +1';
       subColors = ['#ffb8c8', '#ffe08a'];
     }
@@ -522,9 +527,10 @@ export class Game {
       return;
     }
     if (!reacting && this.st) {
-      for (let i = 0; i < this.st.relics.length; i++) {
+      const shown = this.shownRelics;
+      for (let i = 0; i < shown.length; i++) {
         if (inR(this.relicRect(i), 3)) {
-          this.showCard(this.relicCard(this.st.relics[i]));
+          this.showCard(this.relicCard(shown[i]));
           return;
         }
       }
@@ -645,6 +651,15 @@ export class Game {
       return this.enemyPhase();
     }
     if (id === 'guard' || id === 'dodge') return this.reactInput(id);
+  }
+
+  // HUD에 보일 유물: 융합한 재료는 융합 유물 하나로 묶어 보여준다
+  get shownRelics() {
+    const st = this.st;
+    if (!st) return [];
+    const hidden = new Set();
+    for (const id of st.relics) if (FUSIONS[id]) { hidden.add(FUSIONS[id].a); hidden.add(FUSIONS[id].b); }
+    return st.relics.filter((id) => !hidden.has(id));
   }
 
   get guardCap() {
@@ -949,8 +964,8 @@ export class Game {
         await this.playEvents(res.events);
         atk = null;
         if (res.counter && !st.result) {
-          const lane = await this.chooseCounter(res.counter.defaultLane);
-          await this.playEvents(B.resolveCounter(st, lane));
+          await this.wait(140);
+          await this.playEvents(B.resolveCounter(st, res.counter.defaultLane));
         }
         if (res.attack && !st.result) {
           await this.wait(160);
@@ -1257,6 +1272,18 @@ export class Game {
       }
       case 'turn':
         break;
+      case 'evolve': {
+        const R = RELICS[ev.relic];
+        this.relicPulse[ev.relic] = 2;
+        this.audio.play('bingo', { level: 2 });
+        fx.flash(R.color, 0.4);
+        fx.shake(2);
+        this.buzz(120);
+        this.celebrate(1);
+        this.showBanner(`진화! ${R.name} III`, '효과 3배', 1.8, R.color, 40);
+        await this.wait(700);
+        break;
+      }
       case 'reaction': {
         // 원소 반응: 이름을 크게 띄워 "왜 터졌는지" 알려준다
         const p = cellPos(L, ev.lane, ev.row);
@@ -1316,6 +1343,7 @@ export class Game {
         const R = RELICS[ev.relic];
         if (!R) break;
         this.relicPulse[ev.relic] = 1;
+        if (ev.quiet) break; // 늘 켜져 있는 효과는 배지만 반짝
         this.audio.play('relic');
         let x = this.player.x;
         let y = L.playerY - 168;

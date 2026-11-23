@@ -7,7 +7,7 @@ import {
 import { evaluateReels, evaluateLines } from '../src/core/slot.js';
 import { BATTLES, BASE_STRIP, RELIC_IDS } from '../src/core/data.js';
 import { judge } from '../src/core/timing.js';
-import { createRun, battleOptions, rollRewards, rollStartRelics, applyReward, recordBattle, advance } from '../src/core/run.js';
+import { createRun, battleOptions, rollRewards, rollStartRelics, applyReward, recordBattle, advance, availableFusions } from '../src/core/run.js';
 import { rand, randInt } from '../src/core/rng.js';
 
 const strips = [BASE_STRIP, BASE_STRIP, BASE_STRIP];
@@ -480,4 +480,53 @@ test('연속 처치 3번째에 불씨, 유물 강화(II)로 효과 2배, 북 도
   endPlayerTurn(st);
   nextEnemyStep(st);
   assert.deepEqual([st.enemies[0].lane, st.enemies[0].row], [1, 1]);
+});
+
+test('진화: II 유물이 6번 발동하면 III(효과 3배)', () => {
+  const st = mk([['kasa', 1, 0]], { relics: ['gamblerCoin'], relicLv: { gamblerCoin: 2 }, relicProc: { gamblerCoin: 5 } });
+  spin(st);
+  assert.equal(st.rerollsLeft, 4);
+  const ev = reroll(st);
+  assert.ok(ev.some((e) => e.type === 'evolve' && e.relic === 'gamblerCoin'));
+  assert.equal(st.relicLv.gamblerCoin, 3);
+  const run = createRun(1);
+  applyReward(run, 'gamblerCoin');
+  recordBattle(run, st);
+  assert.equal(run.relicLv.gamblerCoin, 3, '진화는 다음 전투로 이어진다');
+});
+
+test('융합: 재료 두 개가 모이면 보상에 나오고, 새 효과가 더해진다', () => {
+  const run = createRun(2);
+  applyReward(run, 'frostbite');
+  assert.deepEqual(availableFusions(run), []);
+  applyReward(run, 'iceMirror');
+  assert.deepEqual(availableFusions(run), ['glacier']);
+  assert.ok(rollRewards(run).includes('fuse:glacier'));
+  applyReward(run, 'fuse:glacier');
+  assert.ok(run.relics.includes('glacier') && run.relics.includes('frostbite'));
+  assert.deepEqual(availableFusions(run), []);
+  // 빙하: 파쇄 +3 (기본 3 + 고드름 1 + 빙하 3)
+  let st = mk([['kasa', 1, 4]], { relics: run.relics });
+  st.enemies[0].frozen = 1;
+  st.enemies[0].hp = st.enemies[0].maxHp = 30;
+  setShots(st, [['blade', 1]]);
+  assert.equal(fireShot(st, 0, 1).find((e) => e.type === 'hit').dmg, 3 + 3 + 1 + 3);
+  // 역병: 중독이 줄지 않는다
+  st = mk([['kasa', 1, 0]], { relics: ['venomFang', 'comboFlute', 'plague'] });
+  st.enemies[0].poison = 2;
+  st.enemies[0].hp = st.enemies[0].maxHp = 30;
+  setShots(st, []);
+  endPlayerTurn(st);
+  assert.equal(st.enemies[0].poison, 2);
+  // 대박: 첫 다시 돌리기는 대가 없음
+  st = mk([['kasa', 1, 2]], { relics: ['gamblerCoin', 'bingoBell', 'windfall'] });
+  spin(st);
+  st.omens[0] = { kind: 'hasten', id: st.enemies[0].id };
+  reroll(st);
+  assert.equal(st.enemies[0].row, 2);
+  // 칼바람: 절단이 양옆에도 1
+  st = mk([['kasa', 1, 4], ['kasa', 0, 4], ['kasa', 2, 4]], { relics: ['whetstone', 'tideBell', 'gale'] });
+  setShots(st, [['blade', 1]]);
+  fireShot(st, 0, 1);
+  assert.deepEqual(st.enemies.map((e) => e.maxHp - e.hp), [3, 1, 1]);
 });

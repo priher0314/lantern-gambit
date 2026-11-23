@@ -5,7 +5,7 @@
 import { rand, randInt, pickDistinct } from './rng.js';
 import {
   LANES, FRONT, GUARD_CAP, EMBER_CAP, REROLLS_PER_TURN,
-  ENEMIES, shotStats,
+  ENEMIES, shotStats, EVOLVE_AT, FUSIONS,
 } from './data.js';
 import { evaluateReels, evaluateLines } from './slot.js';
 import { WINDUP } from './timing.js';
@@ -20,6 +20,14 @@ const around = (st, e) => NEIGHBORS.map(([dl, dr]) => enemyAt(st, e.lane + dl, e
 let shotPower = 1; // 방패를 깎는 힘(연결·빙고·잭팟 기술은 2)
 function relicEvent(st, events, relic, extra = {}) {
   events.push({ type: 'relic', relic, ...extra });
+  // 진화: II 유물이 충분히 발동하면 III로
+  if ((st.relicLv[relic] || 1) === 2 && !FUSIONS[relic]) {
+    st.relicProc[relic] = (st.relicProc[relic] || 0) + 1;
+    if (st.relicProc[relic] >= EVOLVE_AT) {
+      st.relicLv[relic] = 3;
+      events.push({ type: 'evolve', relic });
+    }
+  }
 }
 
 function addGuard(st, n, events, relic) {
@@ -56,6 +64,7 @@ export function createBattle(def, opt) {
     phase: 'spin', // spin | aim | enemy | over
     relics: (opt.relics || []).slice(),
     relicLv: { ...(opt.relicLv || {}) },
+    relicProc: { ...(opt.relicProc || {}) },
     score: 0,
     turnKills: 0,
     bingoLevel: 0,
@@ -173,6 +182,7 @@ function startTurn(st, events) {
   st.shots = [];
   st.shotsFired = 0;
   st.omens = [rollOmen(st), rollOmen(st), rollOmen(st)];
+  if (has(st, 'torch')) addGuard(st, 1, events, 'torch');
   events.push({ type: 'turn', turn: st.turn });
   checkObjective(st, events);
 }
@@ -274,7 +284,9 @@ export function canReroll(st) {
 export function reroll(st) {
   if (!canReroll(st)) throw new Error('reroll not allowed');
   const events = [];
-  applyOmen(st, st.omens[st.rerollCount], events);
+  // 융합 [대박]: 턴마다 첫 다시 돌리기는 대가 없음
+  if (has(st, 'windfall') && st.rerollCount === 0) relicEvent(st, events, 'windfall');
+  else applyOmen(st, st.omens[st.rerollCount], events);
   st.rerollCount++;
   st.rerollsLeft--;
   st.stats.rerolls++;
@@ -294,7 +306,7 @@ function hit(st, e, dmg, o, events, depth = 0) {
   let bonus = 0;
   let shards = false;
   if (e.frozen > 0 && o.shatter) {
-    bonus += 3;
+    bonus += 3 + (has(st, 'glacier') ? 3 : 0);
     e.frozen = 0;
     shards = true;
     tags.push('shatter');
@@ -312,7 +324,10 @@ function hit(st, e, dmg, o, events, depth = 0) {
     return { blocked: true };
   }
   // 유물 [얼음 거울]: 얼어 있던 적은 더 아프다
-  if (e.frozen > 0 || shards) bonus += lv(st, 'iceMirror');
+  if ((e.frozen > 0 || shards) && has(st, 'iceMirror')) {
+    bonus += lv(st, 'iceMirror');
+    relicEvent(st, events, 'iceMirror', { quiet: true });
+  }
   // 반응 [감전 폭발]: 중독된 적에게 전격 → 중독 수치만큼 추가 피해, 주변까지 터진다
   let detonate = 0;
   if (o.el === 'spark' && e.poison > 0) {
@@ -375,10 +390,13 @@ function hit(st, e, dmg, o, events, depth = 0) {
     }
     // 유물 [천둥 북]: 처치 → 가장 가까운 적에게 번개 (연쇄 깊이 제한)
     if (has(st, 'thunderDrum') && depth < 3) {
-      const near = alive(st)
+      // 융합 [뇌우]가 있으면 가까운 적 2명에게
+      const nears = alive(st)
         .map((n) => ({ n, d: Math.abs(n.lane - e.lane) + Math.abs(n.row - e.row) }))
-        .sort((a, b) => a.d - b.d || b.n.row - a.n.row || a.n.lane - b.n.lane)[0];
-      if (near) {
+        .sort((a, b) => a.d - b.d || b.n.row - a.n.row || a.n.lane - b.n.lane)
+        .slice(0, has(st, 'tempest') ? 2 : 1);
+      for (const near of nears) {
+        if (!near.n.alive) continue;
         relicEvent(st, events, 'thunderDrum', { from: { lane: e.lane, row: e.row }, to: { lane: near.n.lane, row: near.n.row }, id: near.n.id });
         hit(st, near.n, 2 * lv(st, 'thunderDrum'), { el: 'spark', frontal: false, src: 'relic' }, events, depth + 1);
       }
@@ -425,6 +443,8 @@ function resolveShot(st, shot, lane, events) {
   if (shot.symbol === 'blade' && has(st, 'whetstone') && S.pierce < 99) S.pierce += lv(st, 'whetstone');
   if (shot.symbol === 'wave' && has(st, 'tideBell') && S.splash != null) S.splash += lv(st, 'tideBell');
   if (shot.symbol === 'spark' && S.jumps != null) S.jumps += lv(st, 'stormRune');
+  if (shot.gild > 0 && has(st, 'emberWick')) relicEvent(st, events, 'emberWick', { quiet: true });
+  if (shot.symbol === 'spark' && has(st, 'stormRune')) relicEvent(st, events, 'stormRune', { quiet: true });
   const base = { type: 'fire', symbol: shot.symbol, tier: shot.tier, gild: shot.gild, lane, shotId: shot.id };
   const sym = shot.symbol;
 
@@ -486,6 +506,13 @@ function resolveShot(st, shot, lane, events) {
         }, events);
         n++;
         if (r.killed && has(st, 'whetstone')) addGuard(st, lv(st, 'whetstone'), events, 'whetstone');
+        // 융합 [칼바람]: 양옆 레인 같은 줄의 적에게도 1
+        if (!r.blocked && has(st, 'gale')) {
+          for (const dl of [-1, 1]) {
+            const n = enemyAt(st, l + dl, t.row);
+            if (n) hit(st, n, 1, { el: 'blade', frontal: false, src: 'splash' }, events);
+          }
+        }
         if (r.blocked) { endRow = t.row; break; }
         endRow = n >= S.pierce ? t.row : -1;
       }
@@ -713,7 +740,7 @@ export function endPlayerTurn(st) {
     if (e.poison <= 0) continue;
     events.push({ type: 'poisonTick', id: e.id });
     hit(st, e, e.poison, { el: 'venom', frontal: false, src: 'poison' }, events);
-    if (e.alive) e.poison--;
+    if (e.alive && !has(st, 'plague')) e.poison--;
   }
   checkObjective(st, events);
   if (st.result) return events;
@@ -883,6 +910,11 @@ export function resolveReaction(st, input) {
   events.push({ type: 'react', outcome, action, grade, style: a.style, attackerId: a.attackerId, lane: a.lane, hitIndex: a.hitIndex, ember: outcome === 'perfectGuard' || outcome === 'perfectDodge' || outcome === 'deflect' });
   applyPlayerDamage(st, dmg, events);
   if (mirrorGuard) addGuard(st, lv(st, 'counterMirror'), events, 'counterMirror');
+  // 융합 [맞수]: 퍼펙트 막기·회피 성공 → 모든 적 1 피해
+  if (has(st, 'duel') && ['perfectGuard', 'deflect', 'dodge', 'perfectDodge'].includes(outcome)) {
+    relicEvent(st, events, 'duel');
+    for (const n of alive(st)) hit(st, n, 1, { el: 'counter', frontal: false, pierceShield: true, src: 'relic' }, events);
+  }
 
   if (e && e.alive) {
     if (outcome === 'dodge' || outcome === 'perfectDodge') {

@@ -245,6 +245,24 @@ export const RELICS = {
 for (const k in RELICS) RELICS[k].build = RELICS[k].tag; // 예전 필드명 호환
 export const RELIC_IDS = Object.keys(RELICS);
 
+// 진화: II 유물이 한 판 동안 이만큼 발동하면 III(효과 3배)로 진화한다
+export const EVOLVE_AT = 6;
+
+// 융합: 짝이 되는 두 유물을 모두 가지면 보상에 등장. 재료 효과는 유지되고 새 효과가 더해진다.
+export const FUSIONS = {
+  glacier: { name: '빙하', en: 'Glacier', a: 'frostbite', b: 'iceMirror', color: '#9fdcff', proc: '', desc: '파쇄 피해 +3', enDesc: 'Shatter deals +3 damage' },
+  tempest: { name: '뇌우', en: 'Tempest', a: 'thunderDrum', b: 'stormRune', color: '#ffe45c', proc: '', desc: '벼락북 번개가 적 2명에게', enDesc: 'Thunder Drum strikes 2 enemies' },
+  plague: { name: '역병', en: 'Plague', a: 'venomFang', b: 'comboFlute', color: '#a6f04a', proc: '', desc: '중독이 줄어들지 않음', enDesc: 'Poison no longer decays' },
+  duel: { name: '맞수', en: 'Rival', a: 'counterMirror', b: 'shadowShoes', color: '#ffd84a', proc: '받아치기 → 전체 피해', desc: '퍼펙트 막기·회피 성공 시 모든 적 1 피해', enDesc: 'Perfect block or dodge: 1 damage to all enemies' },
+  windfall: { name: '대박', en: 'Windfall', a: 'gamblerCoin', b: 'bingoBell', color: '#ffe08a', proc: '', desc: '턴마다 첫 다시 돌리기는 대가 없음', enDesc: 'First reroll each turn has no cost' },
+  gale: { name: '칼바람', en: 'Gale', a: 'whetstone', b: 'tideBell', color: '#cfd8ff', proc: '', desc: '절단이 양옆 적에게도 1 피해', enDesc: 'Slash also deals 1 to enemies on both sides' },
+  torch: { name: '횃불', en: 'Torch', a: 'emberWick', b: 'oilFlask', color: '#ffb347', proc: '턴 시작 → 방어막', desc: '턴 시작 시 방어막 +1', enDesc: 'Start of turn: +1 Guard' },
+};
+export const FUSION_IDS = Object.keys(FUSIONS);
+// 조회 편의를 위해 유물 표에도 넣어 둔다(도감 수에는 포함하지 않는다: RELIC_IDS는 위에서 이미 확정)
+for (const k of FUSION_IDS) RELICS[k] = { ...FUSIONS[k], tag: '융합', build: '융합', fusion: true, up: '' };
+export const fusionOf = (id) => FUSION_IDS.find((f) => FUSIONS[f].a === id || FUSIONS[f].b === id);
+
 // 원소 반응(길잡이 표시용)
 export const REACTIONS = [
   ['동결 → 절단·파동', '파쇄', '+3 피해, 주변에 얼음 파편'],

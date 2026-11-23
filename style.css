@@ -259,3 +259,6 @@ body { display: flex; align-items: center; justify-content: center; }
 .rw-desc { display: flex; flex-direction: column; gap: 1px; font-size: 0.95em; opacity: 0.95; line-height: 1.35; }
 .rw-desc b { font-weight: normal; font-family: "Black Han Sans", sans-serif; color: var(--gold-hi); font-size: 1.08em; }
 .rw-req { background: none; border: none; color: #e8dcc8; opacity: 0.75; padding: 0; }
+
+.rw-hint { margin-top: 2px; font-size: 0.82em; opacity: 0.55; }
+.rw-hint.on { opacity: 1; color: #ff9ac0; }

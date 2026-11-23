@@ -1358,7 +1358,7 @@ export class Renderer {
       }
     }
     // 유물 줄(HUD 바로 아래) — 누르면 설명
-    const relics = st.relics;
+    const relics = g.shownRelics;
     for (let i = 0; i < relics.length; i++) {
       const rr = g.relicRect(i);
       drawRelicBadge(ctx, relics[i], rr.x + rr.w / 2, rr.y + rr.h / 2, 13, g.relicPulse[relics[i]] || 0, st.relicLv[relics[i]] || 1);
@@ -1906,13 +1906,13 @@ export function drawRelicBadge(ctx, id, x, y, r, pulse = 0, level = 1) {
   if (level >= 2) {
     ctx.fillStyle = '#ffe08a';
     ctx.beginPath();
-    ctx.roundRect(x + r * 0.2, y + r * 0.35, r * 1.0, r * 0.75, r * 0.2);
+    ctx.roundRect(x + r * 0.1, y + r * 0.35, r * (level >= 3 ? 1.3 : 1.1), r * 0.75, r * 0.2);
     ctx.fill();
     ctx.font = `${Math.round(r * 0.7)}px ${FONTS.num}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#2a1404';
-    ctx.fillText('II', x + r * 0.7, y + r * 0.76);
+    ctx.fillText(level >= 3 ? 'III' : 'II', x + r * (level >= 3 ? 0.75 : 0.65), y + r * 0.76);
   }
 }
 

@@ -1,5 +1,5 @@
 // HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
-import { BATTLES, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE } from '../core/data.js';
+import { BATTLES, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, FUSIONS, fusionOf } from '../core/data.js';
 import { rewardInfo } from '../core/run.js';
 import { drawSymbol, drawIcon, drawRelicIcon } from '../render/art.js';
 
@@ -118,6 +118,7 @@ export class Overlay {
         <div class="ht"><b>금빛 릴</b><span>그 칸의 공격이 피해 +1, 효과 +1.</span></div>
         <div class="ht"><b>조준</b><span>릴을 고르고 레인을 누른다(터치는 두 번).</span></div>
         <div class="ht"><b>받아치기</b><span><em class="g">금빛·주황 고리</em> → 막기 (정확하면 되치기)<br><em class="r">붉은 고리</em> → 회피 (적에게 빈틈, 피해 2배)</span></div>
+        <div class="ht"><b>유물</b><span>강화하면 <em>II</em>, II가 6번 발동하면 <em>III 진화</em>. 짝이 맞는 두 유물은 <em>융합</em>.</span></div>
         <div class="ht"><b>적 정보</b><span>적을 <em>길게 누르기</em> (마우스는 우클릭).</span></div>
         <div class="ht"><b>조작키</b><span>Space 레버·막기 / R 다시 돌리기 / Q W E 릴 / 1 2 3 레인 / K 회피 / Enter 턴 종료 / H 도움말</span></div>
       </div>`;
@@ -179,9 +180,17 @@ export class Overlay {
     const strong = (s) => s.replace(/([+\-]?\d+(?:회|턴|칸|개)?)/g, '<b>$1</b>');
     const cards = o.ids.map((id) => {
       const r = rewardInfo(id);
-      const isNew = r.relic && !r.upgrade && !o.used.includes(id);
-      const badge = r.upgrade ? '강화' : r.relic ? r.tag : '소모품';
-      const lines = r.desc.split(' · ').map((t) => `<span>${strong(t)}</span>`).join('');
+      const isNew = r.relic && !r.upgrade && !r.fuse && !o.used.includes(id);
+      const badge = r.fuse ? '융합' : r.upgrade ? '강화' : r.relic ? r.tag : '소모품';
+      let lines = r.desc.split(' · ').map((t) => `<span>${strong(t)}</span>`).join('');
+      if (r.fuse) lines += `<span class="rw-hint on">${r.parts[0]} + ${r.parts[1]} · 두 효과는 유지</span>`;
+      // 조합 힌트: 이 유물이 무엇과 합쳐지는지 미리 보여준다
+      const fz = r.relic && !r.fuse && !r.upgrade ? fusionOf(r.relicId) : null;
+      if (fz) {
+        const other = FUSIONS[fz].a === r.relicId ? FUSIONS[fz].b : FUSIONS[fz].a;
+        const have = run.relics.includes(other);
+        lines += `<span class="rw-hint ${have ? 'on' : ''}">+ ${RELICS[other].name} = ${FUSIONS[fz].name}${have ? ' (보유 중!)' : ''}</span>`;
+      }
       return `<button class="rw-card ${r.relic ? 'is-relic' : ''}" data-id="${id}" style="--c:${r.relic ? r.color : '#d8a548'}">
         <span class="rw-ic">${r.relic ? `<canvas class="relic-cv" data-relic="${r.relicId}" data-size="52"></canvas>` : ''}</span>
         <span class="rw-top"><span class="rw-name">${r.name}</span><span class="rw-tag">${badge}</span>${isNew ? '<em class="new">NEW</em>' : ''}</span>

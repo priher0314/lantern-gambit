@@ -1147,7 +1147,17 @@ export function drawIcon(ctx, kind, x, y, s, color = '#fff') {
   ctx.restore();
 }
 
+const FUSION_PARTS = {
+  glacier: ['frostbite', 'iceMirror'], tempest: ['thunderDrum', 'stormRune'], plague: ['venomFang', 'comboFlute'],
+  duel: ['counterMirror', 'shadowShoes'], windfall: ['gamblerCoin', 'bingoBell'], gale: ['whetstone', 'tideBell'], torch: ['emberWick', 'oilFlask'],
+};
+
 export function drawRelicIcon(ctx, id, x, y, r) {
+  if (FUSION_PARTS[id]) {
+    drawRelicIcon(ctx, FUSION_PARTS[id][0], x - r * 0.36, y - r * 0.18, r * 0.74);
+    drawRelicIcon(ctx, FUSION_PARTS[id][1], x + r * 0.36, y + r * 0.2, r * 0.74);
+    return;
+  }
   ctx.save();
   ctx.translate(x, y);
   ctx.lineJoin = 'round';
