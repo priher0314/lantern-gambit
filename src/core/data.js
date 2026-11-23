@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.10';
+export const GAME_VERSION = 'v0.11';
 
 export const ROWS = 7;
 export const LANES = 3;
@@ -44,7 +44,9 @@ export const SHOT_NAMES_EN = {
   lantern: ['', 'Guard', 'Big Guard', 'Lantern'],
 };
 export const SYMBOL_EN = { blade: 'Slash', wave: 'Wave', frost: 'Frost', spark: 'Spark', venom: 'Poison', lantern: 'Guard' };
-export const ENEMY_EN = { kasa: 'Umbrella Imp', drum: 'Drum Imp', mask: 'Mask Bearer', archer: 'Lantern Wisp', elder: 'Great Lantern' };
+export const ENEMY_EN = { kasa: 'Umbrella Imp', drum: 'Drum Imp', mask: 'Mask Bearer', archer: 'Lantern Wisp', elder: 'Great Lantern', bomber: 'Firecracker Imp', healer: 'Brew Imp', boar: 'Boar' };
+// 정예: 체력 1.6배, 공격 +1, 처치하면 코인
+export const ELITE = { hp: 1.6, atk: 1 };
 export const STAGE_EN = { b1: 'Bridgehead', b2: 'Mask Dance', b3: 'Lantern Alley', b4: 'Drumbeat', b5: 'Great Lantern' };
 
 // 기술 수치. gild = 금빛 릴 수(피해 +1, 고유 능력 +1)
@@ -130,6 +132,21 @@ export const ENEMIES = {
     name: '초롱불', hp: 7, atk: 3, post: 1,
     act: '한 턴 조준한 뒤 불씨를 쏜다.',
     how: '얼리면 조준이 풀린다. 불씨는 막기.',
+  },
+  bomber: {
+    name: '폭죽 도깨비', hp: 6, atk: 4, reach: ROWS_REACH, explode: 3,
+    act: '쓰러지면 터져서 옆의 적에게 3 피해.',
+    how: '적들 사이에 있을 때 잡아라. 공격은 막기.',
+  },
+  healer: {
+    name: '약탕 도깨비', hp: 8, atk: 2, post: 1, reach: ROWS_REACH, mend: 3,
+    act: '매 턴 다친 적 하나를 3 회복시킨다.',
+    how: '먼저 잡아라. 혼자 남으면 다가온다.',
+  },
+  boar: {
+    name: '멧돼지', hp: 12, atk: 5,
+    act: '콧김을 뿜은 다음 턴, 맨 앞까지 돌진해 들이받는다.',
+    how: '얼리면 돌진이 풀린다. 들이받기는 회피.',
   },
   elder: {
     name: '왕초롱', hp: 80, atk: 3, boss: true,
@@ -233,8 +250,9 @@ export const MODS = {
 
 // 코인: 어떻게 싸웠는지에 따라 달라진다
 // 그냥 처치하는 것만으로는 벌리지 않는다. 연속 처치·퍼펙트·빙고·절약(다시 돌리기를 안 쓴 턴)·클리어로 번다.
-export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, thrift: 1, clearBase: 3, riskyMult: 2 };
-export const COIN_LABEL = { kill: '처치', combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어' };
+export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, thrift: 1, clearBase: 3, riskyMult: 2, elite: 3 };
+export const COIN_LABEL = { kill: '처치', combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어', elite: '정예 처치' };
+export const START_PURSE = 15; // 유물 대신 고를 수 있는 시작 코인
 export const SHOP_PRICES = { relic: 18, up: 14, fuse: 22, heal: 7, maxhp: 12, charm: 9, trim: 9, reroll: 3 };
 
 export const BASE_STRIP = [
@@ -246,6 +264,7 @@ export const BASE_STRIP = [
 export const REWARDS = {
   heal: { name: '기름 한 병', en: 'Oil', desc: '체력 +7', icon: 'heal' },
   maxhp: { name: '굵은 심지', en: 'Thick Wick', desc: '최대 체력 +3 · 체력 +3', icon: 'maxhp' },
+  purse: { name: '엽전 꾸러미', en: 'Coin Purse', desc: '유물 없이 시작 · 코인 +15', icon: 'coin' },
   stripBlade: { name: '절단 부적', en: 'Slash Charm', desc: '절단 문양이 더 자주 나옴', icon: 'blade', sym: 'blade' },
   stripWave: { name: '파동 부적', en: 'Wave Charm', desc: '파동 문양이 더 자주 나옴', icon: 'wave', sym: 'wave' },
   stripFrost: { name: '동결 부적', en: 'Frost Charm', desc: '동결 문양이 더 자주 나옴', icon: 'frost', sym: 'frost' },

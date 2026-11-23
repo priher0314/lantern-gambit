@@ -1,7 +1,9 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
 import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT } from './core/data.js';
-import { createRun, battleOptions, recordBattle, rollStartRelics, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop } from './core/run.js';
+import { createRun, battleOptions, recordBattle, rollStartChoices, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop, tutorialNight } from './core/run.js';
+import { SAVE_VERSION } from './save.js';
+import { setLang } from './i18n.js';
 import { judge, lateLimit } from './core/timing.js';
 import { shotForReel, BINGO_LINES } from './core/slot.js';
 import { hashSeed } from './core/rng.js';
@@ -62,7 +64,9 @@ const CONCEPTS = {
 };
 
 const INTENT_TEXT = {
-  move: (it) => `${it.steps}칸 다가온다.`,
+  move: (it) => (it.dash ? '맨 앞까지 돌진한다.' : `${it.steps}칸 다가온다.`),
+  rev: () => '콧김을 뿜는다. 다음 차례에 돌진.',
+  mend: (it) => `다친 적 하나를 ${it.amount} 회복시킨다.`,
   brace: () => '강타 준비. 다음 차례에 내려친다.',
   aim: () => '조준. 다음 차례에 쏜다.',
   charge: () => '충전 시작. 그동안 받는 피해 +2.',
@@ -129,6 +133,7 @@ export class Game {
 
   applySettings(s) {
     this.settings = s;
+    setLang(s.lang);
     this.fx.opts.shake = s.shake;
     this.fx.opts.flash = s.flash;
     this.uiFx.opts.shake = s.shake;
@@ -179,6 +184,7 @@ export class Game {
       frozen: e.frozen || 0, exposed: !!e.exposed, fury: e.fury || 0, braced: !!e.braced, charge: !!e.charge,
       vulnerable: !!e.vulnerable, phase2: !!e.phase2, shieldBroken: !!e.shieldBroken,
       poison: e.poison || 0, shieldHp: e.shieldHp || 0, kick: 0, pop: 0,
+      elite: !!e.elite, sizeMul: e.elite ? 1.14 : 1,
       spawnT: 0, dying: 0, ox: 0, oy: 0,
     };
   }
@@ -196,7 +202,13 @@ export class Game {
       this.run.def = generateNight(this.run, devStage, new URLSearchParams(location.search).has('risky'));
       this.run.coins = 40;
     }
+    else if (!this.store.meta.tutorialDone) {
+      // 첫 판: 첫째 밤을 따라 하기로 진행한다
+      this.run.tutorial = true;
+      this.run.def = tutorialNight();
+    }
     this.store.meta.runs = (this.store.meta.runs || 0) + 1;
+    this.store.run = null;
     this.store.save();
     this.mode = 'reward';
     this.st = null;
@@ -204,16 +216,55 @@ export class Game {
     this.card = null;
     this.cardQueue = [];
     this.overlay.showPick({
-      title: '유물 하나를 고르세요',
-      req: '이번 도전이 끝날 때까지 유지됩니다',
-      ids: rollStartRelics(this.run),
-      go: '이 유물로 시작',
+      title: '무엇을 들고 갈까요?',
+      req: '유물 하나, 또는 유물 없이 코인',
+      ids: rollStartChoices(this.run),
+      go: '이걸로 시작',
       run: this.run,
       used: this.store.meta.relicsUsed || [],
     }, (id) => {
       this.takeReward(id);
       this.startBattle();
     });
+  }
+
+  // ───── 자동 저장 ─────
+  // at: 'battle'(밤 시작) | 'shop'(상점) | 'path'(길 선택). 이어하면 그 지점부터 다시 시작한다.
+  checkpoint(at, extra = {}) {
+    this.store.run = { v: SAVE_VERSION, at, run: structuredClone(this.run), ...structuredClone(extra) };
+    this.store.save();
+  }
+
+  clearCheckpoint() {
+    this.store.run = null;
+    this.store.save();
+  }
+
+  resumeRun() {
+    const s = this.store.run;
+    if (!s) return this.startRun();
+    this.audio.unlock();
+    this.audio.startBgm();
+    this.run = structuredClone(s.run);
+    this.st = null;
+    this.views.clear();
+    this.card = null;
+    this.cardQueue = [];
+    if (s.at === 'shop') {
+      this.mode = 'reward';
+      this.openShop(structuredClone(s.shop), s.bank);
+    } else if (s.at === 'path') {
+      this.mode = 'reward';
+      this.choosePath();
+    } else this.startBattle();
+  }
+
+  openShop(shop, bank) {
+    this.checkpoint('shop', { shop, bank });
+    this.overlay.showShop(this.run, shop, bank, (id) => {
+      this.noteRelic(id);
+      this.checkpoint('shop', { shop, bank });
+    }, () => this.choosePath());
   }
 
   takeReward(id) {
@@ -259,6 +310,46 @@ export class Game {
     }
   }
 
+  // ───── 첫 판 따라 하기 ─────
+  // 지금 눌러야 할 곳과 한 줄 설명을 돌려준다(없으면 null). 입력을 막지는 않는다.
+  coachHint() {
+    const c = this.coach;
+    const st = this.st;
+    if (!c || c.done || !st || this.mode !== 'battle' || this.card || this.cutin) return null;
+    const ui = this.ui;
+    const L = this.L;
+    const btn = (id) => this.buttons.find((b) => b.id === id);
+    if (ui.phase === 'spin' && !this.busy) {
+      return { rect: leverRect(L), text: st.turn === 1 ? '레버를 당겨 이번 턴의 공격을 뽑으세요' : '다시 레버를 당기세요', key: 'Space' };
+    }
+    if (ui.phase === 'aim' && !this.busy && ui.sel != null && st.shots[ui.sel]) {
+      const field = { x: 24, y: L.fieldTop + 10, w: W - 48, h: L.fieldBottom - L.fieldTop - 20 };
+      const a = reelRect(L, 0);
+      const b = reelRect(L, 2);
+      const reels = { x: a.x, y: a.y, w: b.x + b.w - a.x, h: a.h };
+      if (st.turn >= 2 && !c.rerollSeen && st.shotsFired === 0 && B.canReroll(st) && btn('reroll')) {
+        return { rect: btn('reroll'), text: '결과가 아쉬우면 다시 돌리기. 대가가 버튼에 적혀 있습니다. 안 써도 됩니다', key: 'R' };
+      }
+      if (st.shots[ui.sel].symbol === 'lantern') return { rect: reels, text: '방어막 문양입니다. 밝은 칸을 한 번 더 누르면 방어막을 얻습니다', key: 'Q W E' };
+      if (!c.fired) return { rect: field, text: '가운데 줄 3칸이 이번 턴의 공격입니다. 적이 있는 레인을 눌러 쏘세요', key: '1 2 3' };
+      if (st.turn === 1) return { rect: field, text: '남은 공격도 쏘세요. 슬롯의 다른 문양을 누르면 순서를 바꿀 수 있습니다', key: '1 2 3' };
+      return null;
+    }
+    if (ui.phase === 'react' && ui.react && !ui.react.input && !c.reacted) {
+      const heavy = ui.react.attack.style === 'heavy';
+      const b = btn(heavy ? 'dodge' : 'guard');
+      if (b) return { rect: b, text: heavy ? '붉은 고리는 회피!' : '고리가 원에 닿는 순간 막기! 정확하면 되받아칩니다', key: heavy ? 'K' : 'Space' };
+    }
+    return null;
+  }
+
+  finishCoach() {
+    if (!this.coach || this.coach.done) return;
+    this.coach.done = true;
+    this.store.meta.tutorialDone = true;
+    this.store.save();
+  }
+
   // ───── 설명 카드 ─────
   showCard(card) {
     this.card = { ...card, t0: this.now(), more: this.cardQueue.length };
@@ -267,6 +358,7 @@ export class Game {
 
   nextCard() {
     if (this.card || !this.cardQueue.length) return;
+    if (this.coach && !this.coach.done) return;
     if (this.mode !== 'battle' || !(this.ui.phase === 'spin' || this.ui.phase === 'aim')) return;
     this.showCard(this.cardQueue.shift());
   }
@@ -279,6 +371,7 @@ export class Game {
 
   conceptCard(key) {
     const id = 'card-' + key;
+    if (this.coach && !this.coach.done) return;
     if (this.tipsSeen.has(id)) return;
     this.tipsSeen.add(id);
     this.store.meta.tips = [...this.tipsSeen];
@@ -289,6 +382,7 @@ export class Game {
   enemyCard(type, e, kicker) {
     const sp = ENEMIES[type];
     const lines = [{ label: '특징', text: sp.act }, { label: '공략', text: sp.how, color: '#8fffe2' }];
+    if (e && e.elite) lines.unshift({ label: '정예', text: '체력과 공격력이 높다. 처치하면 코인 +3.', color: '#ffd84a' });
     if (e && this.intents && this.intents[e.id]) {
       const it = this.intents[e.id];
       lines.push({ label: '다음', text: (INTENT_TEXT[it.kind] || (() => ''))(it), color: '#ffb0a0' });
@@ -310,6 +404,7 @@ export class Game {
   }
 
   queueIntros() {
+    if (this.coach && !this.coach.done) return;
     const seen = new Set(this.store.meta.seenEnemies || []);
     let changed = false;
     for (const e of this.st.enemies) {
@@ -390,6 +485,8 @@ export class Game {
 
   async startBattle() {
     const def = this.run.def;
+    this.checkpoint('battle');
+    this.coach = this.run.tutorial && this.run.stage === 0 ? { fired: false, reacted: false, rerollSeen: false, done: false } : null;
     const { st, events } = B.createBattle(def, battleOptions(this.run));
     this.st = st;
     this.def = def;
@@ -487,7 +584,7 @@ export class Game {
       this.info = { title: (sh.bonus ? '빙고 기술 ' : '') + SHOT_NAMES[sh.symbol][sh.tier] + (sh.gild ? ' ✦' : ''), text, color: sh.gild ? '#ffd84a' : color };
       return;
     }
-    if (ui.phase === 'spin') this.info = { text: '오른쪽 레버를 당겨 공격을 뽑으세요  (적을 길게 누르면 정보)' };
+    if (ui.phase === 'spin') this.info = { text: '오른쪽 레버를 당겨 공격을 뽑으세요  (적을 우클릭하면 정보)' };
     else if (ui.phase === 'spinning') this.info = { text: '…' };
     else if (ui.phase === 'react' && ui.react) {
       const st2 = ui.react.attack.style;
@@ -543,6 +640,7 @@ export class Game {
   }
 
   tip(id, text) {
+    if (this.coach && !this.coach.done) return;
     if (this.tipsSeen.has(id) || this.run?.stage > 0) return;
     this.tipsSeen.add(id);
     this.store.meta.tips = [...this.tipsSeen];
@@ -985,6 +1083,7 @@ export class Game {
     this.refresh();
     if (st.shots[i].tier >= 2 && st.shots[i].symbol !== 'lantern') await this.cutIn(st.shots[i]);
     const evs = B.fireShot(st, i, lane);
+    if (this.coach) this.coach.fired = true;
     await this.playEvents(evs);
     this.player.tx = W / 2;
     if (st.result) return this.endBattle();
@@ -1006,6 +1105,8 @@ export class Game {
     const st = this.st;
     if (st.phase !== 'aim') return;
     this.busy = true;
+    if (this.coach && st.turn >= 2) this.coach.rerollSeen = true;
+    if (this.coach && st.turn >= 3 && this.coach.reacted) this.finishCoach();
     this.ui.phase = 'enemy';
     this.ui.preview = null;
     this.ui.sel = null;
@@ -1022,6 +1123,10 @@ export class Game {
       while (atk) {
         this.tip('react', atk.style === 'heavy' ? '붉은 고리! 닿는 순간 회피하세요.' : '고리가 원에 닿는 순간 막기! 정확하면 퍼펙트.');
         const input = await this.runReaction(atk);
+        if (this.coach && !this.coach.done) {
+          this.coach.reacted = true;
+          if (st.turn >= 3) this.finishCoach();
+        }
         const res = B.resolveReaction(st, input);
         await this.playEvents(res.events);
         atk = null;
@@ -1052,7 +1157,9 @@ export class Game {
 
   runReaction(attack) {
     const assist = this.settings.assist ? 1.4 : 1;
-    const dur = attack.windup * (this.settings.assist ? 1.2 : 1);
+    // 따라 하기의 첫 공격은 천천히 들어온다
+    const learn = this.coach && !this.coach.done && !this.coach.reacted ? 1.6 : 1;
+    const dur = attack.windup * (this.settings.assist ? 1.2 : 1) * learn;
     const now = this.now();
     const v = this.views.get(attack.attackerId);
     const r = { attack, start: now, impact: now + dur, input: null, done: false, assist, launched: false, landed: false, v };
@@ -1230,6 +1337,7 @@ export class Game {
     this.refresh();
     await this.wait(500);
     const meta = this.store.meta;
+    if (this.coach) this.finishCoach();
     if (st.result === 'win') {
       this.audio.play('win');
       this.showBanner('밤을 넘겼다', `${this.def.night} 클리어`, 1.8, '#ffe08a', 44);
@@ -1242,6 +1350,7 @@ export class Game {
       meta.best = Math.max(meta.best || 0, this.run.stage + 1);
       if (last) {
         meta.wins = (meta.wins || 0) + 1;
+        this.store.run = null;
         this.store.save();
         this.mode = 'result';
         this.overlay.showResult(true, this.run, meta);
@@ -1250,14 +1359,14 @@ export class Game {
       this.store.save();
       this.mode = 'reward';
       // 밤을 넘기면 바로 상점으로(무료 보상은 없다: 유물은 코인으로 산다)
-      const toShop = () => this.overlay.showShop(this.run, rollShop(this.run), bank, (id) => this.noteRelic(id), () => this.choosePath());
-      toShop();
+      this.openShop(rollShop(this.run), bank);
     } else {
       const timeUp = st.loseReason === 'time';
       this.audio.play('lose');
       this.showBanner(timeUp ? '시간 초과' : '등불이 꺼졌다', timeUp ? '기한 안에 처치하지 못했다' : '날이 밝기 전에 쓰러졌다', 2, '#ff8a7a', 40);
       recordBattle(this.run, st);
       meta.bestScore = Math.max(meta.bestScore || 0, this.run.totals.score);
+      this.store.run = null;
       this.store.save();
       await this.waitReal(2000);
       this.mode = 'result';
@@ -1267,6 +1376,7 @@ export class Game {
 
   // 다음 밤의 길 고르기(순한 길 / 험한 길)
   choosePath() {
+    this.checkpoint('path');
     this.overlay.showPaths(this.run, rollPaths(this.run), (def) => {
       advance(this.run, def);
       this.startBattle();
@@ -1302,7 +1412,7 @@ export class Game {
 
   impactPoint(v) {
     const p = this.renderer.viewPos(v);
-    const h = { kasa: 42, mask: 46, archer: 48, elder: 48 }[v.type] || 40;
+    const h = { kasa: 42, mask: 46, archer: 48, elder: 48, bomber: 40, healer: 40, boar: 34 }[v.type] || 40;
     return { x: p.x, y: p.y - h * p.k, k: p.k };
   }
 
@@ -1349,7 +1459,7 @@ export class Game {
       case 'coin': {
         // 코인 획득: 왜 벌었는지 그 자리에 적고, 금화가 튀어 올랐다가 쟁반으로 빨려 들어간다
         this.coinPulse = 1;
-        const label = { combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약(안 돌림)', clear: '클리어' }[ev.why] || '';
+        const label = { combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약(안 돌림)', clear: '클리어', elite: '정예 처치' }[ev.why] || '';
         const tr = trayRect(L);
         let sx = this.player.x;
         let sy = L.playerY - 60;
@@ -1519,6 +1629,22 @@ export class Game {
           await this.tween(v, { row: ev.to }, 380, (t) => t * t * (3 - 2 * t));
           v.squash = 0.35;
           this.fx.shake(1);
+        } else if (ev.dash) {
+          // 멧돼지 돌진: 흙먼지를 일으키며 단숨에 맨 앞까지
+          const gp = this.impactPoint(v);
+          fx.text(gp.x, gp.y - 70, '돌진!', { color: '#ff8a5a', size: 24, font: 'num' });
+          const start3 = this.time;
+          const dustTick = () => {
+            const q = this.renderer.viewPos(v);
+            if (Math.random() < 0.6) fx.burst(q.x, q.y, { n: 2, speed: 70, color: ['#b8a090', '#8a7060'], size: 4, life: 0.45, add: false, vy: -30 });
+          };
+          this.tickers.push(dustTick);
+          await this.tween(v, { row: ev.to }, 150 + steps * 60, (t) => t * t);
+          this.tickers = this.tickers.filter((f) => f !== dustTick);
+          v.squash = 0.6;
+          v.charge = false;
+          fx.shake(3);
+          this.buzz(40);
         } else {
           await this.tween(v, { row: ev.to }, 300);
         }
@@ -1593,7 +1719,10 @@ export class Game {
         this.buzz(big ? 200 : 40);
         this.slowT = big ? 0.5 : 0.16; // 처치 순간 짧은 슬로모션
         if (big) fx.flash('#fff4c0', 0.6);
-        const cols = { kasa: ['#e2453c', '#b8302e', '#f3d38a', '#ffe0c0'], mask: ['#f5ecd9', '#ffffff', '#352a64', '#e2453c'], archer: ['#ffbf52', '#fff4c4', '#e0682a'], elder: ['#ffb04a', '#fff2c0', '#ff5a6e', '#ffffff'] }[ev.etype];
+        const cols = {
+          kasa: ['#e2453c', '#b8302e', '#f3d38a', '#ffe0c0'], mask: ['#f5ecd9', '#ffffff', '#352a64', '#e2453c'], archer: ['#ffbf52', '#fff4c4', '#e0682a'], elder: ['#ffb04a', '#fff2c0', '#ff5a6e', '#ffffff'],
+          drum: ['#9a3a2a', '#f6ead0', '#e8c070'], bomber: ['#e8663c', '#f0b83a', '#d8342c', '#fff2c8'], healer: ['#9ad88a', '#3f8f6a', '#7cf0a0'], boar: ['#6a4a3a', '#80584a', '#fff6e0'],
+        }[ev.etype] || ['#e2453c', '#f3d38a', '#ffe0c0'];
         fx.burst(ip.x, ip.y, { n: big ? 70 : 26, speed: big ? 420 : 260, color: cols, kind: 'paper', size: big ? 7 : 5, life: big ? 1.4 : 0.9, g: 420, drag: 0.94, add: false, vr: 14 });
         fx.burst(ip.x, ip.y, { n: big ? 40 : 14, speed: 200, color: ['#ffe08a', '#ffb347'], kind: 'glow', size: 5, life: 0.7, vy: -80 });
         fx.ring(ip.x, ip.y, { r0: 10, r1: big ? 200 : 80, color: '#ffffff', w: 5, life: 0.4 });
@@ -1728,6 +1857,57 @@ export class Game {
         fx.text(ip.x, ip.y - 66, '내려치기 준비!', { color: '#ff6a6a', size: 22, font: 'num' });
         await this.wait(420);
         v.raise = 0;
+        break;
+      }
+      case 'rev': {
+        if (!v) break;
+        v.charge = true;
+        this.audio.play('brace');
+        const ip = this.impactPoint(v);
+        fx.text(ip.x, ip.y - 66, '돌진 준비!', { color: '#ff8a5a', size: 22, font: 'num' });
+        fx.burst(ip.x, ip.y + 24 * ip.k, { n: 10, speed: 80, color: ['#ffffff', '#d8d0c8'], kind: 'glow', size: 5, life: 0.5, vy: 20 });
+        await this.wait(420);
+        break;
+      }
+      case 'mend': {
+        if (!v) break;
+        const tv = this.views.get(ev.target);
+        this.audio.play('heal');
+        v.squash = 0.4;
+        const from = this.impactPoint(v);
+        if (tv) {
+          const to = this.impactPoint(tv);
+          for (let i = 0; i < 8; i++) {
+            const u = i / 7;
+            fx.burst(from.x + (to.x - from.x) * u, from.y + (to.y - from.y) * u - Math.sin(u * Math.PI) * 30, { n: 2, speed: 30, color: ['#7dffa0', '#e0ffe8'], kind: 'glow', size: 5, life: 0.5 + u * 0.3 });
+          }
+          if (ev.amount > 0) {
+            tv.hpShown = ev.hp;
+            fx.text(to.x, to.y - 56, `회복 +${ev.amount}`, { color: '#7dffa0', size: 22, font: 'num' });
+            fx.ring(to.x, to.y, { r0: 8, r1: 54, color: '#7dffa0', w: 4, life: 0.4 });
+          }
+        }
+        await this.wait(380);
+        break;
+      }
+      case 'boom': {
+        const p = cellPos(L, ev.lane, ev.row);
+        const y = p.y - 34 * p.k;
+        this.audio.play('burst');
+        this.audio.play('kill', { big: false });
+        fx.flash('#ffb347', 0.22);
+        fx.shake(4);
+        this.buzz(70);
+        fx.text(p.x, y - 60, '펑!', { color: '#ffb347', size: 34, font: 'num' });
+        fx.ring(p.x, y, { r0: 10, r1: 150, color: '#ffb347', w: 10, life: 0.45, sy: 0.6 });
+        fx.ring(p.x, y, { r0: 6, r1: 90, color: '#ffffff', w: 5, life: 0.3 });
+        fx.burst(p.x, y, { n: 34, speed: 380, color: ['#ffe45c', '#ff7a3d', '#ffffff', '#d8342c'], kind: 'streak', size: 5, life: 0.55 });
+        fx.burst(p.x, y, { n: 14, speed: 240, color: ['#d8342c', '#f0b83a', '#fff2c8'], kind: 'paper', size: 5, life: 0.9, g: 420, drag: 0.94, add: false, vr: 14 });
+        for (const [l, r] of ev.cells) {
+          const q = cellPos(L, l, r);
+          fx.ring(q.x, q.y - 26 * q.k, { r0: 6, r1: 50, color: '#ff9a3d', w: 4, life: 0.4, sy: 0.6 });
+        }
+        await this.wait(160);
         break;
       }
       case 'aim': {

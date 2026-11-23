@@ -1,7 +1,9 @@
 // HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
-import { RUN_LENGTH, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf, MODS, OBJ_INFO, COIN_LABEL } from '../core/data.js';
+import { RUN_LENGTH, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf, MODS, OBJ_INFO, COIN_LABEL, NIGHT_NAMES } from '../core/data.js';
 import { rewardInfo, cantBuy, buyItem, rerollShop, shopRerollCost } from '../core/run.js';
 import { drawSymbol, drawIcon, drawRelicIcon, drawMerchant } from '../render/art.js';
+import { drawCoin } from '../render/scene.js';
+import { tr, localize, getLang } from '../i18n.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -21,6 +23,10 @@ function iconCanvas(kind, size = 56) {
   g.stroke();
   if (SYMBOLS[kind]) drawSymbol(g, kind, size / 2, size / 2, size * 0.32);
   else {
+    if (kind === 'coin') {
+      drawCoin(g, size / 2, size / 2, size * 0.26);
+      return c;
+    }
     const map = { heal: ['heart', '#ff6a7a'], maxhp: ['plus', '#ff6a7a'] };
     const [ic, col] = map[kind] || ['dots', '#fff'];
     drawIcon(g, ic, size / 2, size / 2, size * 0.55, col);
@@ -77,20 +83,25 @@ export class Overlay {
   panel(html, cls = '') {
     this.layer.innerHTML = `<div class="ov-panel ${cls}">${html}</div>`;
     this.layer.classList.add('on');
+    localize(this.layer);
     paintRelics(this.layer);
     return this.layer.firstElementChild;
   }
 
   showTitle(meta) {
     const used = (meta.relicsUsed || []).length;
+    const saved = this.hooks.getSaved ? this.hooks.getSaved() : null;
+    let sure = false;
     const p = this.panel(`
       <div class="title-logo">
         <div class="logo-main">${GAME_TITLE}</div>
       </div>
       <div class="title-btns">
-        <button class="btn btn-primary" data-a="start">새 게임</button>
+        ${saved ? `<button class="btn btn-primary" data-a="resume">이어하기 <small>${NIGHT_NAMES[saved.run.stage]}</small></button>` : ''}
+        <button class="btn ${saved ? '' : 'btn-primary'}" data-a="start">새 게임</button>
         <button class="btn" data-a="howto">게임 방법</button>
         <button class="btn" data-a="settings">설정</button>
+        <button class="btn btn-small btn-lang" data-a="lang">${getLang() === 'en' ? '한국어' : 'English'}</button>
       </div>
       <div class="title-meta">${meta.runs ? `플레이 ${meta.runs}회 · 클리어 ${meta.wins || 0}회 · 최고 기록 ${meta.best || 0}/${RUN_LENGTH}` : '첫 플레이'}</div>
       <div class="title-meta">유물 ${used}/${RELIC_IDS.length}</div>
@@ -101,15 +112,46 @@ export class Overlay {
       if (!a) return;
       this.hooks.sound('ui');
       if (a === 'start') {
+        // 저장된 판이 있으면 한 번 더 묻는다
+        if (saved && !sure) {
+          sure = true;
+          e.target.closest('[data-a]').textContent = tr('저장된 판을 지우고 새로 시작');
+          return;
+        }
         this.clear();
         this.hooks.start();
       }
+      if (a === 'resume') {
+        this.clear();
+        this.hooks.resume();
+      }
       if (a === 'howto') this.showHowTo(() => this.showTitle(meta));
       if (a === 'settings') this.openSettings(() => this.showTitle(meta));
+      if (a === 'lang') {
+        this.hooks.setSetting('lang', getLang() === 'en' ? 'ko' : 'en');
+        this.showTitle(meta);
+      }
     });
   }
 
   howToHtml() {
+    if (getLang() === 'en') {
+      return `
+      <div class="howto">
+        <div class="ht"><b>Lever</b><span>Pull it: the 3 cells of the <em>middle row</em> are this turn's attacks.</span></div>
+        <div class="ht"><b>Link · Jackpot</b><span>Two matching neighbors on the middle row make a <em>Link</em>, three make a <em>Jackpot</em>.</span></div>
+        <div class="ht"><b>Bingo</b><span>Three matching on the top row, bottom row or a diagonal give a <em>bonus skill</em>. Guard symbols are <em>wild</em>.</span></div>
+        <div class="ht"><b>Reroll</b><span>Twice per turn. The <em class="r">cost</em> is written on the button, and you get <em>+1 Gilded reel</em>.</span></div>
+        <div class="ht"><b>Gilded reel</b><span>That reel's attack gets +1 damage and +1 effect.</span></div>
+        <div class="ht"><b>Aim</b><span>Pick a reel, then click a lane.</span></div>
+        <div class="ht"><b>Parry</b><span><em class="g">Gold or orange ring</em> → Block (precise = counter)<br><em class="r">Red ring</em> → Dodge (enemy exposed, double damage)</span></div>
+        <div class="ht"><b>Coins</b><span>Earned from <em>combos</em>, <em>perfects</em>, <em>bingos</em> and turns with no reroll (<em>thrift</em>). A plain kill pays 0.</span></div>
+        <div class="ht"><b>Roads</b><span>Each night, choose a <em>Safe Road</em> or a <em class="r">Rough Road</em> (extra condition, double coins).</span></div>
+        <div class="ht"><b>Relics</b><span>Upgrade to <em>II</em>; a II relic that triggers 6 times <em>evolves to III</em>. Matching pairs can be <em>fused</em>.</span></div>
+        <div class="ht"><b>Enemy info</b><span><em>Right-click</em> an enemy (or press and hold).</span></div>
+        <div class="ht"><b>Keys</b><span>Space lever·block / R reroll / Q W E reels / 1 2 3 lanes / K dodge / Enter end turn / H help / Esc settings<br>Choice screens: 1-4 pick / Enter confirm</span></div>
+      </div>`;
+    }
     return `
       <div class="howto">
         <div class="ht"><b>레버</b><span>당기면 <em>가운데 줄</em> 3칸이 이번 턴의 공격.</span></div>
@@ -117,13 +159,13 @@ export class Overlay {
         <div class="ht"><b>빙고</b><span>위·아래 줄이나 대각선 3칸이 같으면 <em>보너스 기술</em>. 방어막 문양은 <em>조커</em>.</span></div>
         <div class="ht"><b>다시 돌리기</b><span>턴마다 2번. <em class="r">대가</em>는 버튼에 적혀 있고 <em>금빛 릴 +1</em>.</span></div>
         <div class="ht"><b>금빛 릴</b><span>그 칸의 공격이 피해 +1, 효과 +1.</span></div>
-        <div class="ht"><b>조준</b><span>릴을 고르고 레인을 누른다(터치는 두 번).</span></div>
+        <div class="ht"><b>조준</b><span>슬롯의 문양을 고르고 레인을 누른다.</span></div>
         <div class="ht"><b>받아치기</b><span><em class="g">금빛·주황 고리</em> → 막기 (정확하면 되치기)<br><em class="r">붉은 고리</em> → 회피 (적에게 빈틈, 피해 2배)</span></div>
         <div class="ht"><b>코인</b><span><em>연속 처치</em>, <em>퍼펙트</em>, <em>빙고</em>, 다시 돌리기를 안 쓴 턴(<em>절약</em>)에 번다. 그냥 처치하면 0.</span></div>
         <div class="ht"><b>길</b><span>밤마다 <em>순한 길</em>과 <em class="r">험한 길</em>(조건 추가, 코인 2배) 중 고른다.</span></div>
         <div class="ht"><b>유물</b><span>강화하면 <em>II</em>, II가 6번 발동하면 <em>III 진화</em>. 짝이 맞는 두 유물은 <em>융합</em>.</span></div>
-        <div class="ht"><b>적 정보</b><span>적을 <em>길게 누르기</em> (마우스는 우클릭).</span></div>
-        <div class="ht"><b>조작키</b><span>Space 레버·막기 / R 다시 돌리기 / Q W E 릴 / 1 2 3 레인 / K 회피 / Enter 턴 종료 / H 도움말</span></div>
+        <div class="ht"><b>적 정보</b><span>적을 <em>우클릭</em> (터치는 길게 누르기).</span></div>
+        <div class="ht"><b>조작키</b><span>Space 레버·막기 / R 다시 돌리기 / Q W E 릴 / 1 2 3 레인 / K 회피 / Enter 턴 종료 / H 도움말 / Esc 설정<br>선택 화면: 1~4 고르기 / Enter 확인</span></div>
       </div>`;
   }
 
@@ -185,7 +227,7 @@ export class Overlay {
       const r = rewardInfo(id);
       const isNew = r.relic && !r.upgrade && !r.fuse && !o.used.includes(id);
       const badge = r.fuse ? '융합' : r.upgrade ? '강화' : r.relic ? r.tag : '소모품';
-      let lines = r.desc.split(' · ').map((t) => `<span>${strong(t)}</span>`).join('');
+      let lines = tr(r.desc).split(' · ').map((t) => `<span>${strong(t)}</span>`).join('');
       if (r.fuse) lines += `<span class="rw-hint on">${r.parts[0]} + ${r.parts[1]} · 두 효과는 유지</span>`;
       // 조합 힌트: 이 유물이 무엇과 합쳐지는지 미리 보여준다
       const fz = r.relic && !r.fuse && !r.upgrade ? fusionOf(r.relicId) : null;
@@ -240,7 +282,7 @@ export class Overlay {
         const r = rewardInfo(it.id);
         const why = cantBuy(run, it);
         const badge = r.fuse ? '융합' : r.upgrade ? '강화' : r.relic ? r.tag : '소모품';
-        let lines = r.desc.split(' · ').map((t) => `<span>${strong(t)}</span>`).join('');
+        let lines = tr(r.desc).split(' · ').map((t) => `<span>${strong(t)}</span>`).join('');
         const fz = r.relic && !r.fuse && !r.upgrade ? fusionOf(r.relicId) : null;
         if (fz) {
           const other = FUSIONS[fz].a === r.relicId ? FUSIONS[fz].b : FUSIONS[fz].a;
@@ -320,7 +362,7 @@ export class Overlay {
   showPaths(run, defs, onPick) {
     let picked = defs.length === 1 ? 0 : null;
     const card = (d, i) => {
-      const enemies = Object.entries(d.counts).map(([t, n]) => `${ENEMIES[t].name} ${n}`).join(' · ');
+      const enemies = Object.entries(d.counts).map(([t, n]) => `${ENEMIES[t].name} ${n}`).join(' · ') + (d.elites ? ` · 정예 ${d.elites}` : '');
       const mods = d.mods.map((m) => `<span class="mod"><b>${MODS[m].name}</b> ${MODS[m].desc}</span>`).join('');
       const kind = d.objective.type === 'hunt' ? '보스' : d.risky ? '험한 길' : '순한 길';
       const reward = d.objective.type === 'hunt' ? '' : d.risky ? `<span class="pay hot">코인 ×${d.coinMult}</span>` : '<span class="pay">코인 ×1</span>';
@@ -402,17 +444,19 @@ export class Overlay {
       <label class="row chk"><input type="checkbox" data-k="shake" ${s.shake ? 'checked' : ''}> 화면 흔들림·진동</label>
       <label class="row chk"><input type="checkbox" data-k="flash" ${s.flash ? 'checked' : ''}> 번쩍임 효과</label>
       <label class="row chk"><input type="checkbox" data-k="assist" ${s.assist ? 'checked' : ''}> 쉬운 타이밍 (판정 넓게)</label>
+      <label class="row">언어 <select data-k="lang"><option value="ko" ${s.lang !== 'en' ? 'selected' : ''}>한국어</option><option value="en" ${s.lang === 'en' ? 'selected' : ''}>English</option></select></label>
       <div class="title-btns">
         <button class="btn btn-primary" data-a="close">닫기</button>
-        ${inBattle ? '<button class="btn" data-a="howto">게임 방법</button><button class="btn btn-warn" data-a="quit">포기하고 메인으로</button>' : ''}
+        ${inBattle ? '<button class="btn" data-a="howto">게임 방법</button><button class="btn" data-a="leave">저장하고 메인으로</button><button class="btn btn-warn" data-a="quit">이 판 포기</button>' : '<button class="btn" data-a="tutorial">따라 하기 다시 보기</button>'}
       </div>
     `, 'settings');
     this.hooks.pause(true);
     p.addEventListener('input', (e) => {
       const k = e.target.dataset.k;
       if (!k) return;
-      const val = e.target.type === 'checkbox' ? e.target.checked : Number(e.target.value);
+      const val = e.target.type === 'checkbox' ? e.target.checked : k === 'lang' ? e.target.value : Number(e.target.value);
       this.hooks.setSetting(k, val);
+      if (k === 'lang') this.openSettings(back); // 바뀐 언어로 다시 그린다
     });
     p.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
@@ -424,10 +468,15 @@ export class Overlay {
         else this.clear();
       }
       if (a === 'howto') this.showHowTo(() => this.openSettings());
-      if (a === 'quit') {
+      if (a === 'quit' || a === 'leave') {
+        if (a === 'quit') this.hooks.abandon();
         this.hooks.pause(false);
         this.clear();
         this.hooks.title();
+      }
+      if (a === 'tutorial') {
+        this.hooks.replayTutorial();
+        e.target.closest('[data-a]').textContent = tr('다음 새 게임에서 다시 나옵니다');
       }
     });
   }

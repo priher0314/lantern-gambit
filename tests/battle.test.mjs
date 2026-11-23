@@ -544,7 +544,7 @@ test('밤 생성: 같은 판이면 같은 구성, 첫 무리는 간격을 두고
         const a = generateNight(run, stage, risky);
         assert.deepEqual(a, generateNight(run, stage, risky));
         assert.equal(a.mods.length, risky ? (stage >= 3 ? 2 : 1) : 0);
-        const first = a.waves[0].units.filter((u) => u[0] !== 'archer');
+        const first = a.waves[0].units.filter((u) => u[0] !== 'archer' && u[0] !== 'healer');
         for (const u of a.waves.flatMap((w) => w.units)) assert.ok(u[1] >= 0 && u[1] <= 2 && u[2] >= 0 && u[2] <= 4);
         for (let l = 0; l < 3; l++) {
           const rows = first.filter((u) => u[1] === l).map((u) => u[2]).sort((x, y) => x - y);
@@ -653,4 +653,52 @@ test('새 흐름 전체 런 80회: 예외 없이 끝난다', () => {
     assert.ok(lastB.result === 'win' || lastB.result === 'lose');
     assert.ok(res.run.coins >= 0);
   }
+});
+
+test('새 적: 폭죽은 터지고, 약탕은 치유하고, 멧돼지는 돌진한다', () => {
+  // 폭죽 도깨비: 쓰러지면 옆의 적에게 3 피해
+  let st = mk([['bomber', 1, 3], ['kasa', 0, 3], ['kasa', 1, 2]]);
+  setShots(st, [['blade', 2, 2]]);
+  const kasaL = st.enemies.find((e) => e.lane === 0);
+  const hp0 = kasaL.hp;
+  const evs = fireShot(st, 0, 1);
+  assert.ok(evs.some((e) => e.type === 'boom'));
+  assert.equal(kasaL.hp, hp0 - 3);
+  // 약탕 도깨비: 다친 적을 회복, 혼자 남으면 다가온다
+  st = mk([['healer', 0, 0], ['kasa', 2, 0]]);
+  const kasa = st.enemies.find((e) => e.type === 'kasa');
+  const healer = st.enemies.find((e) => e.type === 'healer');
+  kasa.hp -= 5;
+  assert.equal(decide(st, healer).kind, 'mend');
+  st.phase = 'aim';
+  endPlayerTurn(st);
+  for (let i = 0; i < 4; i++) { const s = nextEnemyStep(st); if (s.done) break; }
+  assert.equal(kasa.hp, kasa.maxHp - 2);
+  kasa.alive = false;
+  assert.equal(decide(st, healer).kind, 'move');
+  // 멧돼지: 콧김 → 맨 앞까지 돌진 → 강타(회피), 얼리면 풀린다
+  st = mk([['boar', 1, 0]]);
+  const boar = st.enemies[0];
+  assert.equal(decide(st, boar).kind, 'rev');
+  boar.charge = true;
+  const d = decide(st, boar);
+  assert.equal(d.kind, 'move');
+  assert.equal(d.steps, FRONT);
+  boar.row = FRONT;
+  assert.equal(decide(st, boar).style, 'heavy');
+});
+
+test('정예: 더 단단하고 아프며, 처치하면 코인을 준다 · 엽전 꾸러미로 시작', () => {
+  const st = mk([['kasa', 1, 3, 'elite'], ['kasa', 0, 3]]);
+  const [el, norm] = st.enemies;
+  assert.ok(el.elite && el.maxHp > norm.maxHp && el.atkUp === 1);
+  setShots(st, [['blade', 3, 3]]);
+  el.hp = 1;
+  const c0 = st.coins;
+  fireShot(st, 0, 1);
+  assert.ok(st.coinBy.elite === 3 && st.coins >= c0 + 3);
+  const run = createRun(5);
+  applyReward(run, 'purse');
+  assert.equal(run.coins, 15);
+  assert.equal(run.relics.length, 0);
 });

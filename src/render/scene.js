@@ -1,9 +1,12 @@
 // 화면 그리기: 배경(미리 렌더), 전장, 캐릭터, 슬롯 사당, HUD, 버튼
 import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS } from '../core/data.js';
 import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL, REEL_PEEK } from './layout.js';
-import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix } from './art.js';
+import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix, drawBomber, drawHealer, drawBoar, drawEliteRing, drawEliteCrown } from './art.js';
+// 적 머리 높이(예고 배지·말풍선 위치)
+export const HEAD_H = { kasa: 86, mask: 96, archer: 104, elder: 118, drum: 92, bomber: 110, healer: 100, boar: 100 };
 import { drawGlow } from './fx.js';
 
+import { tr, localizeCanvas } from '../i18n.js';
 export const FONTS = {
   ui: '"Jua", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
   num: '"Black Han Sans", "Jua", "Malgun Gothic", sans-serif',
@@ -20,6 +23,7 @@ export class Renderer {
   constructor(canvas) {
     this.cv = canvas;
     this.ctx = canvas.getContext('2d');
+    localizeCanvas(this.ctx); // 영어 모드에서는 그리기 직전에 문장을 옮긴다
     this.bg = null;
   }
 
@@ -713,6 +717,7 @@ export class Renderer {
       this.drawInfo(g);
       this.drawMachine(g);
       this.drawButtons(g);
+      this.drawCoach(g);
       this.drawBanner(g);
       this.drawCutin(g);
       this.drawCard(g);
@@ -723,6 +728,76 @@ export class Renderer {
     g.uiFx.drawTexts(ctx, FONTS);
     if (g.mode === 'battle') this.drawCoinFlies(g);
     fx.drawScreen(ctx, W, L.H);
+  }
+
+  // 첫 판 따라 하기: 눌러야 할 곳을 금빛 점선으로 두르고 한 줄로 설명한다
+  drawCoach(g) {
+    const c = g.coachHint();
+    if (!c) return;
+    const ctx = this.ctx;
+    const t = g.rt;
+    const r = c.rect;
+    const pad = 7 + Math.sin(t * 5) * 3;
+    ctx.save();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#ffe08a';
+    ctx.shadowColor = '#ffb347';
+    ctx.shadowBlur = 18;
+    ctx.setLineDash([16, 9]);
+    ctx.lineDashOffset = -t * 44;
+    ctx.beginPath();
+    ctx.roundRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2, 16);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
+    // 말풍선
+    ctx.font = `19px ${FONTS.ui}`;
+    const lines = wrapText(ctx, c.text, 400);
+    const keyW = c.key ? ctx.measureText(c.key).width + 22 : 0;
+    const bw = Math.min(W - 20, Math.max(...lines.map((l) => ctx.measureText(l).width), keyW) + 36);
+    const bh = lines.length * 25 + 20 + (c.key ? 30 : 0);
+    const above = r.y - bh - 30 > 70;
+    const inside = r.h > 300 && r.w > 300; // 전장처럼 큰 영역은 안쪽 아래에 적는다
+    const bx = Math.max(10, Math.min(W - bw - 10, r.x + r.w / 2 - bw / 2));
+    const by = inside ? r.y + r.h - bh - 16 : above ? r.y - bh - 24 : r.y + r.h + 24;
+    ctx.fillStyle = 'rgba(24,12,30,0.95)';
+    ctx.strokeStyle = '#ffe08a';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 12);
+    ctx.fill();
+    ctx.stroke();
+    if (!inside) {
+      const ax = Math.max(bx + 20, Math.min(bx + bw - 20, r.x + r.w / 2));
+      const bob = Math.sin(t * 6) * 3;
+      ctx.fillStyle = '#ffe08a';
+      ctx.beginPath();
+      if (above) {
+        ctx.moveTo(ax - 10, by + bh + 2 + bob);
+        ctx.lineTo(ax + 10, by + bh + 2 + bob);
+        ctx.lineTo(ax, by + bh + 16 + bob);
+      } else {
+        ctx.moveTo(ax - 10, by - 2 - bob);
+        ctx.lineTo(ax + 10, by - 2 - bob);
+        ctx.lineTo(ax, by - 16 - bob);
+      }
+      ctx.fill();
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff6e0';
+    lines.forEach((l, i) => ctx.fillText(l, bx + bw / 2, by + 22 + i * 25));
+    if (c.key) {
+      const ky = by + lines.length * 25 + 24;
+      ctx.fillStyle = 'rgba(255,224,138,0.16)';
+      ctx.beginPath();
+      ctx.roundRect(bx + bw / 2 - keyW / 2, ky - 12, keyW, 24, 6);
+      ctx.fill();
+      ctx.fillStyle = '#ffe08a';
+      ctx.font = `15px ${FONTS.num}`;
+      ctx.fillText(c.key, bx + bw / 2, ky + 1);
+    }
+    ctx.restore();
   }
 
   drawAmbient(g) {
@@ -910,6 +985,10 @@ export class Renderer {
       squash: v.squash, hop: (v.hop || 0) * p.s, lean: (v.lean || 0) + (v.kick || 0),
     };
     if (v.dying > 0) a.flash = Math.max(a.flash || 0, 1 - v.dying);
+    if (v.elite && !v.dying) drawEliteRing(ctx, p.x, p.y - 2, k, g.rt);
+    if (v.type === 'bomber') drawBomber(ctx, p.x, y, k, { ...a, close: v.close || 0 });
+    else if (v.type === 'healer') drawHealer(ctx, p.x, y, k, { ...a, close: v.close || 0 });
+    else if (v.type === 'boar') drawBoar(ctx, p.x, y, k, { ...a, raise: v.raise || 0, charge: v.charge });
     if (v.type === 'kasa') drawKasa(ctx, p.x, y, k, { ...a, close: v.close || 0 });
     else if (v.type === 'drum') drawDrum(ctx, p.x, y, k, { ...a, close: v.close || 0 });
     else if (v.type === 'mask') drawMask(ctx, p.x, y, k, { ...a, raise: v.raise || 0, slam: v.slam || 0, shield: v.shieldHp > 0, broken: v.shieldBroken || v.shieldHp === 1, braced: v.braced });
@@ -960,7 +1039,8 @@ export class Renderer {
     }
     // 예고 배지
     const it = g.intents?.[v.id];
-    const headY = p.y - { kasa: 86, mask: 96, archer: 104, elder: 118, drum: 92 }[v.type] * k;
+    const headY = p.y - (HEAD_H[v.type] || 90) * k;
+    if (v.elite) drawEliteCrown(ctx, p.x - 30 * p.s, by + 4 * p.s, p.s * 0.9);
     if (it && (g.ui.phase === 'aim' || g.ui.phase === 'spin' || g.ui.phase === 'spinning' || g.ui.phase === 'busy')) {
       const foggy = g.st.def.mods.includes('fog') && v.row < 3;
       this.drawIntent(foggy ? { kind: 'unknown' } : it, p.x, headY, p.s, v, g);
@@ -997,8 +1077,9 @@ export class Renderer {
       case 'move':
         icon = 'move';
         col = '#d9e2ff';
-        label = it.toLane != null ? (it.toLane > Math.round(v.lane) ? '오른쪽 ↘' : '↙ 왼쪽') : `${it.steps}칸 전진`;
+        label = it.toLane != null ? (it.toLane > Math.round(v.lane) ? '오른쪽 ↘' : '↙ 왼쪽') : it.dash ? '돌진!' : `${it.steps}칸 전진`;
         if (it.toLane != null) col = '#ffd0f0';
+        if (it.dash) { icon = 'heavy'; col = '#ff4d5e'; bg = 'rgba(70,8,20,0.94)'; }
         break;
       case 'attack':
         if (it.style === 'heavy') { icon = 'heavy'; col = '#ff4d5e'; bg = 'rgba(70,8,20,0.94)'; label = `강타 ${it.dmg}`; }
@@ -1007,6 +1088,8 @@ export class Renderer {
         break;
       case 'brace': icon = 'heavy'; col = '#ff4d5e'; label = '강타 준비'; break;
       case 'aim': icon = 'target'; col = '#ffb347'; label = '조준 중'; break;
+      case 'rev': icon = 'heavy'; col = '#ff8a5a'; label = '돌진 준비'; break;
+      case 'mend': icon = 'plus'; col = '#7dffa0'; bg = 'rgba(8,48,24,0.94)'; label = `치유 +${it.amount}`; break;
       case 'charge': icon = 'bolt'; col = '#ffe08a'; label = '사격 준비'; break;
       case 'summon': icon = 'plus'; col = '#c9b8ff'; label = '소환'; break;
       case 'shift': icon = 'move'; col = '#c9b8ff'; label = '옆 이동'; break;
@@ -2087,7 +2170,7 @@ export function drawRelicBadge(ctx, id, x, y, r, pulse = 0, level = 1) {
 export function wrapText(ctx, text, maxW) {
   const lines = [];
   let line = '';
-  for (const word of String(text).split(' ')) {
+  for (const word of tr(String(text)).split(' ')) {
     const tryLine = line ? line + ' ' + word : word;
     if (ctx.measureText(tryLine).width <= maxW) {
       line = tryLine;

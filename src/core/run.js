@@ -2,7 +2,7 @@
 import { randInt, shuffle } from './rng.js';
 import {
   BATTLES, BASE_STRIP, REWARDS, RELICS, RELIC_IDS, FUSIONS, FUSION_IDS,
-  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES,
+  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE,
 } from './data.js';
 
 export function createRun(seed) {
@@ -29,7 +29,8 @@ export function createRun(seed) {
 // ───────────────────────── 밤 생성 ─────────────────────────
 // 같은 판(seed)·같은 밤·같은 길이면 항상 같은 구성이 나온다.
 
-const UNIT_COST = { kasa: 2, drum: 2, archer: 2, mask: 3 };
+const UNIT_COST = { kasa: 2, drum: 2, archer: 2, mask: 3, bomber: 2, healer: 3, boar: 3 };
+const ELITE_COST = 2;
 const BUDGET = [14, 20, 25, 29, 33]; // 밤이 깊어질수록 적이 많아지고
 const HP_SCALE = [1, 1.2, 1.4, 1.55, 1.7, 1.6]; // 단단해진다(마지막은 보스의 부하들)
 
@@ -54,11 +55,18 @@ export function generateNight(run, stage, risky) {
     kind = kinds[(base + (risky ? 1 + randInt(r, 3) : 0)) % kinds.length];
   }
   // 적 구성
-  const table = [['kasa', 4], ['drum', stage >= 1 ? 3 : 1], ['archer', 2], ['mask', stage === 0 ? 0 : stage >= 3 ? 3 : 2]].filter(([, w]) => w > 0);
+  const table = [
+    ['kasa', 4], ['drum', stage >= 1 ? 3 : 1], ['archer', 2], ['mask', stage === 0 ? 0 : stage >= 3 ? 3 : 2],
+    ['bomber', stage >= 1 ? 2 : 0], ['boar', stage >= 2 ? 2 : 0], ['healer', stage >= 2 ? 1 : 0],
+  ].filter(([, w]) => w > 0);
   let budget = Math.round(BUDGET[stage] * (kind === 'survive' ? 1.15 : 1) * (risky ? 1.1 : 1));
+  // 정예: 셋째 밤부터(험한 길은 둘째 밤부터) 하나, 다섯째 밤은 둘
+  const elites = stage >= (risky ? 1 : 2) ? (stage >= 4 ? 2 : 1) : 0;
+  budget -= elites * ELITE_COST;
   const types = [];
   while (budget >= 2) {
     let t = pickWeighted(r, table);
+    if (t === 'healer' && types.includes('healer')) t = 'kasa'; // 약탕 도깨비는 한 밤에 하나만
     if (UNIT_COST[t] > budget) t = 'kasa';
     types.push(t);
     budget -= UNIT_COST[t];
@@ -79,19 +87,26 @@ export function generateNight(run, stage, risky) {
     if (i < firstShare) {
       const row = Math.min(4, nextRow[lane]);
       nextRow[lane] += 2;
-      waves[0].units.push([t === 'archer' ? 'archer' : t, lane, t === 'archer' ? 0 : row]);
+      waves[0].units.push([t, lane, t === 'archer' || t === 'healer' ? 0 : row]);
     } else {
       const w = waves[1 + ((i - firstShare) % (waves.length - 1))];
       const used = w.units.filter((u) => u[1] === lane).length;
       w.units.push([t, lane, Math.min(1, used)]);
     }
   });
+  // 정예 표시: 뒤에서 치유만 하는 적은 빼고, 무리마다 하나씩
+  const eligible = waves.flatMap((w, wi) => w.units.map((u) => [u, wi])).filter(([u]) => u[0] !== 'healer');
+  for (let n = 0; n < elites && eligible.length; n++) {
+    const pool = eligible.filter(([, wi]) => (n === 0 ? wi === 0 : wi > 0));
+    const [u] = (pool.length ? pool : eligible)[randInt(r, (pool.length ? pool : eligible).length)];
+    if (u[3] !== 'elite') u[3] = 'elite';
+  }
   const objective = { type: kind };
   if (kind === 'survive') objective.turns = turnsLimit;
   if (kind === 'lanes') objective.need = Math.max(1, Math.min(3, Math.floor(total / 3) - 1));
   if (kind === 'rush') {
     objective.kills = Math.ceil(total * 0.65);
-    objective.turns = Math.ceil(objective.kills / 1.15) + 2;
+    objective.turns = Math.ceil(objective.kills / 1.15) + 3; // 새 적(치유·정예)이 끼어 처치가 느려진 만큼 한 턴 더
   }
   const mods = risky ? shuffle(r, Object.keys(MODS)).slice(0, stage >= 3 ? 2 : 1) : [];
   return {
@@ -108,6 +123,23 @@ export function generateNight(run, stage, risky) {
     clearCoins: COIN.clearBase + stage + (risky ? 2 : 0),
     coinMult: risky ? COIN.riskyMult : 1,
     counts: types.reduce((a, t) => ((a[t] = (a[t] || 0) + 1), a), {}),
+    elites: waves.flatMap((w) => w.units).filter((u) => u[3] === 'elite').length,
+  };
+}
+
+// 첫 판 따라 하기용 밤: 우산 도깨비 넷과 초롱불 하나
+export function tutorialNight() {
+  return {
+    id: 'tut', stage: 0, risky: false,
+    name: OBJ_INFO.annihilate.name, night: NIGHT_NAMES[0],
+    objective: { type: 'annihilate' }, intro: OBJ_INFO.annihilate.desc(),
+    pullWaves: true,
+    waves: [
+      { at: 1, units: [['kasa', 1, 3], ['kasa', 0, 1], ['kasa', 2, 1]] },
+      { at: 3, units: [['kasa', 1, 0], ['archer', 2, 0]] },
+    ],
+    mods: [], hpScale: 1, clearCoins: COIN.clearBase, coinMult: 1,
+    counts: { kasa: 4, archer: 1 }, elites: 0,
   };
 }
 
@@ -262,6 +294,10 @@ export function rewardInfo(id) {
 export function rollStartRelics(run) {
   return pickSome(run, RELIC_IDS, 3);
 }
+// 시작 선택지: 유물 3개 + 유물 없이 코인으로 시작
+export function rollStartChoices(run) {
+  return [...rollStartRelics(run), 'purse'];
+}
 
 export function availableFusions(run) {
   return FUSION_IDS.filter((f) => !run.relics.includes(f) && run.relics.includes(FUSIONS[f].a) && run.relics.includes(FUSIONS[f].b));
@@ -315,6 +351,7 @@ export function applyReward(run, id) {
   }
   const r = REWARDS[id];
   if (!r) throw new Error('unknown reward ' + id);
+  if (id === 'purse') run.coins += START_PURSE;
   if (id === 'heal') run.hp = Math.min(run.maxHp, run.hp + 7);
   if (id === 'maxhp') {
     run.maxHp += 3;

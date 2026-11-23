@@ -302,3 +302,7 @@ body { display: flex; align-items: center; justify-content: center; }
 .shop .shop-item.cant .rw-name { font-size: 1.28em; }
 .shop .shop-item.sold { opacity: 0.4; }
 .btn-small { font-size: calc(14px * var(--s) + 3px); }
+
+/* 언어 전환 */
+.btn-lang { opacity: 0.85; }
+.settings select { font: inherit; color: #fff6e0; background: #2a1830; border: 1px solid rgba(216, 165, 72, 0.5); border-radius: 8px; padding: 4px 10px; }

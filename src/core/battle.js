@@ -5,7 +5,7 @@
 import { rand, randInt, pickDistinct } from './rng.js';
 import {
   LANES, FRONT, GUARD_CAP, EMBER_CAP, REROLLS_PER_TURN,
-  ENEMIES, shotStats, EVOLVE_AT, FUSIONS, COIN,
+  ENEMIES, shotStats, EVOLVE_AT, FUSIONS, COIN, ELITE,
 } from './data.js';
 import { evaluateReels, evaluateLines } from './slot.js';
 import { WINDUP } from './timing.js';
@@ -147,7 +147,7 @@ function findSpawnCell(st, lane, row) {
   return null;
 }
 
-function spawnEnemy(st, type, lane, row, events, src = 'wave') {
+function spawnEnemy(st, type, lane, row, events, src = 'wave', elite = false) {
   const cell = findSpawnCell(st, lane, row);
   if (!cell) return null;
   const sp = ENEMIES[type];
@@ -158,7 +158,11 @@ function spawnEnemy(st, type, lane, row, events, src = 'wave') {
     fury: 0, step: 0, vulnerable: false, shieldBroken: false, phase2: false,
     shieldHp: sp.shieldHp || 0, poison: 0, dir: 1,
   };
-  const hpMul = (sp.boss ? 1 : st.def.hpScale) * (st.def.mods.includes('fullMoon') ? 1.25 : 1);
+  const hpMul = (sp.boss ? 1 : st.def.hpScale) * (st.def.mods.includes('fullMoon') ? 1.25 : 1) * (elite ? ELITE.hp : 1);
+  if (elite) {
+    e.elite = true;
+    e.atkUp += ELITE.atk;
+  }
   if (hpMul !== 1) e.hp = e.maxHp = Math.ceil(sp.hp * hpMul);
   e.dir = cell.lane === 0 ? 1 : cell.lane === LANES - 1 ? -1 : e.id % 2 ? 1 : -1;
   st.enemies.push(e);
@@ -169,8 +173,8 @@ function spawnEnemy(st, type, lane, row, events, src = 'wave') {
 
 function spawnWave(st, w, events) {
   const left = [];
-  for (const [type, lane, row] of w.units) {
-    if (!spawnEnemy(st, type, lane, row, events)) left.push([type, lane, row]);
+  for (const [type, lane, row, tag] of w.units) {
+    if (!spawnEnemy(st, type, lane, row, events, 'wave', tag === 'elite')) left.push([type, lane, row, tag]);
   }
   w.units = left;
   w.done = left.length === 0;
@@ -394,6 +398,7 @@ function hit(st, e, dmg, o, events, depth = 0) {
     st.score += 50 * st.turnKills;
     st.laneKills[e.lane]++;
     addCoins(st, sp.boss ? COIN.boss : COIN.kill, 'kill', events, e.id);
+    if (e.elite) addCoins(st, COIN.elite, 'elite', events, e.id);
     if (st.turnKills >= 2) addCoins(st, st.turnKills >= 4 ? 2 : 1, 'combo', events, e.id); // 2·3연속 +1, 4연속부터 +2
     if (st.turnKills >= 2) {
       const ember = st.turnKills === 3;
@@ -430,6 +435,13 @@ function hit(st, e, dmg, o, events, depth = 0) {
         relicEvent(st, events, 'thunderDrum', { from: { lane: e.lane, row: e.row }, to: { lane: near.n.lane, row: near.n.row }, id: near.n.id });
         hit(st, near.n, 2 * lv(st, 'thunderDrum'), { el: 'spark', frontal: false, src: 'relic' }, events, depth + 1);
       }
+    }
+    // 폭죽 도깨비: 쓰러지면 터져서 옆의 적을 다치게 한다(연쇄 가능)
+    if (sp.explode && depth < 5) {
+      const ns = around(st, e);
+      const cells = NEIGHBORS.map(([dl, dr]) => [e.lane + dl, e.row + dr]).filter(([l, r]) => l >= 0 && l < LANES && r >= 0 && r <= FRONT);
+      events.push({ type: 'boom', lane: e.lane, row: e.row, cells });
+      for (const n of ns) hit(st, n, sp.explode, { el: 'counter', frontal: false, src: 'boom' }, events, depth + 1);
     }
   } else {
     if (sp.boss && !e.phase2 && e.hp <= e.maxHp / 2) {
@@ -678,6 +690,7 @@ export function summarize(events) {
     if (ev.type === 'heal') heal += ev.amount;
     if (ev.type === 'burst') cells.push(...ev.cells, [ev.lane, ev.row]);
     if (ev.type === 'shards') cells.push(...ev.cells);
+    if (ev.type === 'boom') cells.push(...ev.cells);
   }
   return { per, guard, heal, cells };
 }
@@ -717,6 +730,28 @@ export function decide(st, e) {
         return freeSteps(st, e, 1) ? { kind: 'move', steps: 1 } : { kind: 'wait' };
       }
       return { kind: 'wait', slow: true };
+    }
+    case 'bomber': {
+      if (e.row >= sp.reach) return { kind: 'attack', style: 'melee', dmg: sp.atk + e.fury + (e.atkUp || 0) };
+      return freeSteps(st, e, 1) ? { kind: 'move', steps: 1 } : { kind: 'wait' };
+    }
+    case 'healer': {
+      const others = st.enemies.filter((o) => o.alive && o.id !== e.id);
+      if (!others.length) {
+        // 혼자 남으면 직접 싸우러 온다
+        if (e.row >= sp.reach) return { kind: 'attack', style: 'melee', dmg: sp.atk + e.fury + (e.atkUp || 0) };
+        return freeSteps(st, e, 1) ? { kind: 'move', steps: 1 } : { kind: 'wait' };
+      }
+      const hurt = others.filter((o) => !ENEMIES[o.type].boss && o.hp < o.maxHp).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp || a.id - b.id)[0];
+      if (hurt) return { kind: 'mend', target: hurt.id, amount: sp.mend };
+      if (e.row < sp.post && freeSteps(st, e, 1)) return { kind: 'move', steps: 1 };
+      return { kind: 'wait', idle: true };
+    }
+    case 'boar': {
+      if (e.row >= FRONT) return { kind: 'attack', style: 'heavy', dmg: sp.atk + e.fury + (e.atkUp || 0) };
+      if (!e.charge) return { kind: 'rev' };
+      const steps = freeSteps(st, e, 99);
+      return steps > 0 ? { kind: 'move', steps, dash: true } : { kind: 'wait' };
     }
     case 'archer': {
       if (e.row < sp.post && freeSteps(st, e, 1)) return { kind: 'move', steps: 1 };
@@ -797,7 +832,21 @@ function execute(st, e, it, events) {
         e.lane = it.toLane;
         e.dir = it.dir;
       }
-      events.push({ type: 'move', id: e.id, lane: e.lane, fromLane, from, to: e.row, hop: !!it.hop });
+      if (it.dash) e.charge = false;
+      events.push({ type: 'move', id: e.id, lane: e.lane, fromLane, from, to: e.row, hop: !!it.hop, dash: !!it.dash });
+      return null;
+    }
+    case 'rev':
+      e.charge = true;
+      events.push({ type: 'rev', id: e.id, lane: e.lane });
+      return null;
+    case 'mend': {
+      const t = byId(st, it.target);
+      if (t && t.alive) {
+        const h0 = t.hp;
+        t.hp = Math.min(t.maxHp, t.hp + it.amount);
+        events.push({ type: 'mend', id: e.id, target: t.id, amount: t.hp - h0, hp: t.hp });
+      }
       return null;
     }
     case 'brace':

@@ -2,16 +2,26 @@ import { Game } from './game.js';
 import { Audio } from './audio/audio.js';
 import { Overlay } from './ui/overlay.js';
 import { loadStore } from './save.js';
+import { setLang, defaultLang } from './i18n.js';
 
 const canvas = document.getElementById('game');
 const stage = document.getElementById('stage');
 const store = loadStore();
+if (!store.settings.lang) store.settings.lang = defaultLang(); // 처음에는 브라우저 언어를 따른다
+setLang(store.settings.lang);
 const audio = new Audio();
 let paused = false;
 let game;
 
 const overlay = new Overlay(document.getElementById('overlay'), {
   start: () => game.startRun(),
+  resume: () => game.resumeRun(),
+  getSaved: () => store.run,
+  abandon: () => game.clearCheckpoint(),
+  replayTutorial: () => {
+    store.meta.tutorialDone = false;
+    store.save();
+  },
   title: () => {
     game.mode = 'title';
     game.st = null;
@@ -76,6 +86,20 @@ canvas.addEventListener('contextmenu', (e) => {
 });
 for (const t of ['pointerup', 'pointercancel', 'pointerleave']) canvas.addEventListener(t, () => game.onPointerUp());
 window.addEventListener('keydown', (e) => {
+  const layer = document.querySelector('.ov-layer.on');
+  if (layer) {
+    if (e.repeat) return;
+    const click = (el) => {
+      if (!el || el.disabled) return false;
+      e.preventDefault();
+      el.click();
+      return true;
+    };
+    if (/^[1-9]$/.test(e.key)) click(layer.querySelectorAll('.rw-card')[Number(e.key) - 1]);
+    else if (e.key === 'Enter') click(layer.querySelector('.rw-go:not([disabled])') || layer.querySelector('.shop [data-a="leave"]') || layer.querySelector('.btn-primary:not([disabled])'));
+    else if (e.key === 'Escape') click(layer.querySelector('[data-a="close"]') || layer.querySelector('[data-a="back"]'));
+    return;
+  }
   if (!paused) game.onKey(e);
 });
 document.addEventListener('visibilitychange', () => {
