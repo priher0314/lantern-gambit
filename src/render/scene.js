@@ -703,6 +703,7 @@ export class Renderer {
     ctx.scale(pz, pz);
     ctx.translate(-pcx, -pcy);
     this.drawLaneOverlays(g);
+    fx.drawUnder(ctx, W, L.H);
     this.drawGhosts(g);
     const list = [...g.views.values()].sort((a, b) => a.row - b.row);
     for (const v of list) this.drawEnemy(g, v);
@@ -1007,23 +1008,40 @@ export class Renderer {
       alpha = v.spawnT;
       k *= 0.6 + 0.4 * easeOutBack(v.spawnT);
     }
+    let flyX = 0, flyY = 0, flyRot = 0;
     if (v.dying > 0) {
-      alpha = Math.max(0, 1 - v.dying * 1.3);
-      k *= 1 + v.dying * 0.25;
+      const d = v.dying;
+      if (v.fly) {
+        const e = 1 - (1 - d) ** 2.4;
+        alpha = d < 0.55 ? 1 : Math.max(0, 1 - (d - 0.55) / 0.45);
+        k *= 1 - d * 0.38;
+        flyX = v.fly.x * e * p.s;
+        flyY = -v.fly.y * e * p.s + 90 * d * d * p.s * 0.35;
+        flyRot = v.fly.rot * e;
+      } else {
+        alpha = Math.max(0, 1 - d * 1.3);
+        k *= 1 + d * 0.25;
+      }
     }
     k *= 1 + (v.pop || 0) * 0.16;
     if (alpha <= 0) return;
     ctx.save();
     ctx.globalAlpha = alpha;
-    const y = p.y - (v.knock || 0) + (v.lunge || 0) * 34 * p.s;
+    const y = p.y - (v.knock || 0) + (v.lunge || 0) * 34 * p.s + flyY;
+    p.x += flyX;
     const a = {
       t: v.t, flash: v.flash, frozen: v.frozen > 0, fury: v.fury > 0, exposed: v.exposed, poison: v.poison > 0,
       squash: v.squash, hop: (v.hop || 0) * p.s, lean: (v.lean || 0) + (v.kick || 0),
     };
-    if (v.dying > 0) a.flash = Math.max(a.flash || 0, 1 - v.dying);
+    if (v.dying > 0) a.flash = Math.max(a.flash || 0, v.fly ? 1 - v.dying * 2.6 : 1 - v.dying);
     if (v.elite && !v.dying) drawEliteRing(ctx, p.x, p.y - 2, k, g.rt);
     ctx.save();
     ctx.translate(p.x, y);
+    if (flyRot) {
+      ctx.translate(0, -34 * k);
+      ctx.rotate(flyRot);
+      ctx.translate(0, 34 * k);
+    }
     ctx.scale(TILT.x, TILT.y);
     ctx.translate(-p.x, -y);
     if (v.type === 'bomber') drawBomber(ctx, p.x, y, k, { ...a, close: v.close || 0 });
@@ -1058,10 +1076,11 @@ export class Renderer {
       let x0 = p.x - tw / 2;
       for (let i = 0; i < v.maxHp; i++) {
         const filled = i < hp;
+        const justLost = !filled && i < (v.hpLag ?? hp);
         const willLose = filled && i >= hp - dmgPrev;
         ctx.fillStyle = INK;
         ctx.fillRect(x0 - 1, by - 1, pw + 2, 8 * p.s + 2);
-        ctx.fillStyle = !filled ? '#3a2a3a' : willLose ? (Math.sin(g.rt * 14) > 0 ? '#ffffff' : '#ff6a4a') : '#ff4d5e';
+        ctx.fillStyle = justLost ? '#fff0c0' : !filled ? '#3a2a3a' : willLose ? (Math.sin(g.rt * 14) > 0 ? '#ffffff' : '#ff6a4a') : '#ff4d5e';
         ctx.fillRect(x0, by, pw, 8 * p.s);
         x0 += pw + gap;
       }
@@ -1071,6 +1090,10 @@ export class Renderer {
       ctx.fillRect(p.x - bw / 2 - 2, by - 2, bw + 4, 11);
       ctx.fillStyle = '#3a2a3a';
       ctx.fillRect(p.x - bw / 2, by, bw, 7);
+      if ((v.hpLag ?? hp) > hp) {
+        ctx.fillStyle = '#fff0c0';
+        ctx.fillRect(p.x - bw / 2, by, (bw * Math.min(v.maxHp, v.hpLag)) / v.maxHp, 7);
+      }
       ctx.fillStyle = '#ff4d5e';
       ctx.fillRect(p.x - bw / 2, by, (bw * hp) / v.maxHp, 7);
       if (dmgPrev) {
@@ -1524,7 +1547,8 @@ export class Renderer {
     if (!st) return;
     const p = st.player;
     const hpShown = g.hud.hp;
-    const x = 12, y = 12, w = 150, h = 18;
+    const hs = g.hud.shake || 0;
+    const x = 12 + (hs > 0 ? Math.sin(g.rt * 70) * hs * 6 : 0), y = 12 + (hs > 0 ? Math.cos(g.rt * 53) * hs * 3 : 0), w = 150, h = 18;
     drawIcon(ctx, 'heart', x + 10, y + 9, 22, '#ff4d5e');
     ctx.fillStyle = INK;
     ctx.beginPath();

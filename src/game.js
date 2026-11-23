@@ -192,7 +192,7 @@ export class Game {
       close: 0, raise: 0, slam: 0, chargeA: 0, puff: 0, blockT: 0,
       frozen: e.frozen || 0, exposed: !!e.exposed, fury: e.fury || 0, braced: !!e.braced, charge: !!e.charge,
       vulnerable: !!e.vulnerable, phase2: !!e.phase2, shieldBroken: !!e.shieldBroken,
-      poison: e.poison || 0, shieldHp: e.shieldHp || 0, kick: 0, pop: 0,
+      poison: e.poison || 0, shieldHp: e.shieldHp || 0, kick: 0, pop: 0, hpLag: e.hp, lagHold: 0,
       elite: !!e.elite, sizeMul: e.elite ? 1.14 : 1,
       spawnT: 0, dying: 0, ox: 0, oy: 0,
     };
@@ -1459,8 +1459,24 @@ export class Game {
   }
 
   async playEvents(evs) {
-    for (const ev of evs) await this.playEvent(ev);
+    for (let i = 0; i < evs.length; i++) {
+      this.evAhead = evs;
+      this.evAt = i;
+      await this.playEvent(evs[i]);
+    }
+    this.evAhead = null;
     this.syncViews();
+  }
+
+  // 지금 재생 중인 처치가 이 밤의 마지막 처치인가(뒤에 다른 처치 없이 승리가 이어지는가)
+  isFinisher() {
+    const evs = this.evAhead;
+    if (!evs) return false;
+    for (let i = this.evAt + 1; i < evs.length; i++) {
+      if (evs[i].type === 'kill') return false;
+      if (evs[i].type === 'win') return true;
+    }
+    return false;
   }
 
   async playEvent(ev) {
@@ -1742,16 +1758,40 @@ export class Game {
         if (!v) break;
         const ip = this.impactPoint(v);
         const big = ev.etype === 'elder';
+        const fin = !big && this.isFinisher();
         v.dyingStart = true;
-        this.tween(v, { dying: 1 }, big ? 1100 : 520, (t) => t);
+        v.hpLag = 0;
+        if (!big) {
+          // 맞은 방향(위쪽)으로 날아가며 빙글 돈다
+          const side = v.lane === 0 ? -1 : v.lane === 2 ? 1 : Math.random() < 0.5 ? -1 : 1;
+          v.fly = { x: side * (26 + Math.random() * 34), y: (fin ? 120 : 78) + Math.random() * 30, rot: side * (1.5 + Math.random() * 1.3) };
+        }
+        this.tween(v, { dying: 1 }, big ? 1100 : fin ? 760 : 560, (t) => t);
         this.audio.play('kill', { big });
-        this.hitstop = Math.max(this.hitstop, big ? 0.3 : 0.13);
+        if (fin) this.audio.play('finish');
+        this.hitstop = Math.max(this.hitstop, big ? 0.3 : fin ? 0.24 : 0.13);
         fx.shake(big ? 4 : 3);
-        fx.punchIn(big ? 0.06 : 0.03);
-        fx.impact(ip.x, ip.y, big ? 150 : 80, '#ffe08a');
-        this.buzz(big ? 200 : 40);
-        this.slowT = big ? 0.5 : 0.16; // 처치 순간 짧은 슬로모션
+        fx.kick(0, big ? -14 : fin ? -12 : -7);
+        fx.punchIn(big ? 0.06 : fin ? 0.055 : 0.03);
+        fx.impact(ip.x, ip.y, big ? 150 : fin ? 120 : 80, '#ffe08a');
+        this.buzz(big ? 200 : fin ? 90 : 40);
+        this.slowT = big ? 0.5 : fin ? 0.6 : 0.16; // 처치 순간 짧은 슬로모션
         if (big) fx.flash('#fff4c0', 0.6);
+        {
+          const foot = this.renderer.viewPos(v);
+          fx.decal(foot.x, foot.y, { kind: 'scorch', r: (big ? 80 : 40) * foot.s, color: 'rgba(10,5,16,0.9)', life: 6 });
+          // 혼불이 빠져나간다
+          for (let i = 0; i < (big ? 9 : 3); i++) {
+            fx.particle({ x: ip.x + (Math.random() - 0.5) * 30, y: ip.y, vx: (Math.random() - 0.5) * 50, vy: -60 - Math.random() * 60, g: -120, drag: 0.97, life: 0.9 + Math.random() * 0.4, max: 1.2, size: 5 + Math.random() * 3, color: '#bfe6ff', kind: 'glow' });
+          }
+        }
+        if (fin) {
+          fx.dim(0.5);
+          fx.flash('#fff4c0', 0.3);
+          fx.ring(ip.x, ip.y, { r0: 14, r1: 240, color: '#ffe08a', w: 9, life: 0.6 });
+          fx.burst(ip.x, ip.y, { n: 36, speed: 620, color: ['#ffffff', '#ffe08a', '#ffb347'], kind: 'streak', size: 5, life: 0.45 });
+          fx.text(ip.x, ip.y - 96, '마무리!', { color: '#ffe08a', size: 44, font: 'num', life: 1.3, vy: -30 });
+        }
         const cols = {
           kasa: ['#e2453c', '#b8302e', '#f3d38a', '#ffe0c0'], mask: ['#f5ecd9', '#ffffff', '#352a64', '#e2453c'], archer: ['#ffbf52', '#fff4c4', '#e0682a'], elder: ['#ffb04a', '#fff2c0', '#ff5a6e', '#ffffff'],
           drum: ['#9a3a2a', '#f6ead0', '#e8c070'], bomber: ['#e8663c', '#f0b83a', '#d8342c', '#fff2c8'], healer: ['#9ad88a', '#3f8f6a', '#7cf0a0'], boar: ['#6a4a3a', '#80584a', '#fff6e0'],
@@ -1997,9 +2037,15 @@ export class Game {
           this.audio.play('playerHurt');
           fx.hurt(0.55 + ev.dmg * 0.08);
           fx.shake(ev.dmg >= 4 ? 3 : 2);
-          this.hitstop = Math.max(this.hitstop, 0.06);
-          fx.text(P.x + 30, L.playerY - 90, `-${ev.dmg}`, { color: '#ff5a5a', size: 34, font: 'num' });
-          fx.burst(P.x, L.playerY - 50, { n: 14, speed: 200, color: ['#ff5a5a', '#ffffff'], kind: 'streak', size: 4, life: 0.35 });
+          fx.kick((Math.random() - 0.5) * 4, 7 + Math.min(10, ev.dmg * 2));
+          this.hitstop = Math.max(this.hitstop, ev.dmg >= 4 ? 0.14 : 0.09);
+          P.rec = 12 + Math.min(12, ev.dmg * 2);
+          this.hud.shake = 1;
+          if (ev.dmg >= 4) fx.dim(0.3);
+          fx.impact(P.x, L.playerY - 54, 50 + ev.dmg * 8, '#ff5a5a');
+          fx.ring(P.x, L.playerY - 10, { r0: 14, r1: 80 + ev.dmg * 8, color: '#ff5a5a', w: 6, life: 0.35, sy: 0.4 });
+          fx.text(P.x + 30, L.playerY - 90, `-${ev.dmg}`, { color: '#ff5a5a', size: 34 + Math.min(14, ev.dmg * 2), font: 'num', vy: -220, vx: 50, g: 480, life: 0.9 });
+          fx.burst(P.x, L.playerY - 50, { n: 14 + ev.dmg * 2, speed: 260, color: ['#ff5a5a', '#ffffff'], kind: 'streak', size: 4, life: 0.35 });
         } else if (ev.absorbed) {
           this.audio.play('guard');
         }
@@ -2077,6 +2123,8 @@ export class Game {
       // 번개 덩어리가 레인을 달려가 내리꽂힌다
       this.audio.play('spark');
       fx.impact(m.x, m.y, 40, '#ffe45c');
+      P.rec = 9;
+      fx.kick(0, 2.5);
       const sp = this.spawnProj('spark', m.x, m.y, 1250, 13 + (ev.gild ? 3 : 0));
       sp.tx = W / 2 + (ev.lane - 1) * LANE_SPACING * 0.8;
       sp.ty = m.y - 40;
@@ -2091,6 +2139,10 @@ export class Game {
     else if (sym === 'counter') this.audio.play('counter');
     else if (sym === 'venom') this.audio.play('venom');
     fx.impact(sx, sy, 34, SYMBOLS[sym]?.fx || '#ffffff');
+    if (!ev.side) {
+      P.rec = sym === 'counter' ? 12 : 9;
+      fx.kick(0, 2.5);
+    }
     if (sym === 'blade' || sym === 'counter') {
       const lx = W / 2 + (ev.lane - 1) * LANE_SPACING * 0.85;
       fx.slash(lx, L.fieldTop + L.fieldH * 0.55, { ang: Math.PI / 2 + (ev.lane - 1) * 0.11, len: L.fieldH * 0.5, color: sym === 'counter' ? '#ffe08a' : '#cfd8ff', w: 9, life: 0.28 });
@@ -2133,6 +2185,9 @@ export class Game {
     const minor = ev.src === 'shard' || ev.src === 'splash' || ev.src === 'chain' || ev.src === 'relic';
     const strong = ev.dmg >= 5 || ev.tags.includes('shatter');
     // 몸이 밀려나고(넉백) 찌그러지고(스쿼시) 떨린다
+    const hpBefore = v.hpShown;
+    v.hpLag = Math.max(v.hpLag || 0, hpBefore);
+    v.lagHold = 0.3;
     v.flash = 1.5;
     v.knock = 16 + Math.min(24, ev.dmg * 3.5);
     v.squash = 0.85;
@@ -2219,9 +2274,26 @@ export class Game {
       v.exposed = false;
     }
     if (ev.tags.includes('weak')) fx.text(ip.x - 46, ip.y - 30, '심장 +2', { color: '#ffe08a', size: 22, font: 'num' });
-    fx.text(ip.x + (Math.random() - 0.5) * 22, ip.y - 50, `${ev.dmg}`, {
-      color: ev.dmg >= 5 ? '#ffe08a' : '#ffffff', size: 32 + Math.min(26, ev.dmg * 3), font: 'num', vy: -110,
+    // 숫자가 옆으로 튀어 올랐다가 떨어진다
+    fx.text(ip.x + (Math.random() - 0.5) * 22, ip.y - 44, `${ev.dmg}`, {
+      color: ev.dmg >= 5 ? '#ffe08a' : '#ffffff', size: 32 + Math.min(26, ev.dmg * 3), font: 'num',
+      vy: -250 - Math.min(120, ev.dmg * 14), vx: (Math.random() < 0.5 ? -1 : 1) * (40 + Math.random() * 70), g: 520, life: 0.85,
     });
+    // 가득 찬 체력을 한 방에
+    if (!minor && ev.hp <= 0 && hpBefore >= v.maxHp && v.maxHp >= 4) {
+      fx.text(ip.x, ip.y - 104, '일격!', { color: '#ffd84a', size: 32, font: 'num', life: 1.1, vy: -40, delay: 0.05 });
+    }
+    // 바닥에 남는 자국
+    {
+      const foot = this.renderer.viewPos(v);
+      if (el === 'venom') fx.decal(foot.x, foot.y, { kind: 'puddle', r: 34 * foot.s, color: 'rgba(120,200,50,0.9)', life: 5 });
+      else if (el === 'wave') fx.decal(foot.x, foot.y, { kind: 'puddle', r: 38 * foot.s, color: 'rgba(60,200,170,0.8)', life: 3.5 });
+      else if (el === 'frost' || el === 'ice') fx.decal(foot.x, foot.y, { kind: 'frost', r: 36 * foot.s, life: 5 });
+      else if (el === 'spark') fx.decal(foot.x, foot.y, { kind: 'scorch', r: 30 * foot.s, color: 'rgba(12,6,20,0.9)', life: 4.5 });
+      else if (!minor && strong) fx.decal(foot.x, foot.y, { kind: 'crack', r: 44 * foot.s, life: 6 });
+    }
+    if (strong && !minor) fx.dim(0.32);
+    fx.kick((Math.random() - 0.5) * 3, minor ? -2 : -(4 + Math.min(9, ev.dmg * 1.3)));
     this.audio.play('hit', { dmg: ev.dmg, el: ev.el });
     this.hitstop = Math.max(this.hitstop, minor ? 0.045 : Math.min(0.22, 0.09 + ev.dmg * 0.02));
     fx.shake(strong ? 3 : minor ? 1 : 2);
@@ -2323,6 +2395,9 @@ export class Game {
       v.blockT = Math.max(0, v.blockT - dt * 3);
       v.kick = (v.kick || 0) * 0.82 ** (realDt * 60);
       v.pop = Math.max(0, (v.pop || 0) - realDt * 7);
+      if (v.hpLag == null || v.hpLag < v.hpShown) v.hpLag = v.hpShown;
+      else if (v.lagHold > 0) v.lagHold -= realDt;
+      else if (v.hpLag > v.hpShown) v.hpLag = Math.max(v.hpShown, v.hpLag - realDt * Math.max(5, (v.hpLag - v.hpShown) * 6));
       if (v.poison > 0 && !v.dying && Math.random() < dt * 3.5) {
         const q = this.renderer.viewPos(v);
         this.fx.particle({ x: q.x + (Math.random() - 0.5) * 34 * q.s, y: q.y - 30 * q.k - Math.random() * 30, vx: 0, vy: -38, g: -20, life: 0.8, max: 0.8, size: 3 + Math.random() * 2.5, color: '#a6f04a', kind: 'dot', add: false });
@@ -2341,6 +2416,9 @@ export class Game {
     P.x += (P.tx - P.x) * Math.min(1, dt * 14);
     P.poseT = Math.min(1, P.poseT + dt * (P.pose === 'dodge' ? 3.2 : 2.5));
     P.flash = Math.max(0, P.flash - dt * 4);
+    P.rec = (P.rec || 0) * 0.8 ** (realDt * 60);
+    P.oy = P.rec < 0.3 ? 0 : P.rec;
+    this.hud.shake = Math.max(0, (this.hud.shake || 0) - realDt * 3.5);
     if (P.pose === 'dodge') P.ox = (P.dodgeDir || 1) * 46 * Math.sin(P.poseT * Math.PI);
     else P.ox = 0;
     if (P.poseT >= 1 && !P.holdGuard && P.pose !== 'idle' && P.pose !== 'cast') P.pose = 'idle';

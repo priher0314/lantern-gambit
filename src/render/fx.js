@@ -46,6 +46,28 @@ export class FX {
     this.vignetteColor = '255,40,60';
     this.opts = { shake: true, flash: true };
     this.quality = 1;
+    this.kx = 0; // 맞은 방향으로 화면이 "덜컥" 밀렸다 돌아오는 양
+    this.ky = 0;
+    this.dimA = 0; // 강타 순간 배경이 잠깐 어두워져 빛이 도드라진다
+    this.decals = []; // 바닥에 남는 자국
+  }
+
+  // 한 방향으로 덜컥 밀렸다가 돌아온다(무작위 흔들림과 달리 "어디서 맞았는지"가 느껴진다)
+  kick(dx, dy) {
+    if (!this.opts.shake) return;
+    this.kx += dx;
+    this.ky += dy;
+  }
+
+  dim(a = 0.35) {
+    this.dimA = Math.max(this.dimA, this.opts.flash ? a : a * 0.3);
+  }
+
+  // 바닥 자국: scorch(그을음) crack(갈라짐) puddle(웅덩이) frost(서리)
+  decal(x, y, opt = {}) {
+    if (this.decals.length >= 14) this.decals.shift();
+    const life = opt.life || 5;
+    this.decals.push({ x, y, r: opt.r || 30, kind: opt.kind || 'scorch', color: opt.color || '#0a0510', life, max: life, rot: Math.random() * 6.28, seed: Math.random() * 1000 });
   }
 
   // 흔들림 단계: 1=약 2=중 3=강
@@ -123,7 +145,7 @@ export class FX {
 
   text(x, y, str, opt = {}) {
     this.texts.push({
-      x, y, str, vy: opt.vy ?? -60, life: opt.life || 0.9, max: opt.life || 0.9,
+      x, y, str, vy: opt.vy ?? -60, vx: opt.vx || 0, g: opt.g || 0, life: opt.life || 0.9, max: opt.life || 0.9,
       color: opt.color || '#fff', size: opt.size || 26, stroke: opt.stroke || '#1a1024', pop: 0, font: opt.font || 'num', delay: opt.delay || 0,
     });
   }
@@ -139,6 +161,15 @@ export class FX {
     } else {
       this.ox = this.oy = 0;
     }
+    this.kx *= 0.8 ** (realDt * 60);
+    this.ky *= 0.8 ** (realDt * 60);
+    if (Math.abs(this.kx) < 0.05) this.kx = 0;
+    if (Math.abs(this.ky) < 0.05) this.ky = 0;
+    this.ox += this.kx;
+    this.oy += this.ky;
+    this.dimA = Math.max(0, this.dimA - realDt * 3.2);
+    for (const d of this.decals) d.life -= dt;
+    if (this.decals.length) this.decals = this.decals.filter((d) => d.life > 0);
     this.flashA = Math.max(0, this.flashA - realDt * 2.8);
     this.punch = Math.max(0, this.punch - realDt * 0.22 - this.punch * realDt * 9);
     for (const im of this.impacts) im.life -= realDt;
@@ -165,9 +196,89 @@ export class FX {
       t.life -= dt;
       t.pop = Math.min(1, t.pop + dt * 8);
       t.y += t.vy * dt;
-      t.vy *= 0.92 ** (dt * 60);
+      t.x += t.vx * dt;
+      t.vy = t.vy * 0.92 ** (dt * 60) + t.g * dt;
+      t.vx *= 0.94 ** (dt * 60);
     }
     this.texts = this.texts.filter((t) => t.life > 0);
+  }
+
+  // 적보다 아래에 깔리는 것: 순간 암전, 바닥 자국
+  drawUnder(ctx, W, H) {
+    if (this.dimA > 0) {
+      ctx.fillStyle = `rgba(6,3,14,${this.dimA})`;
+      ctx.fillRect(-60, -60, W + 120, H + 120);
+    }
+    for (const d of this.decals) {
+      const k = d.life / d.max;
+      const a = Math.min(1, k * 2.5) * Math.min(1, (1 - k) * 30);
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      ctx.scale(1, 0.42);
+      ctx.globalAlpha = a;
+      let s = d.seed;
+      const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+      if (d.kind === 'crack') {
+        ctx.strokeStyle = 'rgba(8,4,14,0.8)';
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 7; i++) {
+          const an = d.rot + (i / 7) * 6.28 + rnd() * 0.5;
+          const len = d.r * (0.55 + rnd() * 0.7);
+          const bend = an + (rnd() - 0.5) * 0.9;
+          ctx.lineWidth = 2.6;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(an) * d.r * 0.12, Math.sin(an) * d.r * 0.12);
+          ctx.lineTo(Math.cos(an) * len * 0.55, Math.sin(an) * len * 0.55);
+          ctx.lineTo(Math.cos(an) * len * 0.55 + Math.cos(bend) * len * 0.45, Math.sin(an) * len * 0.55 + Math.sin(bend) * len * 0.45);
+          ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(8,4,14,0.55)';
+        ctx.beginPath();
+        ctx.arc(0, 0, d.r * 0.3, 0, 6.2832);
+        ctx.fill();
+      } else if (d.kind === 'frost') {
+        ctx.fillStyle = 'rgba(214,243,255,0.3)';
+        ctx.beginPath();
+        for (let i = 0; i < 16; i++) {
+          const an = (i / 16) * 6.2832;
+          const rr = d.r * (i % 2 ? 0.62 : 1) * (0.85 + rnd() * 0.3);
+          if (i) ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr);
+          else ctx.moveTo(Math.cos(an) * rr, Math.sin(an) * rr);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+      } else {
+        // 그을음 / 웅덩이: 가운데가 진한 얼룩
+        const gr = ctx.createRadialGradient(0, 0, d.r * 0.1, 0, 0, d.r);
+        gr.addColorStop(0, d.color);
+        gr.addColorStop(0.7, d.color);
+        gr.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.globalAlpha = a * (d.kind === 'puddle' ? 0.5 : 0.55);
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        for (let i = 0; i < 12; i++) {
+          const an = (i / 12) * 6.2832;
+          const rr = d.r * (0.8 + rnd() * 0.35);
+          if (i) ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr);
+          else ctx.moveTo(Math.cos(an) * rr, Math.sin(an) * rr);
+        }
+        ctx.closePath();
+        ctx.fill();
+        if (d.kind === 'puddle') {
+          ctx.globalAlpha = a * 0.5;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.ellipse(-d.r * 0.25, -d.r * 0.2, d.r * 0.3, d.r * 0.12, -0.4, 0, 6.2832);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
   }
 
   drawWorld(ctx) {
@@ -347,6 +458,8 @@ export class FX {
     this.texts.length = 0;
     this.slashes.length = 0;
     this.impacts.length = 0;
+    this.decals.length = 0;
+    this.kx = this.ky = this.dimA = 0;
   }
 }
 

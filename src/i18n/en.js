@@ -226,6 +226,8 @@ export const EN = {
   '폭발': 'Blast',
   '초전도! 연쇄 +#': 'Conduct! Chain +#',
   '파쇄!': 'Shatter!',
+  '마무리!': 'Finisher!',
+  '일격!': 'One shot!',
   '탈 파괴!': 'Mask broken!',
   '빈틈 2배': 'Exposed x2',
   '심장 +#': 'Core +#',

@@ -393,8 +393,18 @@ export class Audio {
     this.noise({ dur: 0.5, vol: 0.18, type: 'bandpass', f: 500, f2: 1400, q: 1.2 });
   }
   s_playerHurt() {
+    // 둔탁하게 얻어맞는 소리: 낮은 몸통 + 짧은 파열 + 신음 같은 하강음
     this.tone({ type: 'square', f: 220, f2: 80, dur: 0.25, vol: 0.12, filter: { f: 1200 } });
-    this.tone({ type: 'sine', f: 140, f2: 50, dur: 0.3, vol: 0.45 });
+    this.tone({ type: 'sine', f: 140, f2: 42, dur: 0.34, vol: 0.5 });
+    this.noise({ dur: 0.05, vol: 0.4, type: 'highpass', f: 2400 });
+    this.noise({ t: 0.01, dur: 0.2, vol: 0.3, type: 'lowpass', f: 700 });
+  }
+  s_finish() {
+    // 마무리 일격: 깊은 "쿵" 뒤에 맑게 퍼지는 울림
+    this.tone({ type: 'sine', f: 90, f2: 28, dur: 0.7, vol: 0.6 });
+    this.noise({ dur: 0.5, vol: 0.28, type: 'lowpass', f: 1200, f2: 120 });
+    [784, 1175, 1568].forEach((f, k) => this.tone({ type: 'sine', f, t: 0.08 + k * 0.05, dur: 0.7, vol: 0.05, attack: 0.01 }));
+    this.noise({ t: 0.05, dur: 0.6, vol: 0.06, type: 'highpass', f: 6000 });
   }
   s_guard() {
     this.tone({ type: 'square', f: 420, f2: 380, dur: 0.1, vol: 0.08, filter: { f: 3000 } });
