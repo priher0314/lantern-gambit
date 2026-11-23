@@ -1,5 +1,5 @@
 // 화면 그리기: 배경(미리 렌더), 전장, 캐릭터, 슬롯 사당, HUD, 버튼
-import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS, RUN_LENGTH } from '../core/data.js';
+import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS, RUN_LENGTH, AFFINITY } from '../core/data.js';
 import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL, REEL_PEEK, UI_H } from './layout.js';
 import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix, drawBomber, drawHealer, drawBoar, drawEliteRing, drawEliteCrown, TILT } from './art.js';
 // 적 머리 높이(예고 배지·말풍선 위치)
@@ -1102,6 +1102,44 @@ export class Renderer {
         ctx.fillRect(p.x - bw / 2 + (bw * (hp - dmgPrev)) / v.maxHp, by, (bw * dmgPrev) / v.maxHp, 7);
       }
     }
+    // 고른 기술과의 상성(약점 ▲ / 저항 ▼)
+    const selShot = g.ui.phase === 'aim' && g.ui.sel != null && g.st ? g.st.shots[g.ui.sel] : null;
+    const aff = selShot && !selShot.used ? AFFINITY[v.type] : null;
+    if (aff && (aff.weak === selShot.symbol || aff.resist === selShot.symbol)) {
+      const weak = aff.weak === selShot.symbol;
+      const tx = p.x + 40 * p.s;
+      const ty = by - 20 * p.s + (weak ? Math.sin(g.rt * 6) * 2 : 0);
+      const label = weak ? '약점' : '저항';
+      ctx.font = `${Math.round(11 * p.s + 3)}px ${FONTS.ui}`;
+      const tw = ctx.measureText(label).width + 12;
+      ctx.fillStyle = weak ? '#ffb347' : '#4a4458';
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(tx - tw / 2, ty - 9, tw, 18, 9);
+      ctx.fill();
+      ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = weak ? '#2a1404' : '#d8d0e8';
+      ctx.fillText(label, tx, ty + 1);
+    }
+    // 저격 표적
+    if (g.ui.preview && g.ui.preview.snipe === v.id) {
+      const cy = p.y - 44 * k;
+      const rr = 30 * p.s + Math.sin(g.rt * 8) * 2;
+      ctx.strokeStyle = '#ffd84a';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(p.x, cy, rr, 0, TAU);
+      ctx.stroke();
+      ctx.beginPath();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        ctx.moveTo(p.x + dx * (rr - 7), cy + dy * (rr - 7));
+        ctx.lineTo(p.x + dx * (rr + 7), cy + dy * (rr + 7));
+      }
+      ctx.stroke();
+    }
     // 예고 배지
     const it = g.intents?.[v.id];
     const headY = p.y - (HEAD_H[v.type] || 90) * k * TILT.y - 6 * p.s;
@@ -1493,10 +1531,10 @@ export class Renderer {
       const keys = g.padActive
         ? (react
           ? [['A', '막기'], ['B', '회피']]
-          : [['A', g.ui.phase === 'spin' ? '레버' : '쏘기'], ['LB RB', '릴 선택'], ['◀ ▶', '레인'], ['X', '다시 돌리기'], ['Y', '턴 종료']])
+          : [['A', g.ui.phase === 'spin' ? '레버' : '쏘기'], ['LB RB', '릴 선택'], ['◀ ▶', '레인'], ['▲ ▼', '저격'], ['X', '다시 돌리기'], ['Y', '턴 종료']])
         : react
           ? [['Space', '막기'], ['Shift', '회피']]
-          : [['Space', '레버'], ['Q W E', '릴 선택'], ['1 2 3', '레인'], ['R', '다시 돌리기'], ['Enter', '턴 종료']];
+          : [['Space', '레버'], ['Q W E', '릴 선택'], ['1 2 3', '레인'], ['F', '저격'], ['R', '다시 돌리기'], ['Enter', '턴 종료']];
       const y = bot + (L.SH - bot) / 2 + 2;
       ctx.textBaseline = 'middle';
       const parts = keys.map(([k, label]) => {
@@ -1753,6 +1791,10 @@ export class Renderer {
     ctx.textAlign = 'right';
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.fillText(`남은 적 ${n}`, W - 12, this.L.hudH + 15);
+    // 이번 턴에 남은 저격
+    const sn = st.snipes || 0;
+    ctx.fillStyle = sn > 0 ? '#ffd84a' : 'rgba(255,255,255,0.35)';
+    ctx.fillText(`저격 ${sn > 0 ? '●' : '○'}`, W - 12, this.L.hudH + 33);
   }
 
   drawInfo(g) {

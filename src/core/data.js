@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.16';
+export const GAME_VERSION = 'v0.17';
 
 export const ROWS = 7;
 export const LANES = 3;
@@ -89,8 +89,8 @@ export function shotDesc(symbol, tier, gild = 0) {
       if (tier === 2) return `레인 전체 관통 · 피해 ${s.dmg} · 파쇄`;
       return `레인 전체 ${s.dmg} + 양옆 레인 ${s.sideDmg} · 방패 무시`;
     case 'wave':
-      if (tier === 1) return `첫 적 ${s.dmg} · 양옆·뒤 ${s.splash} (측면 피해는 방패 무시)`;
-      if (tier === 2) return `첫 적 ${s.dmg} · 주변 8칸 ${s.splash}`;
+      if (tier === 1) return `첫 적 ${s.dmg} · 양옆·뒤 ${s.splash} · 밀어내기`;
+      if (tier === 2) return `첫 적 ${s.dmg} · 주변 8칸 ${s.splash} · 밀어내기`;
       return `모든 적 ${s.dmg} · 한 칸 밀어내기`;
     case 'frost':
       if (tier === 1) return `첫 적 ${s.dmg} · 동결 ${s.freeze}턴 (행동·조준 취소)`;
@@ -154,6 +154,22 @@ export const ENEMIES = {
     how: '충전 중엔 받는 피해 +2. 발사는 한 발씩 막기.',
   },
 };
+
+// 상성: 약점인 기술은 피해 +2(번지는 피해는 +1), 저항하는 기술은 직격 피해 -1
+export const AFFINITY = {
+  kasa: { weak: 'blade', resist: 'wave' }, // 종이 우산은 잘 베이고, 물은 튕겨 낸다
+  drum: { weak: 'wave', resist: 'spark' }, // 젖은 북은 울리지 않는다
+  mask: { weak: 'venom' }, // 탈 틈으로 스민다
+  archer: { weak: 'frost', resist: 'blade' }, // 불씨는 추위에 약하고 칼로는 잘 베이지 않는다
+  bomber: { weak: 'spark' }, // 불꽃이 닿으면 심지에 불이 붙는다
+  healer: { weak: 'blade' }, // 약탕 단지가 깨진다
+  boar: { weak: 'frost', resist: 'blade' }, // 두꺼운 가죽, 얼면 굼뜨다
+  elder: { weak: 'wave' }, // 큰불에는 물
+};
+export const WEAK_BONUS = 2;
+export const RESIST_CUT = 1;
+// 저격: 턴마다 이 횟수만큼, 레인의 맨 앞이 아닌 적을 골라 맞힐 수 있다
+export const SNIPES_PER_TURN = 1;
 
 export const OBJECTIVES = {
   annihilate: '모든 적 처치',
@@ -284,7 +300,7 @@ export const RELICS = {
   counterMirror: { name: '손거울', en: 'Hand Mirror', color: '#ffd84a', tag: '되치기', proc: '퍼펙트 막기 → 방어막', desc: '되치기 피해 +2 · 퍼펙트 막기 시 방어막 +1', enDesc: 'Counter damage +2 · Perfect block: +1 Guard', up: '되치기 +4 · 방어막 +2' },
   gamblerCoin: { name: '엽전', en: 'Lucky Coin', color: '#c58cff', tag: '슬롯', proc: '다시 돌림 → 방어막', desc: '다시 돌리기 +1회 · 돌릴 때 방어막 +1', enDesc: '+1 Reroll per turn · Reroll: +1 Guard', up: '+2회 · 방어막 +2' },
   emberWick: { name: '심지', en: 'Wick', color: '#ffb347', tag: '금빛', proc: '', desc: '금빛 릴 1개로 시작 · 금빛 피해 +1', enDesc: 'Start each battle with 1 Gilded reel · Gilded damage +1', up: '금빛 릴 2개 · 피해 +2' },
-  tideBell: { name: '파도 종', en: 'Tide Bell', color: '#4ff0c4', tag: '파동', proc: '직격 → 밀어냄', desc: '파동 옆 피해 +1 · 직격한 적 1칸 밀어냄', enDesc: 'Wave splash +1 · Direct hit pushes the enemy back 1', up: '옆 피해 +2' },
+  tideBell: { name: '파도 종', en: 'Tide Bell', color: '#4ff0c4', tag: '파동', proc: '직격 → 더 밀어냄', desc: '파동 옆 피해 +1 · 직격한 적을 1칸 더 밀어냄', enDesc: 'Wave splash +1 · Direct hit pushes the enemy 1 more cell', up: '옆 피해 +2' },
   whetstone: { name: '숫돌', en: 'Whetstone', color: '#cfd8ff', tag: '절단', proc: '절단 처치 → 방어막', desc: '절단 관통 +1 · 절단 처치 시 방어막 +1', enDesc: 'Slash pierce +1 · Slash kill: +1 Guard', up: '관통 +2 · 방어막 +2' },
   shadowShoes: { name: '짚신', en: 'Straw Shoes', color: '#8fe8ff', tag: '회피', proc: '회피 → 반격', desc: '회피가 쉬워짐 · 회피 시 적에게 2 피해', enDesc: 'Wider dodge window · Dodge: 2 damage to the attacker', up: '회피 반격 4' },
   oilFlask: { name: '기름병', en: 'Oil Flask', color: '#ff9a5a', tag: '방어막', proc: '방어막 → 회복', desc: '방어막 사용 시 체력 +1 · 최대 방어막 +2', enDesc: 'Guard skill: heal 1 · Max Guard +2', up: '체력 +2 · 최대 방어막 +4' },

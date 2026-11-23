@@ -5,8 +5,7 @@
 import { rand, randInt, pickDistinct } from './rng.js';
 import {
   LANES, FRONT, GUARD_CAP, EMBER_CAP, REROLLS_PER_TURN,
-  ENEMIES, shotStats, EVOLVE_AT, FUSIONS, COIN, ELITE,
-} from './data.js';
+  ENEMIES, shotStats, EVOLVE_AT, FUSIONS, COIN, ELITE, AFFINITY, WEAK_BONUS, RESIST_CUT, SNIPES_PER_TURN } from './data.js';
 import { evaluateReels, evaluateLines } from './slot.js';
 import { WINDUP } from './timing.js';
 
@@ -98,6 +97,7 @@ export function createBattle(def, opt) {
     turnGild: 0,
     omens: [],
     enemies: [],
+    noAffinity: opt.affinity === false, // 테스트용: 상성 없이 기본 수치만 본다
     nextId: 1,
     waves: def.waves.map((w) => ({ at: w.at, units: w.units.map((u) => u.slice()), done: false })),
     pullWaves: def.pullWaves !== false,
@@ -126,6 +126,21 @@ export const enemyAt = (st, lane, row) => st.enemies.find((e) => e.alive && e.la
 
 export function laneTargets(st, lane) {
   return st.enemies.filter((e) => e.alive && e.lane === lane).sort((a, b) => b.row - a.row);
+}
+
+// 저격 중이면 고른 적부터 뒤쪽만 대상이 된다
+let aimFrom = 0;
+function shotTargets(st, lane) {
+  return laneTargets(st, lane).slice(aimFrom);
+}
+
+// 이 공격으로 맨 앞이 아닌 적을 골라 맞힐 수 있는가(레인 전체·전체 공격·방어막은 고를 필요가 없다)
+export function canSnipe(st, shotIndex) {
+  const shot = st.shots[shotIndex];
+  if (!shot || shot.used || (st.snipes || 0) <= 0) return false;
+  if (shot.symbol === 'lantern' || shot.tier >= 3) return false;
+  if (shot.tier === 2 && shot.symbol !== 'wave' && shot.symbol !== 'spark') return false;
+  return true;
 }
 
 function freeSteps(st, e, want) {
@@ -208,6 +223,7 @@ function startTurn(st, events) {
   st.phase = 'spin';
   st.rerollsLeft = REROLLS_PER_TURN + lv(st, 'gamblerCoin');
   st.turnKills = 0;
+  st.snipes = SNIPES_PER_TURN;
   st.rerollCount = 0;
   st.turnGild = 0;
   st.shots = [];
@@ -372,6 +388,19 @@ function hit(st, e, dmg, o, events, depth = 0) {
   if (o.el === 'spark' && e.frozen > 0) {
     bonus += 1;
     tags.push('conduct');
+  }
+  // 상성: 약점이면 더 아프고, 저항하면 덜 아프다
+  const aff = AFFINITY[e.type];
+  const el = o.el === 'ice' ? 'frost' : o.el;
+  if (aff && dmg > 0 && !st.noAffinity) {
+    if (aff.weak === el) {
+      bonus += o.src ? Math.ceil(WEAK_BONUS / 2) : WEAK_BONUS;
+      tags.push('bane');
+    } else if (aff.resist === el && !o.src) {
+      // 저항은 직격에만 적용(번지는 피해는 그대로)
+      bonus -= RESIST_CUT;
+      tags.push('resist');
+    }
   }
   let total = dmg + bonus;
   if (e.exposed) {
@@ -542,7 +571,7 @@ function resolveShot(st, shot, lane, events) {
       events.push({ ...base, lane: l, side });
       let n = 0;
       let endRow = -1; // -1 = 레인 끝까지 날아감
-      for (const t of laneTargets(st, l)) {
+      for (const t of shotTargets(st, l)) {
         if (n >= S.pierce) break;
         const r = hit(st, t, side ? S.sideDmg : S.dmg, {
           el: 'blade', frontal: true, shatter: true, pierceShield: shot.tier === 3,
@@ -566,7 +595,7 @@ function resolveShot(st, shot, lane, events) {
 
   if (sym === 'wave') {
     events.push({ ...base });
-    const first = laneTargets(st, lane)[0];
+    const first = shotTargets(st, lane)[0];
     const row = first ? first.row : 0;
     const cells = S.area === 'square'
       ? [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
@@ -578,12 +607,18 @@ function resolveShot(st, shot, lane, events) {
     const spread = first ? Math.ceil(first.poison / 2) : 0;
     if (first) {
       const r = hit(st, first, S.dmg, { el: 'wave', frontal: true, shatter: true }, events);
-      // 유물 [파도 방울]: 직격당한 적을 한 칸 밀어낸다
-      if (!r.blocked && first.alive && has(st, 'tideBell') && !ENEMIES[first.type].boss && first.row > 0 && !enemyAt(st, first.lane, first.row - 1)) {
-        relicEvent(st, events, 'tideBell', { id: first.id });
+      // 직격당한 적은 한 칸 밀려난다. 유물 [파도 종]이 있으면 한 칸 더.
+      if (!r.blocked && first.alive && !ENEMIES[first.type].boss) {
         const from = first.row;
-        first.row--;
-        events.push({ type: 'push', id: first.id, lane: first.lane, from, to: first.row });
+        let steps = 1 + (has(st, 'tideBell') ? 1 : 0);
+        while (steps > 0 && first.row > 0 && !enemyAt(st, first.lane, first.row - 1)) {
+          first.row--;
+          steps--;
+        }
+        if (first.row !== from) {
+          if (has(st, 'tideBell') && from - first.row > 1) relicEvent(st, events, 'tideBell', { id: first.id });
+          events.push({ type: 'push', id: first.id, lane: first.lane, from, to: first.row });
+        }
       }
     }
     for (const t of splashTargets) hit(st, t, S.splash, { el: 'wave', frontal: false, shatter: false, src: 'splash' }, events);
@@ -603,7 +638,7 @@ function resolveShot(st, shot, lane, events) {
   if (sym === 'frost' || sym === 'venom') {
     events.push({ ...base });
     let endRow = -1;
-    const targets = laneTargets(st, lane);
+    const targets = shotTargets(st, lane);
     const list = S.wholeLane ? targets : targets.slice(0, 1);
     for (const t of list) {
       const r = hit(st, t, S.dmg, { el: sym, frontal: true, freeze: S.freeze, poison: S.poison }, events);
@@ -616,7 +651,7 @@ function resolveShot(st, shot, lane, events) {
 
   if (sym === 'spark') {
     events.push({ ...base });
-    const first = laneTargets(st, lane)[0];
+    const first = shotTargets(st, lane)[0];
     if (!first) {
       events.push({ type: 'fireEnd', lane, row: -1 });
       return;
@@ -647,7 +682,7 @@ function resolveShot(st, shot, lane, events) {
   }
 }
 
-export function fireShot(st, shotIndex, lane) {
+export function fireShot(st, shotIndex, lane, depth = 0) {
   if (st.phase !== 'aim' || st.result) throw new Error('fireShot: wrong phase');
   const shot = st.shots[shotIndex];
   if (!shot || shot.used) throw new Error('fireShot: invalid shot');
@@ -656,8 +691,20 @@ export function fireShot(st, shotIndex, lane) {
   st.shotsFired++;
   const events = [];
   shotPower = shot.tier >= 2 ? 2 : 1;
-  resolveShot(st, shot, lane, events);
-  shotPower = 1;
+  shot.used = false;
+  const from = depth > 0 && canSnipe(st, shotIndex) ? Math.min(depth, laneTargets(st, lane).length - 1) : 0;
+  shot.used = true;
+  if (from > 0) {
+    st.snipes--;
+    events.push({ type: 'snipe', lane, depth: from, id: laneTargets(st, lane)[from].id });
+  }
+  aimFrom = Math.max(0, from);
+  try {
+    resolveShot(st, shot, lane, events);
+  } finally {
+    aimFrom = 0;
+    shotPower = 1;
+  }
   checkObjective(st, events);
   return events;
 }
@@ -687,6 +734,7 @@ export function summarize(events) {
     if (ev.type === 'poison') get(ev.id).poison = ev.stacks;
     if (ev.type === 'freeze') get(ev.id).frozen = ev.turns;
     if (ev.type === 'expose') get(ev.id).exposed = true;
+    if (ev.type === 'push') get(ev.id).pushed = ev.from - ev.to;
     if (ev.type === 'ward') guard += ev.amount;
     if (ev.type === 'heal') heal += ev.amount;
     if (ev.type === 'burst') cells.push(...ev.cells, [ev.lane, ev.row]);
@@ -696,9 +744,9 @@ export function summarize(events) {
   return { per, guard, heal, cells };
 }
 
-export function previewShot(st, shotIndex, lane) {
+export function previewShot(st, shotIndex, lane, depth = 0) {
   const c = clone(st);
-  const events = fireShot(c, shotIndex, lane);
+  const events = fireShot(c, shotIndex, lane, depth);
   return { events, summary: summarize(events), result: c.result };
 }
 

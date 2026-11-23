@@ -1,5 +1,5 @@
 // HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
-import { RUN_LENGTH, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf, MODS, OBJ_INFO, COIN_LABEL, NIGHT_NAMES } from '../core/data.js';
+import { AFFINITY, RUN_LENGTH, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf, MODS, OBJ_INFO, COIN_LABEL, NIGHT_NAMES } from '../core/data.js';
 import { rewardInfo, cantBuy, buyItem, rerollShop, shopRerollCost } from '../core/run.js';
 import { drawSymbol, drawIcon, drawRelicIcon, drawMerchant } from '../render/art.js';
 import { drawCoin } from '../render/scene.js';
@@ -161,6 +161,9 @@ export class Overlay {
         <div class="ht"><b>Reroll</b><span>Twice per turn. The <em class="r">cost</em> is written on the button, and you get <em>+1 Gilded reel</em>.</span></div>
         <div class="ht"><b>Gilded reel</b><span>That reel's attack gets +1 damage and +1 effect.</span></div>
         <div class="ht"><b>Aim</b><span>Pick a reel, then click a lane.</span></div>
+        <div class="ht"><b>Snipe</b><span>Once per turn, <em>click an enemy in the back</em> to skip the front enemy and hit it. (F key)</span></div>
+        <div class="ht"><b>Matchups</b><span>Each enemy has a <em>weakness</em> (+2 damage) and a <em class="r">resistance</em> (-1 direct damage). Pick a skill to see the marks on enemies.</span></div>
+        <div class="ht"><b>Roles</b><span>Slash = pierce / Wave = <em>push back</em>, splash / Frost = cancel actions / Spark = chain / Poison = damage over time</span></div>
         <div class="ht"><b>Parry</b><span><em class="g">Gold or orange ring</em> → Block (precise = counter)<br><em class="r">Red ring</em> → Dodge (enemy exposed, double damage)</span></div>
         <div class="ht"><b>Coins</b><span>Earned from <em>combos</em> (3rd kill in a turn onward), <em>perfects</em> and <em>bingos</em>. Clear a night without rerolling for a <em>thrift</em> bonus. A plain kill pays 0.</span></div>
         <div class="ht"><b>Roads</b><span>Each night, choose a <em>Safe Road</em> or a <em class="r">Rough Road</em> (extra condition, double coins).</span></div>
@@ -178,6 +181,9 @@ export class Overlay {
         <div class="ht"><b>다시 돌리기</b><span>턴마다 2번. <em class="r">대가</em>는 버튼에 적혀 있고 <em>금빛 릴 +1</em>.</span></div>
         <div class="ht"><b>금빛 릴</b><span>그 칸의 공격이 피해 +1, 효과 +1.</span></div>
         <div class="ht"><b>조준</b><span>슬롯의 문양을 고르고 레인을 누른다.</span></div>
+        <div class="ht"><b>저격</b><span>턴마다 1번, <em>뒤에 있는 적을 직접 눌러</em> 맨 앞 적을 건너뛰고 맞힌다. (F 키)</span></div>
+        <div class="ht"><b>상성</b><span>적마다 <em>약점</em>(피해 +2)과 <em class="r">저항</em>(직격 피해 -1)이 있다. 기술을 고르면 적 옆에 표시된다.</span></div>
+        <div class="ht"><b>역할</b><span>절단 = 관통 / 파동 = <em>밀어내기</em>·주변 피해 / 동결 = 행동 취소 / 전격 = 연쇄 / 중독 = 지속 피해</span></div>
         <div class="ht"><b>받아치기</b><span><em class="g">금빛·주황 고리</em> → 막기 (정확하면 되치기)<br><em class="r">붉은 고리</em> → 회피 (적에게 빈틈, 피해 2배)</span></div>
         <div class="ht"><b>코인</b><span><em>연속 처치</em>(한 턴 3마리째부터), <em>퍼펙트</em>, <em>빙고</em>로 번다. 밤 내내 다시 돌리기를 안 쓰면 <em>절약</em> 보너스. 그냥 처치하면 0.</span></div>
         <div class="ht"><b>길</b><span>밤마다 <em>순한 길</em>과 <em class="r">험한 길</em>(조건 추가, 코인 2배) 중 고른다.</span></div>
@@ -216,7 +222,7 @@ export class Overlay {
         <h3>적 머리 위 표시</h3>
         ${legend.map(([c, a, b]) => `<div class="gl"><b style="color:${c}">${a}</b><span>${b}</span></div>`).join('')}
         <h3>이 전투의 적</h3>
-        ${types.map((t) => `<div class="ge"><b>${ENEMIES[t].name}</b><span>${ENEMIES[t].act}</span><span class="how">공략: ${ENEMIES[t].how}</span></div>`).join('')}
+        ${types.map((t) => `<div class="ge"><b>${ENEMIES[t].name}</b><span>${ENEMIES[t].act}</span><span class="how">공략: ${ENEMIES[t].how}</span>${AFFINITY[t] ? `<span class="aff">${AFFINITY[t].weak ? `약점: ${SYMBOLS[AFFINITY[t].weak].name}` : ''}${AFFINITY[t].weak && AFFINITY[t].resist ? ' · ' : ''}${AFFINITY[t].resist ? `저항: ${SYMBOLS[AFFINITY[t].resist].name}` : ''}</span>` : ''}</div>`).join('')}
         <h3>반응 (순서가 중요)</h3>
         ${REACTIONS.map(([a, n, d]) => `<div class="gl"><b style="color:#8fffe2">${a}</b><span><em>${n}</em> — ${d}</span></div>`).join('')}
         <h3>내 유물</h3>

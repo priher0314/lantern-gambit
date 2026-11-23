@@ -398,3 +398,4 @@ body { display: flex; align-items: center; justify-content: center; }
 /* 게임패드로 가리키는 항목 */
 .pad-focus { outline: 3px solid #fff2b0 !important; outline-offset: 3px; box-shadow: 0 0 0 6px rgba(255, 216, 74, 0.25), 0 0 22px rgba(255, 210, 122, 0.55) !important; }
 .row:has(.pad-focus) { background: rgba(255, 216, 74, 0.08); border-radius: 8px; }
+.ge .aff { display: block; font-size: 0.86em; color: #ffd27a; margin-top: 2px; }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn,
-  nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen,
+  nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen, canSnipe,
 } from '../src/core/battle.js';
 import { evaluateReels, evaluateLines } from '../src/core/slot.js';
 import { BATTLES, BASE_STRIP, RELIC_IDS, FRONT } from '../src/core/data.js';
@@ -12,7 +12,7 @@ import { rand, randInt } from '../src/core/rng.js';
 
 const strips = [BASE_STRIP, BASE_STRIP, BASE_STRIP];
 const mkDef = (units, objective = { type: 'annihilate' }) => ({ id: 't', name: 't', objective, waves: [{ at: 1, units }] });
-const mk = (units, extra = {}) => createBattle(mkDef(units, extra.objective), { seed: 42, hp: 15, maxHp: 15, strips, ...extra }).st;
+const mk = (units, extra = {}) => createBattle(mkDef(units, extra.objective), { seed: 42, hp: 15, maxHp: 15, strips, affinity: false, ...extra }).st;
 const setShots = (st, shots) => {
   st.phase = 'aim';
   st.shots = shots.map(([symbol, tier, gild = 0], i) => ({ id: String(i), symbol, tier, gild, reels: [i], used: false }));
@@ -347,11 +347,15 @@ test('유물 [되치기 거울]·[도박꾼의 엽전]·[달빛 숫돌]·[그림
   setShots(st, [['lantern', 1]]);
   fireShot(st, 0, 1);
   assert.equal(st.player.hp, 11);
-  // 파도 방울: 직격 적 밀림
-  st = mk([['kasa', 1, 4]], { relics: ['tideBell'] });
+  // 파동은 직격한 적을 한 칸 밀어낸다. 파도 종이 있으면 한 칸 더.
+  st = mk([['kasa', 1, 4]]);
   setShots(st, [['wave', 1]]);
   fireShot(st, 0, 1);
   assert.equal(st.enemies[0].row, 3);
+  st = mk([['kasa', 1, 4]], { relics: ['tideBell'] });
+  setShots(st, [['wave', 1]]);
+  fireShot(st, 0, 1);
+  assert.equal(st.enemies[0].row, 2);
 });
 
 test('탈 방패: 정면에서 두 번 맞으면 깨진다(혼자 남아도 처치 가능)', () => {
@@ -718,4 +722,59 @@ test('단계: 높을수록 적이 단단하고 아프며, 유물 하나를 가�
   assert.ok(!rollStartRelics(b).includes('thunderDrum'));
   const boss = createBattle(rollPaths({ ...b, stage: RUN_LENGTH - 2 })[0], battleOptions(b)).st.enemies.find((e) => e.type === 'elder');
   assert.equal(boss.maxHp, Math.ceil(80 * 1.3));
+});
+
+test('상성: 약점은 +2(번지는 피해 +1), 저항은 직격 -1', () => {
+  const on = (units) => mk(units, { affinity: true });
+  // 우산 도깨비: 절단에 약하고 파동을 튕겨 낸다
+  let st = on([['kasa', 0, 4]]);
+  setShots(st, [['blade', 1], ['wave', 1]]);
+  let ev = fireShot(st, 0, 0);
+  assert.equal(ev.find((e) => e.type === 'hit').dmg, 5);
+  assert.ok(ev.find((e) => e.type === 'hit').tags.includes('bane'));
+  ev = fireShot(st, 1, 0);
+  assert.equal(ev.find((e) => e.type === 'hit').dmg, 1);
+  assert.ok(ev.find((e) => e.type === 'hit').tags.includes('resist'));
+  // 번지는 피해: 약점은 +1, 저항은 적용하지 않는다
+  st = on([['mask', 1, 4], ['drum', 0, 4], ['kasa', 2, 4]]);
+  st.enemies[0].shieldHp = 0;
+  setShots(st, [['wave', 1]]);
+  fireShot(st, 0, 1);
+  assert.equal(st.enemies[1].maxHp - st.enemies[1].hp, 2, '북 도깨비: 파동 옆 피해 1 + 약점 1');
+  assert.equal(st.enemies[2].maxHp - st.enemies[2].hp, 1, '우산 도깨비: 옆 피해는 저항 없이 1');
+  // 초롱불: 동결에 약하다(피해 1 → 3)
+  st = on([['archer', 1, 1]]);
+  setShots(st, [['frost', 1]]);
+  fireShot(st, 0, 1);
+  assert.equal(st.enemies[0].maxHp - st.enemies[0].hp, 3);
+});
+
+test('저격: 턴마다 한 번, 맨 앞이 아닌 적을 골라 맞힌다', () => {
+  let st = mk([['kasa', 0, 5], ['kasa', 0, 3], ['kasa', 0, 1]]);
+  setShots(st, [['frost', 1], ['blade', 1], ['blade', 2]]);
+  assert.equal(st.snipes, 1);
+  assert.equal(canSnipe(st, 0), true);
+  assert.equal(canSnipe(st, 2), false, '레인 전체 공격은 고를 필요가 없다');
+  // 미리보기는 저격 횟수를 쓰지 않는다
+  previewShot(st, 0, 0, 2);
+  assert.equal(st.snipes, 1);
+  let ev = fireShot(st, 0, 0, 2);
+  assert.ok(ev.some((e) => e.type === 'snipe'));
+  assert.equal(st.enemies[2].frozen > 0, true, '맨 뒤 적이 얼었다');
+  assert.equal(st.enemies[0].frozen, 0);
+  assert.equal(st.snipes, 0);
+  // 이번 턴에는 더 못 쓴다 → 맨 앞부터 맞는다
+  ev = fireShot(st, 1, 0, 1);
+  assert.ok(!ev.some((e) => e.type === 'snipe'));
+  assert.equal(st.enemies[0].maxHp - st.enemies[0].hp, 3);
+  // 절단 저격: 고른 적부터 뒤쪽으로 관통
+  st = mk([['kasa', 0, 5], ['kasa', 0, 3], ['kasa', 0, 1]]);
+  setShots(st, [['blade', 1]]);
+  fireShot(st, 0, 0, 1);
+  assert.deepEqual(st.enemies.map((e) => e.maxHp - e.hp), [0, 3, 3]);
+  // 적이 하나뿐이면 저격이 아니다(횟수를 쓰지 않는다)
+  st = mk([['kasa', 1, 4]]);
+  setShots(st, [['blade', 1]]);
+  fireShot(st, 0, 1, 2);
+  assert.equal(st.snipes, 1);
 });

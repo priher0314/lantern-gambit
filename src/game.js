@@ -1,6 +1,6 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
-import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT, MAX_TIER } from './core/data.js';
+import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT, MAX_TIER, AFFINITY, WEAK_BONUS, RESIST_CUT } from './core/data.js';
 import { createRun, battleOptions, recordBattle, rollStartChoices, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop, tutorialNight } from './core/run.js';
 import { SAVE_VERSION } from './save.js';
 import { setLang } from './i18n.js';
@@ -28,6 +28,22 @@ const EL_COLORS = {
 };
 
 const CONCEPTS = {
+  snipe: {
+    kicker: '알아두기', title: '저격', color: '#ffd84a',
+    lines: [
+      { label: '효과', text: '레인의 맨 앞이 아닌 적을 골라 맞힌다.' },
+      { label: '사용', text: '뒤에 있는 적을 직접 누른다. (F 키 · 패드 위아래)', color: '#8fffe2' },
+      { label: '조건', text: '턴마다 1번. 레인 전체 공격에는 필요 없다.', color: '#ffb8c8' },
+    ],
+  },
+  bane: {
+    kicker: '알아두기', title: '약점과 저항', color: '#ffb347',
+    lines: [
+      { label: '약점', text: '잘 듣는 기술로 치면 피해 +2.', color: '#ffd84a' },
+      { label: '저항', text: '안 듣는 기술로 직접 치면 피해 -1.', color: '#b8b0c8' },
+      { label: '표시', text: '기술을 고르면 적 옆에 표시된다. 적을 우클릭해도 보인다.', color: '#8fffe2' },
+    ],
+  },
   reroll: {
     kicker: '알아두기', title: '다시 돌리기', color: '#d9a0ff',
     lines: [
@@ -395,6 +411,9 @@ export class Game {
   enemyCard(type, e, kicker) {
     const sp = ENEMIES[type];
     const lines = [{ label: '특징', text: sp.act }, { label: '공략', text: sp.how, color: '#8fffe2' }];
+    const aff = AFFINITY[type];
+    if (aff && aff.weak) lines.push({ label: '약점', text: `${SYMBOLS[aff.weak].name} (피해 +${WEAK_BONUS})`, color: '#ffd84a' });
+    if (aff && aff.resist) lines.push({ label: '저항', text: `${SYMBOLS[aff.resist].name} (직격 피해 -${RESIST_CUT})`, color: '#b8b0c8' });
     if (e && e.elite) lines.unshift({ label: '정예', text: '체력과 공격력이 높다. 처치하면 코인 +3.', color: '#ffd84a' });
     if (e && this.intents && this.intents[e.id]) {
       const it = this.intents[e.id];
@@ -589,7 +608,10 @@ export class Game {
           text = left === 0 ? '방패를 깨뜨린다! 다음 공격부터 피해가 들어간다' : `방패에 금이 간다 (남은 방패 ${left}) — 한 번 더 치면 깨진다`;
           color = '#50f0be';
         } else {
-          text = `예상 피해 ${dmg}${kills ? ` · 처치 ${kills}` : ''}${per.some((p) => p.blocked) ? ' · 일부 막힘' : ''}`;
+          const bane = per.some((p) => p.tags.includes('bane'));
+          const resist = per.some((p) => p.tags.includes('resist'));
+          const pushed = per.some((p) => p.pushed);
+          text = `${ui.preview.snipe ? '저격 · ' : ''}예상 피해 ${dmg}${kills ? ` · 처치 ${kills}` : ''}${bane ? ' · 약점' : ''}${resist ? ' · 저항' : ''}${pushed ? ' · 밀어냄' : ''}${per.some((p) => p.blocked) ? ' · 일부 막힘' : ''}`;
         }
       } else if (!ui.preview && sh.symbol !== 'lantern') {
         text += '  ▶ 레인을 누르세요';
@@ -746,6 +768,12 @@ export class Game {
     if (lane >= 0) {
       const v = this.enemyAtPoint(p);
       if (v && !reacting) this.hold = { id: v.id, at: this.now() };
+      if (this.ui.phase === 'aim' && !this.ui.counter) {
+        // 뒤에 있는 적을 직접 누르면 그 적을 노린다(터치는 노리는 적이 바뀌면 다시 조준부터)
+        const depth = this.depthOfView(v, lane);
+        if (touch && this.ui.armedLane === lane && depth !== (this.ui.aimDepth || 0)) this.ui.armedLane = -1;
+        this.ui.aimDepth = depth;
+      }
       this.tapLane(lane, touch);
     }
   }
@@ -772,9 +800,13 @@ export class Game {
       if (lane >= 0) this.setCounterHover(lane);
       return;
     }
-    if (this.ui.phase === 'aim' && !this.busy && lane !== this.ui.hoverLane) {
-      this.ui.hoverLane = lane;
-      this.updatePreview();
+    if (this.ui.phase === 'aim' && !this.busy) {
+      const depth = lane >= 0 ? this.depthOfView(this.enemyAtPoint(p), lane) : 0;
+      if (lane !== this.ui.hoverLane || depth !== (this.ui.aimDepth || 0)) {
+        this.ui.hoverLane = lane;
+        this.ui.aimDepth = depth;
+        this.updatePreview();
+      }
     }
   }
 
@@ -803,6 +835,7 @@ export class Game {
     if (k === ' ') { e.preventDefault(); if (ui.phase === 'spin') this.pullLever(); }
     if (k === 'h' || k === '?') this.openGuide();
     if (k === 'r') this.press('reroll');
+    if (k === 'f') this.shiftAim(1, true);
     if (k === 'b' && this.st) {
       const bi = this.st.shots.findIndex((s) => s.bonus && !s.used);
       if (bi >= 0) this.selectShot(bi, true);
@@ -844,12 +877,17 @@ export class Game {
       return;
     }
     if (ui.phase !== 'aim' || this.busy || !st) return;
-    if (btn === 'lb' || btn === 'rb' || btn === 'up' || btn === 'down') {
+    if (btn === 'up' || btn === 'down') {
+      // 위 = 더 뒤의 적, 아래 = 앞의 적
+      if (ui.hoverLane < 0) ui.hoverLane = 1;
+      return this.shiftAim(btn === 'up' ? 1 : -1);
+    }
+    if (btn === 'lb' || btn === 'rb') {
       // 아직 안 쓴 공격 패 사이를 오간다
       const open = st.shots.map((s, i) => (s.used ? -1 : i)).filter((i) => i >= 0);
       if (!open.length) return;
       const at = open.indexOf(ui.sel);
-      const dir = btn === 'lb' || btn === 'up' ? -1 : 1;
+      const dir = btn === 'lb' ? -1 : 1;
       this.selectShot(open[at < 0 ? 0 : (at + dir + open.length) % open.length], false);
       return;
     }
@@ -917,6 +955,7 @@ export class Game {
     }
     if (this.ui.sel === idx && sh.symbol === 'lantern') return this.fire(1);
     this.ui.sel = idx;
+    this.ui.aimDepth = 0;
     this.ui.armedLane = -1;
     this.ui.confirmEnd = false;
     this.audio.play('select');
@@ -935,6 +974,7 @@ export class Game {
     // 이미 선택된 등불 패를 다시 누르면 사용
     if (this.ui.sel === idx && st.shots[idx].symbol === 'lantern') return this.fire(1);
     this.ui.sel = idx;
+    this.ui.aimDepth = 0;
     this.ui.armedLane = -1;
     this.ui.confirmEnd = false;
     this.audio.play('select');
@@ -954,6 +994,44 @@ export class Game {
     this.tip('arm', '같은 레인을 한 번 더 누르면 발사!');
   }
 
+  // 이 레인에 지금 쏘면 몇 번째 적을 노리게 되는가(0 = 맨 앞). 저격을 못 쓰는 상황이면 0.
+  aimDepthFor(lane) {
+    const ui = this.ui;
+    const st = this.st;
+    if (!st || ui.sel == null || !(ui.aimDepth > 0) || !B.canSnipe(st, ui.sel)) return 0;
+    return Math.max(0, Math.min(ui.aimDepth, B.laneTargets(st, lane).length - 1));
+  }
+
+  // 화면에서 가리킨 적이 그 레인에서 몇 번째인가
+  depthOfView(v, lane) {
+    if (!v || !this.st || v.lane !== lane) return 0;
+    const i = B.laneTargets(this.st, lane).findIndex((e) => e.id === v.id);
+    return i > 0 ? i : 0;
+  }
+
+  // 키보드·패드: 노리는 깊이를 바꾼다
+  shiftAim(d, wrap = false) {
+    const ui = this.ui;
+    const st = this.st;
+    if (ui.phase !== 'aim' || this.busy || !st || ui.sel == null) return;
+    if (!B.canSnipe(st, ui.sel)) {
+      this.audio.play('deny');
+      this.ui.tipText = (st.snipes || 0) <= 0 ? '저격은 턴마다 1번' : '이 공격은 저격할 수 없다(이미 여러 적을 맞힌다)';
+      this.ui.tipUntil = this.now() + 1800;
+      this.updateInfo();
+      return;
+    }
+    const lane = ui.armedLane >= 0 ? ui.armedLane : ui.hoverLane;
+    const max = Math.max(0, (lane >= 0 ? B.laneTargets(st, lane).length : Math.max(...[0, 1, 2].map((l) => B.laneTargets(st, l).length))) - 1);
+    let next = (ui.aimDepth || 0) + d;
+    if (wrap) next = next > max ? 0 : next;
+    next = clamp(next, 0, max);
+    if (next === (ui.aimDepth || 0)) return;
+    ui.aimDepth = next;
+    this.audio.play('aim');
+    this.updatePreview();
+  }
+
   updatePreview() {
     const ui = this.ui;
     const st = this.st;
@@ -962,8 +1040,10 @@ export class Game {
       ui.preview = null;
     } else {
       const sh = st.shots[ui.sel];
-      const pv = B.previewShot(st, ui.sel, lane);
+      const depth = this.aimDepthFor(lane);
+      const pv = B.previewShot(st, ui.sel, lane, depth);
       ui.preview = {
+        snipe: depth > 0 ? B.laneTargets(st, lane)[depth].id : null,
         lane, symbol: sh.symbol, gild: sh.gild > 0, summary: pv.summary, cells: pv.summary.cells,
         global: sh.tier === 3 && sh.symbol !== 'blade' && sh.symbol !== 'lantern',
         lanes: sh.symbol === 'lantern' ? [] : sh.tier === 3 && sh.symbol === 'blade' ? [lane - 1, lane, lane + 1].filter((l) => l >= 0 && l < 3) : [lane],
@@ -1010,6 +1090,7 @@ export class Game {
     this.updatePreview();
     if (this.st.reels.some((r) => r.gilded)) this.conceptCard('gild');
     if (this.st.turn >= 2 || this.run.stage > 0) this.conceptCard('reroll');
+    if ([0, 1, 2].some((l) => B.laneTargets(this.st, l).length >= 2)) this.conceptCard('snipe');
     this.nextCard();
     this.tip('aim', '릴을 골라 공격을 정하고, 레인을 눌러 조준하세요.');
   }
@@ -1161,8 +1242,10 @@ export class Game {
     ui.armedLane = -1;
     ui.tipText = null;
     this.refresh();
+    const depth = this.aimDepthFor(lane);
+    ui.aimDepth = 0;
     if (st.shots[i].tier >= 2 && st.shots[i].symbol !== 'lantern') await this.cutIn(st.shots[i]);
-    const evs = B.fireShot(st, i, lane);
+    const evs = B.fireShot(st, i, lane, depth);
     if (this.coach) this.coach.fired = true;
     await this.playEvents(evs);
     this.player.tx = W / 2;
@@ -1435,6 +1518,7 @@ export class Game {
         await this.playEvent({ type: 'coin', n: bank.gained - earned, why: 'risky' });
         this.run.coins += bank.gained;
         this.coinShown = this.run.coins;
+        this.banked = true; // 여기서부터는 지갑 금액만 표시(이번 밤 코인을 다시 더하지 않는다)
         await settle();
       }
       this.banked = true;
@@ -1783,6 +1867,16 @@ export class Game {
         fx.text(p.x, p.y - 40, `공격력 +${ev.amount}`, { color: '#ff6a6a', size: 22, font: 'num' });
         fx.burst(p.x, p.y, { n: 10, speed: 90, color: ['#ff3b3b', '#ff8a5a'], kind: 'glow', size: 5, vy: -60 });
         await this.wait(280);
+        break;
+      }
+      case 'snipe': {
+        const tv = this.views.get(ev.id);
+        if (tv) {
+          const ip = this.impactPoint(tv);
+          this.audio.play('aim');
+          fx.ring(ip.x, ip.y, { r0: 54, r1: 12, color: '#ffd84a', w: 4, life: 0.3 });
+          fx.text(ip.x, ip.y - 70, '저격!', { color: '#ffd84a', size: 24, font: 'num', life: 0.9, vy: -30 });
+        }
         break;
       }
       case 'fire':
@@ -2342,6 +2436,15 @@ export class Game {
       v.exposed = false;
     }
     if (ev.tags.includes('weak')) fx.text(ip.x - 46, ip.y - 30, '심장 +2', { color: '#ffe08a', size: 22, font: 'num' });
+    if (ev.tags.includes('bane')) {
+      fx.text(ip.x + 44, ip.y - 34, '약점!', { color: '#ffb347', size: minor ? 20 : 28, font: 'num', life: 1 });
+      if (!minor) {
+        fx.ring(ip.x, ip.y, { r0: 10, r1: 90, color: '#ffb347', w: 6, life: 0.35 });
+        this.hitstop = Math.max(this.hitstop, 0.12);
+        this.conceptCard('bane');
+      }
+    }
+    if (ev.tags.includes('resist')) fx.text(ip.x + 44, ip.y - 34, '저항', { color: '#b8b0c8', size: 20, font: 'num', life: 0.9 });
     // 숫자가 옆으로 튀어 올랐다가 떨어진다
     fx.text(ip.x + (Math.random() - 0.5) * 22, ip.y - 44, `${ev.dmg}`, {
       color: ev.dmg >= 5 ? '#ffe08a' : '#ffffff', size: 32 + Math.min(26, ev.dmg * 3), font: 'num',
