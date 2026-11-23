@@ -160,6 +160,11 @@ export class Audio {
     this.tone({ type: 'sawtooth', f: 60, f2: 240, t: 0.1, dur: 0.28, vol: 0.09, filter: { f: 900 } }); // 스프링
     this.noise({ t: 0.16, dur: 0.05, vol: 0.3, f: 2600, q: 2 });
   }
+  s_coin({ n = 1 } = {}) {
+    const f = 1568 * 2 ** (Math.min(4, n - 1) * 2 / 12);
+    this.tone({ type: 'square', f, dur: 0.06, vol: 0.05, filter: { f: 5000 } });
+    this.tone({ type: 'triangle', f: f * 1.5, t: 0.05, dur: 0.22, vol: 0.09 });
+  }
   s_cutin({ big = false } = {}) {
     this.noise({ dur: 0.35, vol: 0.3, type: 'bandpass', f: 400, f2: 3200, q: 1.2 });
     this.tone({ type: 'sawtooth', f: big ? 80 : 120, f2: big ? 320 : 360, dur: 0.4, vol: 0.12, filter: { f: 1400 } });

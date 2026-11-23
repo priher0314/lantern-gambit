@@ -5,7 +5,7 @@
 import { rand, randInt, pickDistinct } from './rng.js';
 import {
   LANES, FRONT, GUARD_CAP, EMBER_CAP, REROLLS_PER_TURN,
-  ENEMIES, shotStats, EVOLVE_AT, FUSIONS,
+  ENEMIES, shotStats, EVOLVE_AT, FUSIONS, COIN,
 } from './data.js';
 import { evaluateReels, evaluateLines } from './slot.js';
 import { WINDUP } from './timing.js';
@@ -18,6 +18,13 @@ export const guardCap = (st) => GUARD_CAP + 2 * lv(st, 'oilFlask');
 const NEIGHBORS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 const around = (st, e) => NEIGHBORS.map(([dl, dr]) => enemyAt(st, e.lane + dl, e.row + dr)).filter(Boolean);
 let shotPower = 1; // 방패를 깎는 힘(연결·빙고·잭팟 기술은 2)
+function addCoins(st, n, why, events, id = null) {
+  if (n <= 0) return;
+  st.coins += n;
+  st.coinBy[why] = (st.coinBy[why] || 0) + n;
+  events.push({ type: 'coin', n, why, id });
+}
+
 function relicEvent(st, events, relic, extra = {}) {
   events.push({ type: 'relic', relic, ...extra });
   // 진화: II 유물이 충분히 발동하면 III로
@@ -59,7 +66,15 @@ function applyFreeze(st, e, turns, events) {
 export function createBattle(def, opt) {
   const st = {
     rng: (opt.seed >>> 0) || 1,
-    def: { id: def.id, name: def.name, objective: { ...def.objective } },
+    def: {
+      id: def.id, name: def.name, night: def.night || '', objective: { ...def.objective },
+      mods: (def.mods || []).slice(), clearCoins: def.clearCoins || 0, coinMult: def.coinMult || 1, risky: !!def.risky,
+      hpScale: def.hpScale || 1, // 밤이 깊어질수록 적이 단단해진다
+    },
+    coins: 0, // 이번 전투에서 번 코인(전투가 끝나면 런에 합산)
+    coinBy: {},
+    laneKills: [0, 0, 0],
+    loseReason: null,
     turn: 0,
     phase: 'spin', // spin | aim | enemy | over
     relics: (opt.relics || []).slice(),
@@ -138,11 +153,13 @@ function spawnEnemy(st, type, lane, row, events, src = 'wave') {
   const sp = ENEMIES[type];
   const e = {
     id: st.nextId++, type, lane: cell.lane, row: cell.row,
-    hp: sp.hp, maxHp: sp.hp, alive: true,
+    hp: sp.hp, maxHp: sp.hp, alive: true, atkUp: st.def.mods.includes('rage') ? 1 : 0,
     frozen: 0, exposed: false, braced: false, charge: false,
     fury: 0, step: 0, vulnerable: false, shieldBroken: false, phase2: false,
     shieldHp: sp.shieldHp || 0, poison: 0, dir: 1,
   };
+  const hpMul = (sp.boss ? 1 : st.def.hpScale) * (st.def.mods.includes('fullMoon') ? 1.25 : 1);
+  if (hpMul !== 1) e.hp = e.maxHp = Math.ceil(sp.hp * hpMul);
   e.dir = cell.lane === 0 ? 1 : cell.lane === LANES - 1 ? -1 : e.id % 2 ? 1 : -1;
   st.enemies.push(e);
   if (src !== 'wave') st.totalEnemies++;
@@ -174,6 +191,15 @@ function startTurn(st, events) {
     const nxt = st.waves.find((w) => !w.done);
     if (nxt) spawnWave(st, nxt, events);
   }
+  if (st.def.mods.includes('gust') && st.turn > 1) {
+    const movers = alive(st).filter((e) => !ENEMIES[e.type].boss && e.frozen === 0 && e.row < FRONT && !enemyAt(st, e.lane, e.row + 1));
+    if (movers.length) {
+      const e = movers[randInt(st, movers.length)];
+      const from = e.row;
+      e.row++;
+      events.push({ type: 'move', id: e.id, lane: e.lane, from, to: e.row, gust: true });
+    }
+  }
   st.phase = 'spin';
   st.rerollsLeft = REROLLS_PER_TURN + lv(st, 'gamblerCoin');
   st.turnKills = 0;
@@ -181,7 +207,7 @@ function startTurn(st, events) {
   st.turnGild = 0;
   st.shots = [];
   st.shotsFired = 0;
-  st.omens = [rollOmen(st), rollOmen(st), rollOmen(st)];
+  st.omens = Array.from({ length: Math.max(3, st.rerollsLeft) }, () => rollOmen(st)); // 다시 돌리기 횟수만큼 대가를 미리 정한다
   if (has(st, 'torch')) addGuard(st, 1, events, 'torch');
   events.push({ type: 'turn', turn: st.turn });
   checkObjective(st, events);
@@ -260,6 +286,7 @@ function rollReels(st, gildCount, events) {
   if (level >= 3) for (const s of st.shots) if (s.tier === 3) s.gild = 3;
   st.score += 150 * level * level;
   events.push({ type: 'spin', reels: clone(st.reels), shots: clone(st.shots), grid: clone(st.grid), bingos: clone(st.bingos), level, jackpot: top === 3 });
+  if (level >= 1) addCoins(st, COIN.bingo * level, 'bingo', events);
   if (level >= 1 && has(st, 'bingoBell')) {
     st.player.embers = Math.min(EMBER_CAP, st.player.embers + 1);
     addGuard(st, 2 * lv(st, 'bingoBell'), events, 'bingoBell');
@@ -365,6 +392,9 @@ function hit(st, e, dmg, o, events, depth = 0) {
     // 연속 처치: 한 턴에 3번째 처치는 다음 턴 금빛 릴을 준다
     st.turnKills++;
     st.score += 50 * st.turnKills;
+    st.laneKills[e.lane]++;
+    addCoins(st, sp.boss ? COIN.boss : COIN.kill, 'kill', events, e.id);
+    if (st.turnKills >= 2) addCoins(st, st.turnKills >= 4 ? 2 : 1, 'combo', events, e.id); // 2·3연속 +1, 4연속부터 +2
     if (st.turnKills >= 2) {
       const ember = st.turnKills === 3;
       if (ember) st.player.embers = Math.min(EMBER_CAP, st.player.embers + 1);
@@ -668,13 +698,13 @@ export function decide(st, e) {
   if (e.frozen > 0) return { kind: 'frozen' };
   switch (e.type) {
     case 'kasa': {
-      if (e.row >= sp.reach) return { kind: 'attack', style: 'melee', dmg: sp.atk + e.fury };
+      if (e.row >= sp.reach) return { kind: 'attack', style: 'melee', dmg: sp.atk + e.fury + (e.atkUp || 0) };
       const want = e.hp === e.maxHp ? 2 : 1;
       const steps = freeSteps(st, e, want);
       return steps > 0 ? { kind: 'move', steps, hop: want === 2 } : { kind: 'wait' };
     }
     case 'drum': {
-      if (e.row >= sp.reach) return { kind: 'attack', style: 'melee', dmg: sp.atk + e.fury };
+      if (e.row >= sp.reach) return { kind: 'attack', style: 'melee', dmg: sp.atk + e.fury + (e.atkUp || 0) };
       let dir = e.dir || 1;
       if (e.lane + dir < 0 || e.lane + dir >= LANES) dir = -dir;
       if (!enemyAt(st, e.lane + dir, e.row + 1)) return { kind: 'move', steps: 1, toLane: e.lane + dir, dir };
@@ -682,7 +712,7 @@ export function decide(st, e) {
       return { kind: 'wait' };
     }
     case 'mask': {
-      if (e.row >= FRONT) return e.braced ? { kind: 'attack', style: 'heavy', dmg: sp.atk + e.fury } : { kind: 'brace' };
+      if (e.row >= FRONT) return e.braced ? { kind: 'attack', style: 'heavy', dmg: sp.atk + e.fury + (e.atkUp || 0) } : { kind: 'brace' };
       if ((st.turn + e.id) % 2 === 0) {
         return freeSteps(st, e, 1) ? { kind: 'move', steps: 1 } : { kind: 'wait' };
       }
@@ -690,7 +720,7 @@ export function decide(st, e) {
     }
     case 'archer': {
       if (e.row < sp.post && freeSteps(st, e, 1)) return { kind: 'move', steps: 1 };
-      if (e.charge) return { kind: 'attack', style: 'ranged', dmg: sp.atk + e.fury };
+      if (e.charge) return { kind: 'attack', style: 'ranged', dmg: sp.atk + e.fury + (e.atkUp || 0) };
       return { kind: 'aim' };
     }
     case 'elder': {
@@ -698,7 +728,7 @@ export function decide(st, e) {
       const act = cyc[e.step % cyc.length];
       if (act === 'volley') {
         if (!e.charge) return { kind: 'charge' };
-        return { kind: 'attack', style: 'volley', dmg: sp.atk + e.fury, hits: e.phase2 ? 4 : 3 };
+        return { kind: 'attack', style: 'volley', dmg: sp.atk + e.fury + (e.atkUp || 0), hits: e.phase2 ? 4 : 3 };
       }
       if (act === 'charge') return { kind: 'charge' };
       if (act === 'summon') return { kind: 'summon', count: e.phase2 ? 2 : 1 };
@@ -733,6 +763,7 @@ export function computeIntents(st) {
 export function endPlayerTurn(st) {
   if (st.phase !== 'aim' || st.result) throw new Error('endPlayerTurn: wrong phase');
   const events = [];
+  if (st.rerollCount === 0 && st.reels.length) addCoins(st, COIN.thrift, 'thrift', events);
   for (const e of st.enemies) e.exposed = false;
   st.phase = 'enemy';
   // 중독: 턴이 끝날 때 중독 수치만큼 피해(방패 무시), 그 뒤 1 줄어든다
@@ -909,6 +940,7 @@ export function resolveReaction(st, input) {
 
   events.push({ type: 'react', outcome, action, grade, style: a.style, attackerId: a.attackerId, lane: a.lane, hitIndex: a.hitIndex, ember: outcome === 'perfectGuard' || outcome === 'perfectDodge' || outcome === 'deflect' });
   applyPlayerDamage(st, dmg, events);
+  if (['perfectGuard', 'deflect', 'perfectDodge', 'guardHeavy'].includes(outcome)) addCoins(st, COIN.perfect, 'perfect', events);
   if (mirrorGuard) addGuard(st, lv(st, 'counterMirror'), events, 'counterMirror');
   // 융합 [맞수]: 퍼펙트 막기·회피 성공 → 모든 적 1 피해
   if (has(st, 'duel') && ['perfectGuard', 'deflect', 'dodge', 'perfectDodge'].includes(outcome)) {
@@ -995,6 +1027,13 @@ function finishEnemyPhase(st, events) {
     win(st, events);
     return;
   }
+  if (o.type === 'rush' && st.turn >= o.turns && !st.result) {
+    st.result = 'lose';
+    st.loseReason = 'time';
+    st.phase = 'over';
+    events.push({ type: 'lose', reason: 'time' });
+    return;
+  }
   startTurn(st, events);
 }
 
@@ -1004,6 +1043,7 @@ function win(st, events) {
   if (st.result) return;
   st.result = 'win';
   st.phase = 'over';
+  addCoins(st, st.def.clearCoins, 'clear', events);
   events.push({ type: 'win' });
 }
 
@@ -1017,6 +1057,10 @@ export function checkObjective(st, events) {
   }
   const o = st.def.objective;
   if (o.type === 'annihilate' && st.waves.every((w) => w.done) && alive(st).length === 0) win(st, events);
+  // 세 갈래: 레인마다 정해진 수만큼 처치(적이 다 떨어지면 그대로 승리)
+  if (o.type === 'lanes' && (st.laneKills.every((k) => k >= o.need) || (st.waves.every((w) => w.done) && alive(st).length === 0))) win(st, events);
+  // 속전: 기한 안에 정해진 수 처치
+  if (o.type === 'rush' && (st.kills >= o.kills || (st.waves.every((w) => w.done) && alive(st).length === 0))) win(st, events);
   if (o.type === 'hunt') {
     const targets = st.enemies.filter((e) => e.type === o.target);
     if (targets.length && targets.every((e) => !e.alive)) win(st, events);
@@ -1030,6 +1074,8 @@ export function objectiveProgress(st) {
     const done = Math.min(o.turns, st.turn - (st.result === 'win' ? 0 : 1));
     return { label: '버티기', value: `${done}/${o.turns}턴`, ratio: done / o.turns };
   }
+  if (o.type === 'lanes') return { label: '레인별', value: st.laneKills.map((k) => `${Math.min(k, o.need)}/${o.need}`).join(' · '), ratio: st.laneKills.reduce((a, k) => a + Math.min(k, o.need), 0) / (o.need * 3) };
+  if (o.type === 'rush') return { label: '처치', value: `${Math.min(st.kills, o.kills)}/${o.kills} · ${Math.max(0, o.turns - st.turn + 1)}턴 남음`, ratio: st.kills / o.kills };
   const t = st.enemies.find((e) => e.type === o.target);
   return { label: '보스 체력', value: t ? `${t.hp}/${t.maxHp}` : '-', ratio: t ? 1 - t.hp / t.maxHp : 0, bossId: t && t.id };
 }

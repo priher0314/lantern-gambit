@@ -530,3 +530,127 @@ test('융합: 재료 두 개가 모이면 보상에 나오고, 새 효과가 더
   fireShot(st, 0, 1);
   assert.deepEqual(st.enemies.map((e) => e.maxHp - e.hp), [3, 1, 1]);
 });
+
+// ───────── 로그라이크 구조: 밤 생성, 코인, 상점 ─────────
+import { generateNight, rollPaths, bankBattle, rollShop, buyItem, cantBuy, rerollShop, shopRerollCost } from '../src/core/run.js';
+import { RUN_LENGTH, SHOP_PRICES } from '../src/core/data.js';
+import { playRun } from '../tools/balance.mjs';
+
+test('밤 생성: 같은 판이면 같은 구성, 첫 무리는 간격을 두고 선다', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const run = createRun(seed);
+    for (let stage = 0; stage < RUN_LENGTH - 1; stage++) {
+      for (const risky of [false, true]) {
+        const a = generateNight(run, stage, risky);
+        assert.deepEqual(a, generateNight(run, stage, risky));
+        assert.equal(a.mods.length, risky ? (stage >= 3 ? 2 : 1) : 0);
+        const first = a.waves[0].units.filter((u) => u[0] !== 'archer');
+        for (const u of a.waves.flatMap((w) => w.units)) assert.ok(u[1] >= 0 && u[1] <= 2 && u[2] >= 0 && u[2] <= 3);
+        for (let l = 0; l < 3; l++) {
+          const rows = first.filter((u) => u[1] === l).map((u) => u[2]).sort((x, y) => x - y);
+          for (let i = 1; i < rows.length; i++) assert.ok(rows[i] - rows[i - 1] >= 2 || rows[i] === 3, `seed ${seed} stage ${stage}`);
+        }
+      }
+    }
+    const paths = rollPaths(run);
+    assert.equal(paths.length, 2);
+    assert.notEqual(paths[0].objective.type + paths[0].risky, paths[1].objective.type + paths[1].risky);
+  }
+  const last = createRun(3);
+  last.stage = RUN_LENGTH - 2;
+  assert.equal(rollPaths(last)[0].objective.type, 'hunt');
+});
+
+test('코인: 그냥 처치는 0, 연속 처치·퍼펙트·절약·클리어로 번다', () => {
+  let st = mk([['kasa', 0, 3], ['kasa', 1, 3], ['kasa', 2, 3]]);
+  st.enemies.forEach((e) => (e.hp = 1));
+  st.def.clearCoins = 4;
+  setShots(st, [['wave', 1]]);
+  fireShot(st, 0, 1);
+  assert.deepEqual(st.coinBy, { combo: 2, clear: 4 });
+  assert.equal(st.result, 'win');
+  // 절약: 다시 돌리기를 안 쓴 턴
+  st = mk([['kasa', 1, 0]]);
+  spin(st);
+  endPlayerTurn(st);
+  assert.equal(st.coinBy.thrift, 1);
+  st = mk([['kasa', 1, 0]]);
+  spin(st);
+  reroll(st);
+  endPlayerTurn(st);
+  assert.equal(st.coinBy.thrift, undefined);
+  // 퍼펙트
+  st = mk([['kasa', 1, 5]]);
+  setShots(st, []);
+  endPlayerTurn(st);
+  nextEnemyStep(st);
+  resolveReaction(st, { action: 'guard', grade: 'perfect' });
+  assert.equal(st.coinBy.perfect, 1);
+  // 험한 길 배율
+  const run = createRun(1);
+  st.coins = 10;
+  st.def.coinMult = 1.5;
+  assert.equal(bankBattle(run, st).gained, 15);
+  assert.equal(run.coins, 15);
+});
+
+test('목표: 세 갈래(레인별 처치), 속전(기한 안에 처치·시간 초과 패배)', () => {
+  let st = createBattle({ id: 't', name: 't', objective: { type: 'lanes', need: 1 }, waves: [{ at: 1, units: [['kasa', 0, 3], ['kasa', 1, 3], ['kasa', 2, 3], ['kasa', 0, 0]] }] }, { seed: 1, hp: 15, maxHp: 15, strips }).st;
+  st.enemies.forEach((e) => (e.hp = 1));
+  setShots(st, [['wave', 1]]);
+  fireShot(st, 0, 1);
+  assert.equal(st.result, 'win');
+  st = createBattle({ id: 't', name: 't', objective: { type: 'rush', kills: 2, turns: 1 }, waves: [{ at: 1, units: [['kasa', 0, 0], ['kasa', 1, 0], ['kasa', 2, 0]] }] }, { seed: 1, hp: 15, maxHp: 15, strips }).st;
+  setShots(st, []);
+  endPlayerTurn(st);
+  for (let i = 0; i < 10 && !st.result; i++) nextEnemyStep(st);
+  assert.equal(st.result, 'lose');
+  assert.equal(st.loseReason, 'time');
+});
+
+test('조건: 보름달(체력), 성난 밤(공격력), 엽전 강화 시 대가가 모자라지 않는다', () => {
+  const def = { id: 't', name: 't', objective: { type: 'annihilate' }, mods: ['fullMoon', 'rage'], waves: [{ at: 1, units: [['kasa', 1, 5]] }] };
+  let st = createBattle(def, { seed: 1, hp: 15, maxHp: 15, strips }).st;
+  assert.equal(st.enemies[0].maxHp, Math.ceil(9 * 1.25));
+  assert.equal(computeIntents(st)[1].dmg, 4);
+  st = mk([['kasa', 1, 0]], { relics: ['gamblerCoin'], relicLv: { gamblerCoin: 3 } });
+  spin(st);
+  for (let i = 0; i < 5; i++) reroll(st);
+  assert.equal(st.rerollsLeft, 0);
+});
+
+test('상점: 코인으로 사고, 모자라면 못 사고, 효과는 바로 적용', () => {
+  const run = createRun(11);
+  const shop = rollShop(run);
+  assert.ok(shop.items.length >= 5);
+  assert.equal(cantBuy(run, shop.items[0]), '코인 부족');
+  assert.equal(buyItem(run, shop, 0), false);
+  run.coins = 100;
+  const id = shop.items[0].id;
+  assert.equal(buyItem(run, shop, 0), true);
+  assert.equal(run.coins, 100 - SHOP_PRICES.relic);
+  assert.ok(run.relics.includes(id));
+  assert.equal(buyItem(run, shop, 0), false, '같은 물건은 한 번만');
+  const hi = shop.items.findIndex((it) => it.id === 'heal');
+  assert.equal(cantBuy(run, shop.items[hi]), '체력 가득');
+  run.hp = 5;
+  assert.equal(buyItem(run, shop, hi), true);
+  assert.equal(run.hp, 12);
+  const before = run.coins;
+  assert.equal(rerollShop(run, shop), true);
+  assert.equal(run.coins, before - SHOP_PRICES.reroll);
+  assert.equal(shopRerollCost(shop), SHOP_PRICES.reroll + 2);
+  // 문양 덜기
+  const n0 = run.strips[0].length;
+  applyReward(run, 'trim:lantern');
+  assert.equal(run.strips[0].length, n0 - 1);
+});
+
+test('새 흐름 전체 런 80회: 예외 없이 끝난다', () => {
+  for (let seed = 1; seed <= 80; seed++) {
+    const res = playRun(seed, { react: [0.2, 0.4, 0.2], smart: 0.75, reroll: 0.3, risk: 0.5 });
+    const lastB = res.reached[res.reached.length - 1];
+    assert.ok(lastB.result === 'win' || lastB.result === 'lose');
+    assert.ok(res.run.coins >= 0);
+  }
+});

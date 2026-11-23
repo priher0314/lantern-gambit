@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.7';
+export const GAME_VERSION = 'v0.8';
 
 export const ROWS = 6;
 export const LANES = 3;
@@ -208,6 +208,33 @@ export const BATTLES = [
     ],
   },
 ];
+
+// ───── 한 판의 구조: 무작위로 만들어지는 밤 5개 + 보스 ─────
+export const RUN_LENGTH = 6;
+export const NIGHT_NAMES = ['첫째 밤', '둘째 밤', '셋째 밤', '넷째 밤', '다섯째 밤', '마지막 밤'];
+
+// 밤의 목표
+export const OBJ_INFO = {
+  annihilate: { name: '소탕', en: 'Sweep', desc: () => '적을 모두 처치' },
+  survive: { name: '버티기', en: 'Hold Out', desc: (o) => `${o.turns}턴 버티기` },
+  lanes: { name: '세 갈래', en: 'Three Lanes', desc: (o) => `레인마다 ${o.need}마리씩 처치` },
+  rush: { name: '속전', en: 'Rush', desc: (o) => `${o.turns}턴 안에 ${o.kills}마리 처치` },
+  hunt: { name: '왕초롱', en: 'Great Lantern', desc: () => '왕초롱 처치' },
+};
+
+// 험한 길에 붙는 조건
+export const MODS = {
+  fullMoon: { name: '보름달', en: 'Full Moon', desc: '적 체력 +25%' },
+  rage: { name: '성난 밤', en: 'Angry Night', desc: '적 공격력 +1' },
+  gust: { name: '맞바람', en: 'Headwind', desc: '매 턴 적 하나가 1칸 더 전진' },
+  fog: { name: '안개', en: 'Fog', desc: '뒤쪽 적의 다음 행동이 안 보임' },
+};
+
+// 코인: 어떻게 싸웠는지에 따라 달라진다
+// 그냥 처치하는 것만으로는 벌리지 않는다. 연속 처치·퍼펙트·빙고·절약(다시 돌리기를 안 쓴 턴)·클리어로 번다.
+export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, thrift: 1, clearBase: 3, riskyMult: 1.5 };
+export const COIN_LABEL = { kill: '처치', combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어' };
+export const SHOP_PRICES = { relic: 22, up: 16, fuse: 26, heal: 7, maxhp: 12, charm: 9, trim: 9, reroll: 3 };
 
 export const BASE_STRIP = [
   'blade', 'wave', 'frost', 'spark', 'lantern', 'venom',

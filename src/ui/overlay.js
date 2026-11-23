@@ -1,6 +1,6 @@
 // HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
-import { BATTLES, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf } from '../core/data.js';
-import { rewardInfo } from '../core/run.js';
+import { RUN_LENGTH, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf, MODS, OBJ_INFO, COIN_LABEL } from '../core/data.js';
+import { rewardInfo, cantBuy, buyItem, rerollShop, shopRerollCost } from '../core/run.js';
 import { drawSymbol, drawIcon, drawRelicIcon } from '../render/art.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -92,7 +92,7 @@ export class Overlay {
         <button class="btn" data-a="howto">게임 방법</button>
         <button class="btn" data-a="settings">설정</button>
       </div>
-      <div class="title-meta">${meta.runs ? `플레이 ${meta.runs}회 · 클리어 ${meta.wins || 0}회 · 최고 기록 ${meta.best || 0}/${BATTLES.length}` : '첫 플레이'}</div>
+      <div class="title-meta">${meta.runs ? `플레이 ${meta.runs}회 · 클리어 ${meta.wins || 0}회 · 최고 기록 ${meta.best || 0}/${RUN_LENGTH}` : '첫 플레이'}</div>
       <div class="title-meta">유물 ${used}/${RELIC_IDS.length}</div>
       <div class="title-foot">${GAME_VERSION}</div>
     `, 'title');
@@ -119,6 +119,8 @@ export class Overlay {
         <div class="ht"><b>금빛 릴</b><span>그 칸의 공격이 피해 +1, 효과 +1.</span></div>
         <div class="ht"><b>조준</b><span>릴을 고르고 레인을 누른다(터치는 두 번).</span></div>
         <div class="ht"><b>받아치기</b><span><em class="g">금빛·주황 고리</em> → 막기 (정확하면 되치기)<br><em class="r">붉은 고리</em> → 회피 (적에게 빈틈, 피해 2배)</span></div>
+        <div class="ht"><b>코인</b><span><em>연속 처치</em>, <em>퍼펙트</em>, <em>빙고</em>, 다시 돌리기를 안 쓴 턴(<em>절약</em>)에 번다. 그냥 처치하면 0.</span></div>
+        <div class="ht"><b>길</b><span>밤마다 <em>순한 길</em>과 <em class="r">험한 길</em>(조건 추가, 코인 1.5배 + 전리품) 중 고른다.</span></div>
         <div class="ht"><b>유물</b><span>강화하면 <em>II</em>, II가 6번 발동하면 <em>III 진화</em>. 짝이 맞는 두 유물은 <em>융합</em>.</span></div>
         <div class="ht"><b>적 정보</b><span>적을 <em>길게 누르기</em> (마우스는 우클릭).</span></div>
         <div class="ht"><b>조작키</b><span>Space 레버·막기 / R 다시 돌리기 / Q W E 릴 / 1 2 3 레인 / K 회피 / Enter 턴 종료 / H 도움말</span></div>
@@ -227,17 +229,119 @@ export class Overlay {
     });
   }
 
+  // 상점: 코인으로 유물·강화·회복 등을 산다. 살 수 없는 물건은 접어서 아래로 내린다.
+  showShop(run, shop, bank, onBought, onDone) {
+    const strong = (s) => s.replace(/([+\-]?\d+(?:회|턴|칸|개)?)/g, '<b>$1</b>');
+    const render = () => {
+      const rows = shop.items.map((it, i) => ({ it, i, r: rewardInfo(it.id), why: cantBuy(run, it) }));
+      rows.sort((a, b) => (a.why ? 1 : 0) - (b.why ? 1 : 0) || a.i - b.i);
+      const cards = rows.map(({ it, i, r, why }) => {
+        const badge = r.fuse ? '융합' : r.upgrade ? '강화' : r.relic ? r.tag : '소모품';
+        let lines = r.desc.split(' · ').map((t) => `<span>${strong(t)}</span>`).join('');
+        const fz = r.relic && !r.fuse && !r.upgrade ? fusionOf(r.relicId) : null;
+        if (fz) {
+          const other = FUSIONS[fz].a === r.relicId ? FUSIONS[fz].b : FUSIONS[fz].a;
+          const have = run.relics.includes(other);
+          lines += `<span class="rw-hint ${have ? 'on' : ''}">+ ${RELICS[other].name} = ${FUSIONS[fz].name}${have ? ' (보유 중!)' : ''}</span>`;
+        }
+        if (r.fuse) lines += `<span class="rw-hint on">${r.parts[0]} + ${r.parts[1]}</span>`;
+        return `<button class="rw-card shop-item ${r.relic ? 'is-relic' : ''} ${why ? 'cant' : ''} ${it.sold ? 'sold' : ''}" data-i="${i}" style="--c:${r.relic ? r.color : '#d8a548'}">
+          <span class="rw-ic">${r.relic ? `<canvas class="relic-cv" data-relic="${r.relicId}" data-size="${why ? 34 : 52}"></canvas>` : `<i data-ic="${r.icon}" data-sz="${why ? 34 : 52}"></i>`}</span>
+          <span class="rw-top"><span class="rw-name">${r.name}</span><span class="rw-tag">${badge}</span><span class="price ${why ? 'no' : ''}">${why && why !== '코인 부족' ? why : `<i class="coin"></i>${it.price}`}</span></span>
+          <span class="rw-desc">${lines}</span>
+        </button>`;
+      }).join('');
+      const by = bank ? Object.entries(bank.by).filter(([, n]) => n > 0).map(([k, n]) => `${COIN_LABEL[k] || k} ${n}`).join(' · ') : '';
+      const cost = shopRerollCost(shop);
+      const p = this.panel(`
+        <h2>상점</h2>
+        <div class="shop-wallet"><i class="coin"></i><b>${run.coins}</b><span>체력 ${run.hp}/${run.maxHp}</span></div>
+        ${bank ? `<div class="shop-earn">이번 밤 +${bank.gained} 코인${bank.mult > 1 ? ` (험한 길 ×${bank.mult})` : ''}<br><small>${by || '획득 없음'}</small></div>` : ''}
+        ${run.relics.length ? `<div class="rw-build"><span>보유</span>${run.relics.map((id) => relicChip(id)).join('')}</div>` : ''}
+        <div class="rw-cards">${cards}</div>
+        <div class="shop-foot">
+          <button class="btn" data-a="reroll" ${run.coins < cost ? 'disabled' : ''}>물건 바꾸기 <i class="coin"></i>${cost}</button>
+          <button class="btn btn-primary" data-a="leave">나가기</button>
+        </div>
+      `, 'reward shop');
+      p.querySelectorAll('i[data-ic]').forEach((el) => el.replaceWith(iconCanvas(el.dataset.ic, Number(el.dataset.sz))));
+      p.addEventListener('click', (e) => {
+        const a = e.target.closest('[data-a]')?.dataset.a;
+        if (a === 'leave') {
+          this.hooks.sound('ui');
+          this.clear();
+          onDone();
+          return;
+        }
+        if (a === 'reroll') {
+          if (rerollShop(run, shop)) {
+            this.hooks.sound('select');
+            render();
+          } else this.hooks.sound('deny');
+          return;
+        }
+        const card = e.target.closest('.shop-item');
+        if (!card) return;
+        const i = Number(card.dataset.i);
+        const id = shop.items[i].id;
+        if (buyItem(run, shop, i)) {
+          this.hooks.sound('buy');
+          onBought(id);
+          render();
+        } else this.hooks.sound('deny');
+      });
+    };
+    render();
+  }
+
+  // 길 선택: 다음 밤의 목표·적 구성·조건·보상을 보고 고른다
+  showPaths(run, defs, onPick) {
+    let picked = defs.length === 1 ? 0 : null;
+    const card = (d, i) => {
+      const enemies = Object.entries(d.counts).map(([t, n]) => `${ENEMIES[t].name} ${n}`).join(' · ');
+      const mods = d.mods.map((m) => `<span class="mod"><b>${MODS[m].name}</b> ${MODS[m].desc}</span>`).join('');
+      const kind = d.objective.type === 'hunt' ? '보스' : d.risky ? '험한 길' : '순한 길';
+      const reward = d.objective.type === 'hunt' ? '' : d.risky ? `<span class="pay hot">코인 ×${d.coinMult} · 전리품 유물 1개</span>` : '<span class="pay">코인 ×1</span>';
+      return `<button class="rw-card path ${d.risky ? 'risky' : ''} ${picked === i ? 'sel' : ''}" data-i="${i}" style="--c:${d.risky ? '#ff6a5a' : '#8fe8ff'}">
+        <span class="rw-top"><span class="rw-name">${d.name}</span><span class="rw-tag">${kind}</span></span>
+        <span class="rw-desc"><span>목표: ${OBJ_INFO[d.objective.type].desc(d.objective)}</span><span class="foes">${enemies}</span>${mods}${reward}</span>
+      </button>`;
+    };
+    const p = this.panel(`
+      <div class="rw-head">
+        <h2>${defs.length === 1 ? defs[0].night : `${defs[0].night}의 길을 고르세요`}</h2>
+        <div class="rw-req">체력 ${run.hp}/${run.maxHp} · 코인 ${run.coins}</div>
+      </div>
+      <div class="rw-cards">${defs.map(card).join('')}</div>
+      <button class="btn btn-primary rw-go" ${picked == null ? 'disabled' : ''}>출발</button>
+    `, 'reward paths');
+    const go = $('.rw-go', p);
+    p.addEventListener('click', (e) => {
+      const c = e.target.closest('.path');
+      if (c) {
+        picked = Number(c.dataset.i);
+        p.querySelectorAll('.path').forEach((x) => x.classList.toggle('sel', x === c));
+        go.disabled = false;
+        this.hooks.sound('select');
+      }
+      if (e.target.closest('.rw-go') && picked != null) {
+        go.disabled = true;
+        this.clear();
+        onPick(defs[picked]);
+      }
+    });
+  }
   showResult(win, run, meta) {
     const t = run.totals;
     const used = meta.relicsUsed || [];
     const unseen = RELIC_IDS.filter((id) => !used.includes(id));
-    const reached = win ? BATTLES.length : run.stage;
+    const reached = win ? RUN_LENGTH : run.stage;
     const hint = unseen.length
       ? `<div class="rs-next"><b>아직 안 써본 유물 ${unseen.length}개</b><div>${unseen.slice(0, 3).map((id) => relicChip(id, 'dim')).join('')}</div></div>`
       : '';
     const p = this.panel(`
       <h2 class="${win ? 'win' : 'lose'}">${win ? '날이 밝았다' : '등불이 꺼졌다'}</h2>
-      <div class="rs-sub">${win ? `${BATTLES.length}번의 밤을 모두 넘겼습니다.` : `${BATTLES[run.stage].night} · ${BATTLES[run.stage].name} (${reached}/${BATTLES.length})`}</div>
+      <div class="rs-sub">${win ? `${RUN_LENGTH}번의 밤을 모두 넘겼습니다.` : `${run.def.night} · ${run.def.name} (${reached}/${RUN_LENGTH})`}</div>
       <div class="rs-build"><span>유물</span>${run.relics.length ? run.relics.map((id) => relicChip(id)).join('') : '없음'}</div>
       <div class="rs-grid">
         <div><b>${t.kills}</b><span>처치</span></div>

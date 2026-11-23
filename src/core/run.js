@@ -1,6 +1,9 @@
 // 한 판(런) 진행: 전투 순서, 체력 이월, 릴 구성, 유물, 보상
 import { randInt, shuffle } from './rng.js';
-import { BATTLES, BASE_STRIP, REWARDS, RELICS, RELIC_IDS, FUSIONS, FUSION_IDS } from './data.js';
+import {
+  BATTLES, BASE_STRIP, REWARDS, RELICS, RELIC_IDS, FUSIONS, FUSION_IDS,
+  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES,
+} from './data.js';
 
 export function createRun(seed) {
   const run = {
@@ -14,10 +17,172 @@ export function createRun(seed) {
     relicLv: {},
     relicProc: {},
     picks: [],
-    totals: { kills: 0, perfect: 0, counters: 0, jackpots: 0, bingos: 0, shatters: 0, dmgDealt: 0, turns: 0, score: 0 },
+    coins: 0,
+    def: null, // 지금 치르는 밤
+    totals: { kills: 0, perfect: 0, counters: 0, jackpots: 0, bingos: 0, shatters: 0, dmgDealt: 0, turns: 0, score: 0, coins: 0 },
   };
   run.strips = [0, 1, 2].map(() => makeStrip(run));
+  run.def = generateNight(run, 0, false);
   return run;
+}
+
+// ───────────────────────── 밤 생성 ─────────────────────────
+// 같은 판(seed)·같은 밤·같은 길이면 항상 같은 구성이 나온다.
+
+const UNIT_COST = { kasa: 2, drum: 2, archer: 2, mask: 3 };
+const BUDGET = [14, 20, 25, 29, 33]; // 밤이 깊어질수록 적이 많아지고
+const HP_SCALE = [1, 1.2, 1.4, 1.55, 1.7, 1.6]; // 단단해진다(마지막은 보스의 부하들)
+
+function pickWeighted(r, table) {
+  const total = table.reduce((a, [, w]) => a + w, 0);
+  let x = randInt(r, total);
+  for (const [v, w] of table) {
+    if (x < w) return v;
+    x -= w;
+  }
+  return table[0][0];
+}
+
+export function generateNight(run, stage, risky) {
+  if (stage >= RUN_LENGTH - 1) return bossNight();
+  const r = { rng: ((run.seed * 977 + stage * 131 + (risky ? 7 : 3)) >>> 0) || 1 };
+  // 목표: 첫 밤은 소탕, 그 뒤로는 길마다 다른 목표
+  const kinds = ['annihilate', 'survive', 'lanes', 'rush'];
+  let kind = 'annihilate';
+  if (stage > 0) {
+    const base = (run.seed + stage * 5) % kinds.length;
+    kind = kinds[(base + (risky ? 1 + randInt(r, 3) : 0)) % kinds.length];
+  }
+  // 적 구성
+  const table = [['kasa', 4], ['drum', stage >= 1 ? 3 : 1], ['archer', 2], ['mask', stage === 0 ? 0 : stage >= 3 ? 3 : 2]].filter(([, w]) => w > 0);
+  let budget = Math.round(BUDGET[stage] * (kind === 'survive' ? 1.15 : 1) * (risky ? 1.1 : 1));
+  const types = [];
+  while (budget >= 2) {
+    let t = pickWeighted(r, table);
+    if (UNIT_COST[t] > budget) t = 'kasa';
+    types.push(t);
+    budget -= UNIT_COST[t];
+  }
+  const total = types.length;
+  // 무리(웨이브) 나누기
+  const turnsLimit = 6 + (stage >= 3 ? 1 : 0);
+  const waveTurns = kind === 'survive' ? Array.from({ length: turnsLimit - 1 }, (_, i) => i + 1) : stage >= 3 ? [1, 3, 5, 7] : [1, 3, 5];
+  const waves = waveTurns.map((at) => ({ at, units: [] }));
+  const firstShare = Math.max(3, Math.round(total * (kind === 'survive' ? 0.3 : 0.4)));
+  // 첫 무리는 간격을 두고 넓게 선다(같은 레인에서는 최소 한 칸 띄움)
+  const laneOrder = shuffle(r, [0, 1, 2]);
+  const nextRow = [randInt(r, 2), randInt(r, 2), randInt(r, 2)];
+  let li = 0;
+  types.forEach((t, i) => {
+    const lane = laneOrder[li % LANES];
+    li++;
+    if (i < firstShare) {
+      const row = Math.min(3, nextRow[lane]);
+      nextRow[lane] += 2;
+      waves[0].units.push([t === 'archer' ? 'archer' : t, lane, t === 'archer' ? 0 : row]);
+    } else {
+      const w = waves[1 + ((i - firstShare) % (waves.length - 1))];
+      const used = w.units.filter((u) => u[1] === lane).length;
+      w.units.push([t, lane, Math.min(1, used)]);
+    }
+  });
+  const objective = { type: kind };
+  if (kind === 'survive') objective.turns = turnsLimit;
+  if (kind === 'lanes') objective.need = Math.max(1, Math.min(3, Math.floor(total / 3) - 1));
+  if (kind === 'rush') {
+    objective.kills = Math.ceil(total * 0.65);
+    objective.turns = Math.ceil(objective.kills / 1.15) + 2;
+  }
+  const mods = risky ? shuffle(r, Object.keys(MODS)).slice(0, stage >= 3 ? 2 : 1) : [];
+  return {
+    id: `n${stage}${risky ? 'r' : 's'}`,
+    stage, risky,
+    name: OBJ_INFO[kind].name,
+    night: NIGHT_NAMES[stage],
+    objective,
+    intro: OBJ_INFO[kind].desc(objective),
+    pullWaves: kind !== 'survive',
+    waves: waves.filter((w) => w.units.length),
+    mods,
+    hpScale: HP_SCALE[stage],
+    clearCoins: COIN.clearBase + stage + (risky ? 2 : 0),
+    coinMult: risky ? COIN.riskyMult : 1,
+    counts: types.reduce((a, t) => ((a[t] = (a[t] || 0) + 1), a), {}),
+  };
+}
+
+function bossNight() {
+  const b = BATTLES[BATTLES.length - 1];
+  return {
+    ...b,
+    id: 'boss', stage: RUN_LENGTH - 1, risky: false,
+    night: NIGHT_NAMES[RUN_LENGTH - 1],
+    waves: b.waves.map((w) => ({ at: w.at, units: w.units.map((u) => u.slice()) })),
+    mods: [], clearCoins: 0, coinMult: 1, hpScale: HP_SCALE[RUN_LENGTH - 1],
+    counts: b.waves.flatMap((w) => w.units).reduce((a, u) => ((a[u[0]] = (a[u[0]] || 0) + 1), a), {}),
+  };
+}
+
+// 다음 밤의 길: 순한 길 / 험한 길 (마지막은 보스 하나)
+export function rollPaths(run) {
+  const next = run.stage + 1;
+  if (next >= RUN_LENGTH - 1) return [bossNight()];
+  return [generateNight(run, next, false), generateNight(run, next, true)];
+}
+
+// ───────────────────────── 코인·상점 ─────────────────────────
+
+// 전투에서 번 코인을 지갑에 넣는다(험한 길은 배율 적용)
+export function bankBattle(run, st) {
+  const mult = st.def.coinMult || 1;
+  const gained = Math.round(st.coins * mult);
+  run.coins += gained;
+  run.totals.coins += gained;
+  return { by: { ...st.coinBy }, base: st.coins, mult, gained };
+}
+
+export function rollShop(run, keepRerolls = 0) {
+  const P = SHOP_PRICES;
+  const items = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id)), 2).map((id) => ({ id, price: P.relic }));
+  const fuse = availableFusions(run);
+  const upg = run.relics.filter((id) => !FUSIONS[id] && (run.relicLv[id] || 1) < 2);
+  if (fuse.length) items.push({ id: 'fuse:' + fuse[0], price: P.fuse });
+  else if (upg.length) items.push({ id: 'up:' + upg[randInt(run, upg.length)], price: P.up });
+  const charms = Object.keys(REWARDS).filter((k) => REWARDS[k].sym);
+  items.push({ id: 'heal', price: P.heal });
+  items.push({ id: 'maxhp', price: P.maxhp });
+  items.push({ id: charms[randInt(run, charms.length)], price: P.charm });
+  const trimmable = Object.keys(SYMBOLS).filter((s) => s !== 'counter' && run.strips.every((st) => st.filter((x) => x === s).length >= 2));
+  if (trimmable.length) items.push({ id: 'trim:' + trimmable[randInt(run, trimmable.length)], price: P.trim });
+  return { items: items.map((it) => ({ ...it, sold: false })), rerolls: keepRerolls };
+}
+
+export const shopRerollCost = (shop) => SHOP_PRICES.reroll + shop.rerolls * 2;
+
+// 살 수 없는 이유(없으면 null)
+export function cantBuy(run, it) {
+  if (it.sold) return '구매함';
+  if (it.id === 'heal' && run.hp >= run.maxHp) return '체력 가득';
+  if (run.coins < it.price) return '코인 부족';
+  return null;
+}
+
+export function buyItem(run, shop, i) {
+  const it = shop.items[i];
+  if (!it || cantBuy(run, it)) return false;
+  run.coins -= it.price;
+  applyReward(run, it.id);
+  it.sold = true;
+  return true;
+}
+
+export function rerollShop(run, shop) {
+  const cost = shopRerollCost(shop);
+  if (run.coins < cost) return false;
+  run.coins -= cost;
+  shop.items = rollShop(run).items;
+  shop.rerolls++;
+  return true;
 }
 
 // 같은 문양이 위아래로 붙지 않는 릴 띠
@@ -32,7 +197,7 @@ function makeStrip(run) {
 }
 
 export function currentBattle(run) {
-  return BATTLES[run.stage] || null;
+  return run.def || BATTLES[run.stage] || null;
 }
 
 export function battleOptions(run) {
@@ -82,6 +247,10 @@ export function rewardInfo(id) {
     const r = RELICS[id.slice(3)];
     return { id, relic: true, upgrade: true, relicId: id.slice(3), ...r, name: r.name + ' II', desc: '강화: ' + r.up };
   }
+  if (id.startsWith('trim:')) {
+    const s = id.slice(5);
+    return { id, relic: false, name: `${SYMBOLS[s].name} 덜기`, desc: `${SYMBOLS[s].name} 문양이 덜 나옴`, icon: s };
+  }
   if (RELICS[id]) return { id, relic: true, relicId: id, ...RELICS[id] };
   return { id, relic: false, ...REWARDS[id] };
 }
@@ -125,6 +294,22 @@ export function applyReward(run, id) {
     run.picks.push(id);
     return;
   }
+  if (id.startsWith('trim:')) {
+    // 릴마다 그 문양을 하나씩 뺀다(같은 문양이 위아래로 붙지 않는 자리를 우선)
+    const sym = id.slice(5);
+    run.strips = run.strips.map((s) => {
+      const c = s.slice();
+      const n = c.length;
+      const spots = c.map((v, i) => i).filter((i) => c[i] === sym);
+      if (spots.length < 2) return c;
+      const safe = spots.filter((i) => c[(i + n - 1) % n] !== c[(i + 1) % n]);
+      const list = safe.length ? safe : spots;
+      c.splice(list[randInt(run, list.length)], 1);
+      return c;
+    });
+    run.picks.push(id);
+    return;
+  }
   const r = REWARDS[id];
   if (!r) throw new Error('unknown reward ' + id);
   if (id === 'heal') run.hp = Math.min(run.maxHp, run.hp + 7);
@@ -144,7 +329,9 @@ export function applyReward(run, id) {
   run.picks.push(id);
 }
 
-export function advance(run) {
+// 다음 밤으로. def는 길 선택에서 고른 밤(없으면 순한 길).
+export function advance(run, def) {
   run.stage++;
-  return currentBattle(run);
+  run.def = def || generateNight(run, run.stage, false);
+  return run.def;
 }

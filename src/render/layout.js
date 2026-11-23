@@ -23,7 +23,7 @@ export function computeLayout(H) {
 }
 
 export function rowScale(L, rowF) {
-  return 0.8 + 0.2 * Math.max(0, Math.min(1, (rowF + 0.5) / ROWS));
+  return 0.9 + 0.1 * Math.max(0, Math.min(1, (rowF + 0.5) / ROWS));
 }
 
 // 칸 중심(적의 발 위치) — rowF는 소수 가능(이동 애니메이션)
@@ -31,7 +31,7 @@ export function cellPos(L, laneF, rowF) {
   const s = rowScale(L, rowF);
   const y = L.fieldTop + (rowF + 0.5) * L.ch + L.ch * 0.28;
   const x = L.cx + (laneF - 1) * LANE_SPACING * s;
-  return { x, y, s, k: s * Math.min(1.34, L.ch / 60) };
+  return { x, y, s, k: s * Math.min(1.08, L.ch / 86) };
 }
 
 export function laneX(L, lane, y) {

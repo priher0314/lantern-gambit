@@ -1,5 +1,5 @@
 // 화면 그리기: 배경(미리 렌더), 전장, 캐릭터, 슬롯 사당, HUD, 버튼
-import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS } from '../core/data.js';
+import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS } from '../core/data.js';
 import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, bingoRect, REEL_CELL } from './layout.js';
 import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix } from './art.js';
 import { drawGlow } from './fx.js';
@@ -208,6 +208,19 @@ export class Renderer {
       g.fillStyle = lg;
       g.fillRect(0, top, W, bot - top);
       g.restore();
+    }
+    // 칸마다 옅은 발판: 적 사이 간격이 한눈에 읽히게
+    for (let lane = 0; lane < LANES; lane++) {
+      for (let r = 0; r < ROWS; r++) {
+        const p = cellPos(L, lane, r);
+        g.fillStyle = 'rgba(10,4,10,0.16)';
+        g.strokeStyle = 'rgba(255,225,170,0.11)';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.ellipse(p.x, p.y - 2, 56 * p.s, 15 * p.s, 0, 0, TAU);
+        g.fill();
+        g.stroke();
+      }
     }
     // 먼 쪽 안개
     const fog = g.createLinearGradient(0, top - 10, 0, top + L.fieldH * 0.35);
@@ -719,6 +732,28 @@ export class Renderer {
         ctx.stroke();
       }
     }
+    // 목표 "세 갈래": 레인마다 처치 수를 바닥에 표시
+    if (g.st && g.mode === 'battle' && g.st.def.objective.type === 'lanes') {
+      const need = g.st.def.objective.need;
+      for (let ln = 0; ln < 3; ln++) {
+        const k = Math.min(need, g.st.laneKills[ln]);
+        const done = k >= need;
+        const lx = L.cx + (ln - 1) * LANE_SPACING;
+        const ly = L.fieldBottom + 9;
+        ctx.fillStyle = done ? 'rgba(20,70,40,0.92)' : 'rgba(20,12,28,0.92)';
+        ctx.strokeStyle = done ? '#7dffa0' : '#ffd27a';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(lx - 26, ly - 10, 52, 20, 10);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = `13px ${FONTS.num}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = done ? '#7dffa0' : '#ffd27a';
+        ctx.fillText(done ? '완료' : `${k}/${need}`, lx, ly + 1);
+      }
+    }
     // 되치기 레인 선택
     if (g.ui.counter) {
       for (let ln = 0; ln < 3; ln++) {
@@ -839,7 +874,8 @@ export class Renderer {
     const it = g.intents?.[v.id];
     const headY = p.y - { kasa: 86, mask: 96, archer: 104, elder: 118, drum: 92 }[v.type] * k;
     if (it && (g.ui.phase === 'aim' || g.ui.phase === 'spin' || g.ui.phase === 'spinning' || g.ui.phase === 'busy')) {
-      this.drawIntent(it, p.x, headY, p.s, v, g);
+      const foggy = g.st.def.mods.includes('fog') && v.row < 3;
+      this.drawIntent(foggy ? { kind: 'unknown' } : it, p.x, headY, p.s, v, g);
     }
     // 상태 아이콘 줄
     const icons = [];
@@ -887,6 +923,7 @@ export class Renderer {
       case 'summon': icon = 'plus'; col = '#c9b8ff'; label = '소환'; break;
       case 'shift': icon = 'move'; col = '#c9b8ff'; label = '옆 이동'; break;
       case 'frozen': icon = 'snow'; col = '#9fdcff'; label = '얼음'; break;
+      case 'unknown': icon = 'dots'; col = '#b8a8d0'; label = '안개'; break;
       default: icon = 'dots'; col = '#9a8fb0'; label = it.slow ? '느림' : '대기';
     }
     const fs = Math.round(11.5 * s + 3.5);
@@ -1365,16 +1402,42 @@ export class Renderer {
     }
     ctx.font = `12px ${FONTS.ui}`;
     ctx.textBaseline = 'middle';
-    if (relics.length) {
+    if (relics.length && relics.length <= 3 && !st.def.mods.length) {
       const last = g.relicRect(relics.length - 1);
       ctx.textAlign = 'left';
       ctx.fillStyle = 'rgba(255,255,255,0.4)';
       ctx.fillText('← 눌러서 보기', last.x + last.w + 6, last.y + last.h / 2 + 1);
     }
+    // 조건(험한 길)과 코인
+    if (st.def.mods.length) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff9a8a';
+      ctx.font = `12.5px ${FONTS.ui}`;
+      ctx.fillText(st.def.mods.map((m) => MODS[m].name).join(' · '), 316, this.L.hudH + 17);
+    }
     const n = st.enemies.filter((e) => e.alive).length;
     ctx.textAlign = 'right';
+    ctx.font = `12px ${FONTS.ui}`;
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.fillText(`남은 적 ${n}`, W - 12, this.L.hudH + 17);
+    const coins = (g.run ? g.run.coins : 0) + st.coins;
+    const cp = g.coinPulse || 0;
+    ctx.font = `${15 + cp * 4}px ${FONTS.num}`;
+    ctx.fillStyle = '#ffd84a';
+    ctx.fillText(String(coins), W - 12, this.L.hudH + 38);
+    const tw = ctx.measureText(String(coins)).width;
+    const cx = W - 12 - tw - 12;
+    const cg = ctx.createRadialGradient(cx - 2, this.L.hudH + 35, 1, cx, this.L.hudH + 37, 8);
+    cg.addColorStop(0, '#fff3b0');
+    cg.addColorStop(0.6, '#e0a020');
+    cg.addColorStop(1, '#8a5a10');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.arc(cx, this.L.hudH + 37, 7 + cp * 2, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = '#6a4208';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
   }
 
   drawInfo(g) {

@@ -1,7 +1,7 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
-import { BATTLES, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, OBJECTIVES, RELICS, FUSIONS, EVOLVE_AT } from './core/data.js';
-import { createRun, battleOptions, recordBattle, rollRewards, rollStartRelics, applyReward, advance } from './core/run.js';
+import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT } from './core/data.js';
+import { createRun, battleOptions, recordBattle, rollRewards, rollStartRelics, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop } from './core/run.js';
 import { judge, lateLimit } from './core/timing.js';
 import { shotForReel, BINGO_LINES } from './core/slot.js';
 import { hashSeed } from './core/rng.js';
@@ -10,6 +10,7 @@ import { W, computeLayout, cellPos, laneAt, reelRect, leverRect, bingoRect, slot
 import { Renderer, REEL_CELL } from './render/scene.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const MODS_NAME = (m) => ({ fullMoon: '보름달', rage: '성난 밤', gust: '맞바람', fog: '안개' }[m] || m);
 const ease = (t) => 1 - (1 - t) ** 3;
 
 const EL_COLORS = {
@@ -82,7 +83,8 @@ export class Game {
     this.stamps = [];
     this.cutin = null;
     this.hold = null;
-    this.battleCount = BATTLES.length;
+    this.battleCount = RUN_LENGTH;
+    this.coinPulse = 0;
     this.mode = 'title';
     this.views = new Map();
     this.projs = [];
@@ -172,7 +174,11 @@ export class Game {
     this.run = createRun(s);
     // 개발용: ?stage=2 로 특정 전투부터 시작
     const devStage = Number(new URLSearchParams(location.search).get('stage'));
-    if (devStage > 0 && devStage < BATTLES.length) this.run.stage = devStage;
+    if (devStage > 0 && devStage < RUN_LENGTH) {
+      this.run.stage = devStage;
+      this.run.def = generateNight(this.run, devStage, new URLSearchParams(location.search).has('risky'));
+      this.run.coins = 40;
+    }
     this.store.meta.runs = (this.store.meta.runs || 0) + 1;
     this.store.save();
     this.mode = 'reward';
@@ -347,7 +353,7 @@ export class Game {
   }
 
   async startBattle() {
-    const def = BATTLES[this.run.stage];
+    const def = this.run.def;
     const { st, events } = B.createBattle(def, battleOptions(this.run));
     this.st = st;
     this.def = def;
@@ -361,7 +367,7 @@ export class Game {
     this.ui = { phase: 'busy', sel: null, hoverLane: -1, armedLane: -1, preview: null, react: null, counter: null };
     this.busy = true;
     this.refresh();
-    this.showBanner(`${def.night} · ${def.name}`, def.intro, 2.2);
+    this.showBanner(`${def.night} · ${def.name}`, def.intro + (def.mods && def.mods.length ? '  ·  조건: ' + def.mods.map((m) => MODS_NAME(m)).join(', ') : ''), 2.4);
     this.audio.play('turn');
     await this.wait(500);
     await this.playEvents(events);
@@ -391,7 +397,7 @@ export class Game {
     this.dangers = [];
     for (const e of st.enemies) {
       if (!e.alive) continue;
-      const it = this.intents[e.id];
+      const it = st.def.mods.includes('fog') && e.row < 3 ? null : this.intents[e.id];
       if (it && it.kind === 'attack') this.dangers.push({ lane: e.lane, row: e.row, style: it.style });
       if (it && it.kind === 'brace') this.dangers.push({ lane: e.lane, row: e.row, style: 'heavy' });
     }
@@ -1167,46 +1173,69 @@ export class Game {
     this.cardQueue = [];
     this.refresh();
     await this.wait(500);
+    const meta = this.store.meta;
     if (st.result === 'win') {
       this.audio.play('win');
       this.showBanner('밤을 넘겼다', `${this.def.night} 클리어`, 1.8, '#ffe08a', 44);
       recordBattle(this.run, st);
-      if (this.run.stage >= BATTLES.length - 1) this.store.meta.bestScore = Math.max(this.store.meta.bestScore || 0, this.run.totals.score);
+      const bank = bankBattle(this.run, st);
+      const last = this.run.stage >= RUN_LENGTH - 1;
+      if (last) meta.bestScore = Math.max(meta.bestScore || 0, this.run.totals.score);
       await this.waitReal(1700);
-      const last = this.run.stage >= BATTLES.length - 1;
-      this.store.meta.best = Math.max(this.store.meta.best || 0, this.run.stage + 1);
+      meta.best = Math.max(meta.best || 0, this.run.stage + 1);
       if (last) {
-        this.store.meta.wins = (this.store.meta.wins || 0) + 1;
+        meta.wins = (meta.wins || 0) + 1;
         this.store.save();
         this.mode = 'result';
-        this.overlay.showResult(true, this.run, this.store.meta);
-      } else {
-        this.store.save();
-        this.mode = 'reward';
-        const next = BATTLES[this.run.stage + 1];
+        this.overlay.showResult(true, this.run, meta);
+        return;
+      }
+      this.store.save();
+      this.mode = 'reward';
+      // 험한 길을 넘겼으면 전리품(무료 유물)을 먼저 고른 뒤 상점으로
+      const toShop = () => this.overlay.showShop(this.run, rollShop(this.run), bank, (id) => this.noteRelic(id), () => this.choosePath());
+      if (st.def.risky) {
         this.overlay.showPick({
-          title: '보상 하나를 고르세요',
-          req: `체력 ${this.run.hp}/${this.run.maxHp}`,
+          title: '전리품 하나를 고르세요',
+          req: '험한 길을 넘긴 보상',
           ids: rollRewards(this.run),
-          go: `${next.night} 시작`,
+          go: '상점으로',
           run: this.run,
-          used: this.store.meta.relicsUsed || [],
+          used: meta.relicsUsed || [],
         }, (id) => {
           this.takeReward(id);
-          advance(this.run);
-          this.startBattle();
+          toShop();
         });
-      }
+      } else toShop();
     } else {
+      const timeUp = st.loseReason === 'time';
       this.audio.play('lose');
-      this.showBanner('등불이 꺼졌다', '날이 밝기 전에 쓰러졌다', 2, '#ff8a7a', 40);
+      this.showBanner(timeUp ? '시간 초과' : '등불이 꺼졌다', timeUp ? '기한 안에 처치하지 못했다' : '날이 밝기 전에 쓰러졌다', 2, '#ff8a7a', 40);
       recordBattle(this.run, st);
-      this.store.meta.bestScore = Math.max(this.store.meta.bestScore || 0, this.run.totals.score);
+      meta.bestScore = Math.max(meta.bestScore || 0, this.run.totals.score);
       this.store.save();
       await this.waitReal(2000);
       this.mode = 'result';
-      this.overlay.showResult(false, this.run, this.store.meta);
+      this.overlay.showResult(false, this.run, meta);
     }
+  }
+
+  // 다음 밤의 길 고르기(순한 길 / 험한 길)
+  choosePath() {
+    this.overlay.showPaths(this.run, rollPaths(this.run), (def) => {
+      advance(this.run, def);
+      this.startBattle();
+    });
+  }
+
+  // 유물 수집 기록(상점 구매 포함)
+  noteRelic(id) {
+    const rid = id.startsWith('up:') || id.startsWith('fuse:') || id.startsWith('trim:') ? null : id;
+    if (!rid || !RELICS[rid] || RELICS[rid].fusion) return;
+    const u = new Set(this.store.meta.relicsUsed || []);
+    u.add(rid);
+    this.store.meta.relicsUsed = [...u];
+    this.store.save();
   }
 
   // ─────────────── 연출 재생 ───────────────
@@ -1272,6 +1301,19 @@ export class Game {
       }
       case 'turn':
         break;
+      case 'coin': {
+        // 코인 획득: 어디서 벌었는지 작은 글자로
+        this.coinPulse = 1;
+        this.audio.play('coin', { n: ev.n });
+        const label = { combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어', kill: '' }[ev.why] || '';
+        if (v) {
+          const ip = this.impactPoint(v);
+          fx.text(ip.x + 36, ip.y + 6, `+${ev.n} 코인`, { color: '#ffd84a', size: 17, font: 'num', life: 1, vy: -34, delay: 0.1 });
+        } else {
+          this.uiFx.text(W - 90, L.hudH + 44, `${label} +${ev.n} 코인`, { color: '#ffd84a', size: 16, font: 'num', life: 1.3, vy: -14 });
+        }
+        break;
+      }
       case 'evolve': {
         const R = RELICS[ev.relic];
         this.relicPulse[ev.relic] = 2;
@@ -1374,6 +1416,10 @@ export class Game {
         if (!v) break;
         const steps = Math.abs(ev.to - ev.from);
         this.audio.play('move', { hop: ev.hop });
+        if (ev.gust) {
+          const gp = this.impactPoint(v);
+          fx.text(gp.x, gp.y - 60, '맞바람', { color: '#c9e8ff', size: 18, font: 'num' });
+        }
         if (ev.fromLane != null && ev.fromLane !== ev.lane) {
           const start2 = this.time;
           const tw2 = this.tween(v, { row: ev.to, lane: ev.lane }, 400, (t) => t);
@@ -1555,7 +1601,7 @@ export class Game {
         this.audio.play('ward');
         fx.ring(P.x, L.playerY - 46, { r0: 70, r1: 40, color: '#ffd27a', w: 6, life: 0.5 });
         fx.burst(P.x, L.playerY - 46, { n: 18, speed: 120, color: ['#ffd27a', '#fff3c0'], kind: 'glow', size: 5, life: 0.7, vy: -40 });
-        fx.text(P.x, L.playerY - 120, `방어막 +${ev.amount}`, { color: '#ffd27a', size: 24, font: 'num' });
+        fx.text(P.x, L.playerY - 120, ev.amount > 0 ? `방어막 +${ev.amount}` : '방어막 가득', { color: '#ffd27a', size: 24, font: 'num' });
         await this.wait(260);
         break;
       }
@@ -2072,6 +2118,7 @@ export class Game {
     }
     this.slotJolt = Math.max(0, this.slotJolt - realDt * 7 - this.slotJolt * realDt * 6);
     for (const k in this.relicPulse) this.relicPulse[k] = Math.max(0, this.relicPulse[k] - realDt * 1.5);
+    this.coinPulse = Math.max(0, this.coinPulse - realDt * 4);
     this.uiFx.update(realDt, realDt);
     const gp = this.ui.preview;
     if (gp && gp.gild && Math.random() < realDt * 26) {
