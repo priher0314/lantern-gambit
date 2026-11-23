@@ -91,7 +91,6 @@ export function createBattle(def, opt) {
     },
     strips: opt.strips.map((s) => s.slice()),
     symLv: { ...(opt.symLv || {}) }, // 수련 단계
-    holds: [false, false, false], // 다시 돌릴 때 그대로 둘 릴
     reels: [],
     shots: [],
     shotsFired: 0,
@@ -226,7 +225,6 @@ function startTurn(st, events) {
   st.phase = 'spin';
   st.rerollsLeft = REROLLS_PER_TURN + lv(st, 'gamblerCoin');
   st.turnKills = 0;
-  st.holds = [false, false, false];
   if (st.turn > 1) st.player.stamina = Math.min(STAMINA.max, (st.player.stamina ?? STAMINA.max) + STAMINA.regen);
   st.snipes = SNIPES_PER_TURN;
   st.rerollCount = 0;
@@ -287,9 +285,8 @@ function applyOmen(st, omen, events) {
 
 // ───────────────────────── 슬롯 ─────────────────────────
 
-function rollReels(st, gildCount, events, holds = null) {
-  // 고정한 릴은 그대로 두고 나머지만 다시 돌린다
-  const idx = st.strips.map((s, k) => (holds && holds[k] && st.reels[k] ? st.reels[k].stop : randInt(st, s.length)));
+function rollReels(st, gildCount, events) {
+  const idx = st.strips.map((s) => randInt(st, s.length));
   const gilded = pickDistinct(st, 3, Math.min(3, gildCount));
   st.reels = idx.map((i, k) => ({ symbol: st.strips[k][i], stop: i, gilded: gilded.includes(k) }));
   // 3×3 판: 각 릴의 위·가운데·아래 칸. 가운데 줄이 이번 턴의 공격, 나머지 줄의 빙고는 보너스 기술.
@@ -312,7 +309,7 @@ function rollReels(st, gildCount, events, holds = null) {
   }
   if (level >= 3) for (const s of st.shots) if (s.tier === 3) s.gild = 3;
   st.score += 150 * level * level;
-  events.push({ type: 'spin', reels: clone(st.reels), shots: clone(st.shots), grid: clone(st.grid), bingos: clone(st.bingos), level, jackpot: top === 3, holds: holds ? holds.slice() : null });
+  events.push({ type: 'spin', reels: clone(st.reels), shots: clone(st.shots), grid: clone(st.grid), bingos: clone(st.bingos), level, jackpot: top === 3 });
   if (level >= 1) addCoins(st, COIN.bingo * level, 'bingo', events);
   if (level >= 1 && has(st, 'bingoBell')) {
     st.player.embers = Math.min(EMBER_CAP, st.player.embers + 1);
@@ -345,18 +342,8 @@ export function reroll(st) {
   st.rerollsLeft--;
   st.stats.rerolls++;
   if (has(st, 'gamblerCoin')) addGuard(st, lv(st, 'gamblerCoin'), events, 'gamblerCoin');
-  rollReels(st, st.turnGild + st.rerollCount, events, st.holds && st.holds.some(Boolean) ? st.holds : null);
+  rollReels(st, st.turnGild + st.rerollCount, events);
   return events;
-}
-
-// 릴 고정/해제: 다시 돌리기를 쓸 수 있을 때만(공격을 시작하기 전)
-export function toggleHold(st, i) {
-  if (!canReroll(st) || !(i >= 0 && i < 3)) return false;
-  if (!st.holds) st.holds = [false, false, false];
-  // 세 릴을 모두 고정하면 다시 돌릴 것이 없다
-  if (!st.holds[i] && st.holds.filter(Boolean).length >= 2) return false;
-  st.holds[i] = !st.holds[i];
-  return true;
 }
 
 // ───────────────────────── 피해 처리 ─────────────────────────

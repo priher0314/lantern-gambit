@@ -37,14 +37,6 @@ const CONCEPTS = {
       { label: '얻기', text: '매 턴 +1. 등불 문양을 쓰면 더 찬다.', color: '#8fffe2' },
     ],
   },
-  hold: {
-    kicker: '알아두기', title: '릴 고정', color: '#d9a0ff',
-    lines: [
-      { label: '효과', text: '고정한 릴은 다시 돌려도 그대로 남는다.' },
-      { label: '사용', text: '릴 위의 자물쇠를 누른 뒤 레버나 다시 돌리기. (A · S · D 키)', color: '#8fffe2' },
-      { label: '조건', text: '두 개까지. 공격을 시작하기 전에만.', color: '#ffb8c8' },
-    ],
-  },
   combo: {
     kicker: '알아두기', title: '조합', color: '#ffe08a',
     lines: [
@@ -544,19 +536,13 @@ export class Game {
   pullLever() {
     if (this.lever.t >= 0 || this.card) return;
     const ok = this.mode === 'battle' && this.ui.phase === 'spin' && !this.busy;
-    // 이미 뽑은 뒤라면 레버는 "다시 돌리기"로 동작한다(고정한 릴은 그대로 남는다)
-    const again = this.mode === 'battle' && this.ui.phase === 'aim' && !this.busy && this.st && B.canReroll(this.st);
     this.lever.t = 0;
-    this.lever.ok = ok || again;
-    this.audio.play(ok || again ? 'lever' : 'deny');
+    this.lever.ok = ok;
+    this.audio.play(ok ? 'lever' : 'deny');
     if (ok) {
       this.buzz(25);
       this.slotJolt = 1;
       this.doSpin();
-    } else if (again) {
-      this.buzz(25);
-      this.slotJolt = 1;
-      this.doReroll();
     }
   }
 
@@ -707,7 +693,7 @@ export class Game {
     else {
       const d = B.describeOmen(st, st.omens[st.rerollCount]);
       sub = B.has(st, 'windfall') && st.rerollCount === 0 ? '대가 없음 (대박)' : `대가: ${d ? d.text : '?'}`;
-      sub2 = st.holds && st.holds.some(Boolean) ? '고정한 릴은 그대로 · 금빛 릴 +1' : '보상: 금빛 릴 +1 · 레버로도 가능';
+      sub2 = '보상: 금빛 릴 +1';
       subColors = ['#ffb8c8', '#ffe08a'];
     }
     btns.push({ id: 'reroll', x: 14, y, w: 322, h, label: '다시 돌리기', pips: myTurn ? st.rerollsLeft : maxRe, pipMax: maxRe, sub, sub2, subColors, style: 'gamble', enabled: canRe, key: 'R' });
@@ -758,15 +744,6 @@ export class Game {
       if (!reacting) this.openGuide();
       return;
     }
-    // 릴 고정 자물쇠(코인 쟁반과 가까워서 가장 먼저 확인한다)
-    if (!reacting && this.st && this.ui.phase === 'aim' && !this.busy && B.canReroll(this.st)) {
-      for (let i = 0; i < 3; i++) {
-        if (inR(this.holdRect(i), 5)) {
-          this.toggleHold(i);
-          return;
-        }
-      }
-    }
     if (!reacting && this.st) {
       if (inR(trayRect(this.L), 2)) {
         this.showCard(CONCEPTS.coin);
@@ -798,15 +775,6 @@ export class Game {
     if (inR(leverRect(this.L))) {
       this.pullLever();
       return;
-    }
-    // 릴 고정 자물쇠
-    if (this.st && this.ui.phase === 'aim' && !this.busy && B.canReroll(this.st)) {
-      for (let i = 0; i < 3; i++) {
-        if (inR(this.holdRect(i), 4)) {
-          this.toggleHold(i);
-          return;
-        }
-      }
     }
     // 슬롯 칸 선택: 가운데 줄 = 그 릴의 공격, 빙고가 걸린 위·아래 칸 = 그 빙고 기술
     for (let i = 0; i < 3; i++) {
@@ -853,14 +821,6 @@ export class Game {
   onContext(e) {
     if (this.mode !== 'battle' || this.card || this.ui.react || this.ui.counter) return;
     const pt = this.toLogical(e.clientX, e.clientY);
-    // 릴을 우클릭하면 고정
-    for (let i = 0; i < 3; i++) {
-      const r = reelRect(this.L, i);
-      if (pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y - 14 && pt.y <= r.y + r.h) {
-        this.toggleHold(i);
-        return;
-      }
-    }
     const v = this.enemyAtPoint(pt);
     if (v) this.inspectEnemy(v);
   }
@@ -912,7 +872,6 @@ export class Game {
     if (k === 'h' || k === '?') this.openGuide();
     if (k === 'r') this.press('reroll');
     if (k === 'f') this.shiftAim(1, true);
-    if (['a', 's', 'd'].includes(k)) this.toggleHold('asd'.indexOf(k));
     if (k === 'b' && this.st) {
       const bi = this.st.shots.findIndex((s) => s.bonus && !s.used);
       if (bi >= 0) this.selectShot(bi, true);
@@ -1047,26 +1006,6 @@ export class Game {
     this.conceptCard('combo');
   }
 
-  // 릴 위 자물쇠의 위치(다시 돌리기가 가능할 때만 누를 수 있다)
-  holdRect(i) {
-    const r = reelRect(this.L, i);
-    return { x: r.x + r.w / 2 - 34, y: r.y - 5, w: 68, h: 26 }; // 코인 쟁반 아래, 릴 위쪽 가장자리
-  }
-
-  toggleHold(i) {
-    const st = this.st;
-    if (!st || this.ui.phase !== 'aim' || this.busy) return;
-    if (!B.toggleHold(st, i)) {
-      this.audio.play('deny');
-      this.ui.tipText = !B.canReroll(st) ? (st.shotsFired > 0 ? '공격을 시작한 뒤에는 고정할 수 없다' : '다시 돌리기가 남아 있을 때만 고정할 수 있다') : '릴은 두 개까지만 고정할 수 있다';
-      this.ui.tipUntil = this.now() + 1800;
-      this.updateInfo();
-      return;
-    }
-    this.audio.play(st.holds[i] ? 'select' : 'ui');
-    this.refresh();
-  }
-
   selectReel(i, touch) {
     const st = this.st;
     if (this.ui.phase !== 'aim' || this.busy || !st) return;
@@ -1195,13 +1134,10 @@ export class Game {
     {
       // 설명은 그 상황이 실제로 왔을 때만 꺼낸다(한 턴에 하나)
       const st = this.st;
-      const mid = st.reels.map((r) => r.symbol);
       const plain = st.shots.every((s) => s.tier === 1) && !(st.bingos || []).length; // 연결도 빙고도 없는 판
-      const twoSame = new Set(mid).size === 2; // 같은 문양이 두 칸
       const later = st.turn >= 2 || this.run.stage > 0;
       if (st.reels.some((r) => r.gilded)) this.conceptCard('gild');
       if (later && plain && B.canReroll(st)) this.conceptCard('reroll');
-      if (later && twoSame && B.canReroll(st) && this.tipsSeen.has('card-reroll')) this.conceptCard('hold');
       if (later && [0, 1, 2].some((l) => B.laneTargets(st, l).length >= 2)) this.conceptCard('snipe');
     }
     this.nextCard();
@@ -1213,11 +1149,6 @@ export class Game {
       this.audio.play('spinStart');
       const now = this.rt;
       this.reels.forEach((r, i) => {
-        if (ev.holds && ev.holds[i]) {
-          r.gilded = ev.reels[i].gilded;
-          r.flashT = 0.5;
-          return;
-        }
         r.spinning = true;
         r.tween = null;
         r.vel = 30 + i * 2;

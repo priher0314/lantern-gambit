@@ -165,7 +165,6 @@ export class Overlay {
         <div class="ht"><b>Matchups</b><span>Each enemy has a <em>weakness</em> (+2 damage) and a <em class="r">resistance</em> (-1 direct damage). Pick a skill to see the marks on enemies.</span></div>
         <div class="ht"><b>Roles</b><span>Slash = pierce / Wave = <em>push back</em>, splash / Frost = cancel actions / Spark = chain / Poison = damage over time</span></div>
         <div class="ht"><b>Combos</b><span>Frost → Slash/Wave = <em>Shatter</em> / Frost → Spark = <em>Conduct</em> / Wave (Wet) → Spark = <em>Surge +2</em> / Wave (Wet) → Frost = <em>Deep freeze +1 turn</em> / Poison → Spark = <em>Detonate</em> / Poison → Wave = <em>Spread</em> / Poison → Slash = <em>Poison +2</em></span></div>
-        <div class="ht"><b>Hold</b><span>Before rerolling, click the <em>lock</em> above a reel to keep it. Up to two. (A S D keys)</span></div>
         <div class="ht"><b>Stamina</b><span>Block costs 1, Dodge 2. <em class="r">Without enough, you get hit.</em> A perfect dodge costs 1. +1 each turn; Guard symbols restore more.</span></div>
         <div class="ht"><b>Training</b><span>Train a symbol in the shop to strengthen that skill for the whole run.</span></div>
         <div class="ht"><b>Characters</b><span>The <em>Swordhand</em> has Slash (pierces from the front); the <em>Bombardier</em> has Bomb (lands on the rearmost enemy, bursts around it, ignores shields). The other symbols are shared.</span></div>
@@ -190,7 +189,6 @@ export class Overlay {
         <div class="ht"><b>상성</b><span>적마다 <em>약점</em>(피해 +2)과 <em class="r">저항</em>(직격 피해 -1)이 있다. 기술을 고르면 적 옆에 표시된다.</span></div>
         <div class="ht"><b>역할</b><span>절단 = 관통 / 파동 = <em>밀어내기</em>·주변 피해 / 동결 = 행동 취소 / 전격 = 연쇄 / 중독 = 지속 피해</span></div>
         <div class="ht"><b>조합</b><span>동결 → 절단·파동 = <em>파쇄</em> / 동결 → 전격 = <em>초전도</em> / 파동(젖음) → 전격 = <em>감전 +2</em> / 파동(젖음) → 동결 = <em>꽁꽁 +1턴</em> / 중독 → 전격 = <em>감전 폭발</em> / 중독 → 파동 = <em>독 확산</em> / 중독 → 절단 = <em>중독 +2</em></span></div>
-        <div class="ht"><b>릴 고정</b><span>다시 돌리기 전에 릴 위 <em>자물쇠</em>를 누르면 그 릴은 그대로 남는다. 두 개까지. (A S D 키)</span></div>
         <div class="ht"><b>기력</b><span>막기 1, 회피 2. <em class="r">모자라면 맞는다.</em> 퍼펙트 회피는 1. 매 턴 +1, 등불을 쓰면 더 찬다.</span></div>
         <div class="ht"><b>수련</b><span>상점에서 문양을 단련하면 그 기술이 이번 판 내내 강해진다.</span></div>
         <div class="ht"><b>캐릭터</b><span><em>칼잡이</em>는 절단(앞부터 관통), <em>폭탄꾼</em>은 폭탄(맨 뒤 적에게 떨어져 주변까지, 방패 무시). 나머지 문양은 같다.</span></div>

@@ -1,6 +1,6 @@
 // 밸런스 측정: 실력이 다른 봇들이 한 판(밤 생성·길 선택·상점 포함)을 끝까지 돈다.  node tools/balance.mjs
 import {
-  createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn, canSnipe, reactCost, toggleHold,
+  createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn, canSnipe, reactCost,
   nextEnemyStep, resolveReaction, resolveCounter,
 } from '../src/core/battle.js';
 import { RUN_LENGTH } from '../src/core/data.js';
@@ -25,16 +25,7 @@ export function playBattle(st, P, r) {
   let attacks = 0;
   while (!st.result) {
     spin(st);
-    while (canReroll(st) && rand(r) < P.reroll) {
-      // 잘하는 봇은 같은 문양 두 칸을 고정하고 돌린다
-      if (rand(r) < P.smart) {
-        const s = st.reels.map((x) => x.symbol);
-        st.holds = [false, false, false];
-        if (s[0] === s[1]) { toggleHold(st, 0); toggleHold(st, 1); }
-        else if (s[1] === s[2]) { toggleHold(st, 1); toggleHold(st, 2); }
-      }
-      reroll(st);
-    }
+    while (canReroll(st) && rand(r) < P.reroll) reroll(st);
     for (let i = 0; i < st.shots.length && !st.result; i++) {
       let lane = randInt(r, 3);
       let depth = 0;

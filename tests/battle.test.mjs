@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn,
-  nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen, canSnipe, toggleHold, reactCost,
+  nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen, canSnipe, reactCost,
 } from '../src/core/battle.js';
 import { evaluateReels, evaluateLines } from '../src/core/slot.js';
 import { BATTLES, BASE_STRIP, RELIC_IDS, FRONT, STAMINA, shotStats } from '../src/core/data.js';
@@ -842,20 +842,6 @@ test('조합: 젖음 → 전격 +2, 젖음 → 동결 +1턴, 중독 → 절단 �
   assert.equal(st.enemies[0].poison, p0 + 2);
 });
 
-test('릴 고정: 고정한 릴은 다시 돌려도 그대로, 두 개까지', () => {
-  const st = mk([['kasa', 1, 0]]);
-  spin(st);
-  const keep = st.reels.map((r) => r.stop);
-  assert.equal(toggleHold(st, 0), true);
-  assert.equal(toggleHold(st, 2), true);
-  assert.equal(toggleHold(st, 1), false, '세 개를 모두 고정할 수는 없다');
-  reroll(st);
-  assert.equal(st.reels[0].stop, keep[0]);
-  assert.equal(st.reels[2].stop, keep[2]);
-  // 공격을 시작하면 고정할 수 없다
-  fireShot(st, 0, 1);
-  assert.equal(toggleHold(st, 1), false);
-});
 
 test('수련: 상점에서 사면 그 기술이 강해진다', () => {
   assert.equal(shotStats('blade', 1, 0, 2).dmg, shotStats('blade', 1).dmg + 2);
