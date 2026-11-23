@@ -1,5 +1,5 @@
 // HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
-import { BATTLES, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, FUSIONS, fusionOf } from '../core/data.js';
+import { BATTLES, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf } from '../core/data.js';
 import { rewardInfo } from '../core/run.js';
 import { drawSymbol, drawIcon, drawRelicIcon } from '../render/art.js';
 
@@ -94,6 +94,7 @@ export class Overlay {
       </div>
       <div class="title-meta">${meta.runs ? `플레이 ${meta.runs}회 · 클리어 ${meta.wins || 0}회 · 최고 기록 ${meta.best || 0}/${BATTLES.length}` : '첫 플레이'}</div>
       <div class="title-meta">유물 ${used}/${RELIC_IDS.length}</div>
+      <div class="title-foot">${GAME_VERSION}</div>
     `, 'title');
     p.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;

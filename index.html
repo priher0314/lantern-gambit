@@ -18,6 +18,18 @@
     <div id="overlay"></div>
   </div>
   <noscript>이 게임은 JavaScript가 필요합니다.</noscript>
-  <script type="module" src="src/main.js"></script>
+  <script>
+    // 최신 버전 유지: 서비스 워커가 처음 연결되면 한 번만 새로고침해서 최신 파일로 다시 받는다
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (hadController || sessionStorage.getItem('sw-reloaded')) return;
+        sessionStorage.setItem('sw-reloaded', '1');
+        location.reload();
+      });
+    }
+  </script>
+  <script type="module" src="src/main.js?v=7"></script>
 </body>
 </html>
