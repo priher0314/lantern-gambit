@@ -764,6 +764,9 @@ export class Game {
     if (e.pointerType !== 'mouse' || this.mode !== 'battle') return;
     const p = this.toLogical(e.clientX, e.clientY);
     const lane = laneAt(this.L, p.x, p.y);
+    const hb = this.buttons.find((b) => b.enabled && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h + 8);
+    this.hoverBtn = hb ? hb.id : null;
+    this.canvas.style.cursor = hb ? 'pointer' : '';
     if (this.ui.counter) {
       if (lane >= 0) this.setCounterHover(lane);
       return;

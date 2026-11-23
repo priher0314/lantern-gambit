@@ -1,5 +1,5 @@
 // 화면 그리기: 배경(미리 렌더), 전장, 캐릭터, 슬롯 사당, HUD, 버튼
-import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS } from '../core/data.js';
+import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS, RUN_LENGTH } from '../core/data.js';
 import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL, REEL_PEEK, UI_H } from './layout.js';
 import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix, drawBomber, drawHealer, drawBoar, drawEliteRing, drawEliteCrown, TILT } from './art.js';
 // 적 머리 높이(예고 배지·말풍선 위치)
@@ -741,6 +741,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.rect(W + 2, 0, W - 2, L.SH);
       ctx.clip();
+      this.drawSidePane(g);
       ctx.translate(W, L.uiY - L.split);
       ctx.save();
       ctx.beginPath();
@@ -1422,6 +1423,112 @@ export class Renderer {
     ctx.restore();
   }
 
+  // 가로형 오른쪽 칸의 장식: 격자 무늬, 위쪽 진행 지도, 아래쪽 조작 안내
+  drawSidePane(g) {
+    const ctx = this.ctx;
+    const L = this.L;
+    const top = L.uiY;
+    const bot = L.uiY + UI_H;
+    ctx.save();
+    // 은은한 마름모 격자
+    ctx.strokeStyle = 'rgba(216,165,72,0.05)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = -L.SH; i < W + L.SH; i += 34) {
+      ctx.moveTo(W + i, 0);
+      ctx.lineTo(W + i + L.SH, L.SH);
+      ctx.moveTo(W + i + L.SH, 0);
+      ctx.lineTo(W + i, L.SH);
+    }
+    ctx.stroke();
+    // 위아래 가장자리 어둡게
+    const vg = ctx.createLinearGradient(0, 0, 0, L.SH);
+    vg.addColorStop(0, 'rgba(6,3,10,0.6)');
+    vg.addColorStop(0.2, 'rgba(6,3,10,0)');
+    vg.addColorStop(0.8, 'rgba(6,3,10,0)');
+    vg.addColorStop(1, 'rgba(6,3,10,0.6)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(W, 0, W, L.SH);
+    const cx = W + W / 2;
+    // 위: 이번 판의 진행(지나온 밤 · 지금 · 보스)
+    const run = g.run;
+    if (g.mode === 'battle' && run && !run.tutorial && top >= 54) {
+      const n = RUN_LENGTH;
+      const gap = 46;
+      const y = top / 2 + 2;
+      const x0 = cx - ((n - 1) * gap) / 2;
+      ctx.strokeStyle = 'rgba(216,165,72,0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x0 + (n - 1) * gap, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      for (let i = 0; i < n; i++) {
+        const x = x0 + i * gap;
+        const done = i < run.stage;
+        const now = i === run.stage;
+        const boss = i === n - 1;
+        const r = now ? 13 : 10;
+        if (now) drawGlow(ctx, x, y, 30, boss ? '#ff5a4a' : '#ffd27a', 0.55 + Math.sin(g.rt * 4) * 0.2);
+        ctx.beginPath();
+        if (boss) ctx.roundRect(x - r, y - r, r * 2, r * 2, 5);
+        else ctx.arc(x, y, r, 0, TAU);
+        ctx.fillStyle = done ? '#e0a830' : now ? (boss ? '#7a1622' : '#3a2408') : '#1a0e1c';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = now ? '#fff2b0' : boss ? '#ff7a6a' : done ? '#fff2b0' : 'rgba(216,165,72,0.55)';
+        ctx.stroke();
+        ctx.font = `${now ? 14 : 12}px ${FONTS.num}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = done ? '#3a2408' : now ? '#fff6e0' : boss ? '#ff9a8a' : 'rgba(216,165,72,0.8)';
+        ctx.fillText(done ? '✓' : boss ? '★' : `${i + 1}`, x, y + 1);
+      }
+    }
+    // 아래: 조작 안내(지금 쓸 수 있는 키)
+    if (g.mode === 'battle' && L.SH - bot >= 54) {
+      const react = g.ui.phase === 'react';
+      const keys = react
+        ? [['Space', '막기'], ['Shift', '회피']]
+        : [['Space', '레버'], ['Q W E', '릴 선택'], ['1 2 3', '레인'], ['R', '다시 돌리기'], ['Enter', '턴 종료']];
+      const y = bot + (L.SH - bot) / 2 + 2;
+      ctx.textBaseline = 'middle';
+      const parts = keys.map(([k, label]) => {
+        ctx.font = `11px ${FONTS.num}`;
+        const kw = ctx.measureText(k).width + 12;
+        ctx.font = `12px ${FONTS.ui}`;
+        const lw = ctx.measureText(label).width;
+        return { k, label, kw, lw };
+      });
+      const total = parts.reduce((s, p) => s + p.kw + 5 + p.lw, 0) + (parts.length - 1) * 14;
+      const sc = Math.min(1, (W - 28) / total);
+      ctx.translate(cx, y);
+      ctx.scale(sc, sc);
+      let x = -total / 2;
+      for (const p of parts) {
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.strokeStyle = 'rgba(216,165,72,0.6)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.roundRect(x, -10, p.kw, 20, 5);
+        ctx.fill();
+        ctx.stroke();
+        ctx.font = `11px ${FONTS.num}`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffe9b8';
+        ctx.fillText(p.k, x + p.kw / 2, 1);
+        ctx.font = `12px ${FONTS.ui}`;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(243,230,200,0.75)';
+        ctx.fillText(p.label, x + p.kw + 5, 1);
+        x += p.kw + 5 + p.lw + 14;
+      }
+    }
+    ctx.restore();
+  }
+
   drawStamps(g) {
     const ctx = this.ctx;
     for (const s of g.stamps) {
@@ -2019,6 +2126,13 @@ export class Renderer {
       ctx.strokeStyle = en ? '#d8a548' : '#3e3444';
       ctx.lineWidth = 2.5;
       ctx.stroke();
+      if (en && g.hoverBtn === b.id && !b.pressed) {
+        ctx.fillStyle = 'rgba(255,255,255,0.13)';
+        ctx.fill();
+        ctx.strokeStyle = '#fff2b0';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
       ctx.fillStyle = 'rgba(255,255,255,0.1)';
       ctx.beginPath();
       ctx.roundRect(b.x + 6, b.y + 4, b.w - 12, b.h * 0.34, 12);

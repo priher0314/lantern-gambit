@@ -94,8 +94,20 @@ export class Overlay {
     const saved = this.hooks.getSaved ? this.hooks.getSaved() : null;
     let sure = false;
     const p = this.panel(`
+      <div class="title-emblem"><svg viewBox="0 0 120 120" aria-hidden="true">
+        <defs><radialGradient id="tg"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#ffb347" stop-opacity="0"/></radialGradient></defs>
+        <circle cx="60" cy="60" r="58" fill="url(#tg)" opacity="0.32"/>
+        <path d="M74 14 A46 46 0 1 0 106 76 A36 36 0 0 1 74 14 Z" fill="#ffe08a" stroke="#170d22" stroke-width="3" stroke-linejoin="round"/>
+        <line x1="60" y1="36" x2="60" y2="52" stroke="#8a5a1a" stroke-width="2.5"/>
+        <rect x="51" y="51" width="18" height="5" rx="2" fill="#3a2418" stroke="#170d22" stroke-width="2"/>
+        <rect x="47" y="56" width="26" height="28" rx="10" fill="#e2453c" stroke="#170d22" stroke-width="3"/>
+        <rect x="54" y="62" width="12" height="16" rx="5" fill="#ffe9a8"/>
+        <rect x="53" y="84" width="14" height="4" rx="2" fill="#3a2418" stroke="#170d22" stroke-width="2"/>
+        <line x1="60" y1="88" x2="60" y2="98" stroke="#d8a548" stroke-width="2.5" stroke-linecap="round"/>
+      </svg></div>
       <div class="title-logo">
         <div class="logo-main">${GAME_TITLE}</div>
+        <div class="logo-tag"><i></i><span>새벽이 올 때까지, 돌려라</span><i></i></div>
       </div>
       <div class="title-btns">
         ${saved ? `<button class="btn btn-primary" data-a="resume">이어하기 <small>${NIGHT_NAMES[saved.run.stage]}</small></button>` : ''}
@@ -103,8 +115,10 @@ export class Overlay {
         <button class="btn" data-a="howto">게임 방법</button>
         <button class="btn" data-a="settings">설정</button>
       </div>
-      <div class="title-meta">${meta.runs ? `플레이 ${meta.runs}회 · 클리어 ${meta.wins || 0}회 · 최고 기록 ${meta.best || 0}/${RUN_LENGTH}` : '첫 플레이'}</div>
-      <div class="title-meta">유물 ${used}/${RELIC_IDS.length}</div>
+      <div class="title-stats">
+        <div class="title-meta">${meta.runs ? `플레이 ${meta.runs}회 · 클리어 ${meta.wins || 0}회 · 최고 기록 ${meta.best || 0}/${RUN_LENGTH}` : '첫 플레이'}</div>
+        <div class="title-meta">유물 ${used}/${RELIC_IDS.length}</div>
+      </div>
       ${meta.tier ? `<div class="title-tier"><b>${meta.tier + 1}단계</b>${meta.heirloom && RELICS[meta.heirloom] ? `<span>가져갈 유물</span>${relicChip(meta.heirloom)}` : ''}</div>` : ''}
       <div class="title-foot">${GAME_VERSION}</div>
     `, 'title');
