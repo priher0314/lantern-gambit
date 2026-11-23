@@ -3,13 +3,14 @@ import { ROWS, LANES } from '../core/data.js';
 
 export const W = 540;
 export const LANE_SPACING = 166;
-export const REEL_CELL = 56; // 릴 한 칸 높이(창에 3칸이 보인다)
+export const REEL_CELL = 52; // 릴 한 칸 높이(창에 3칸이 온전히 보인다)
+export const REEL_PEEK = 17; // 창 위·아래로 걸쳐 보이는 다음 문양의 높이
 
 export function computeLayout(H) {
   const L = { W, H };
   L.hudH = 66;
   L.btn = { y: H - 94, h: 94 };
-  L.slot = { y: L.btn.y - 288, h: 288 }; // 위에서부터: 유물 줄, 코인 쟁반, 릴 3×3, 이름패
+  L.slot = { y: L.btn.y - 310, h: 310 }; // 위에서부터: 유물 줄, 코인 쟁반, 릴 3×3(+위아래 걸침), 이름패
   L.info = { y: L.slot.y - 40, h: 40 };
   L.playerY = L.info.y - 6;
   L.fieldBottom = L.playerY - 84;
@@ -59,7 +60,7 @@ export function laneEdges(L, lane, y) {
 // 슬롯 창 위치
 export function reelRect(L, i) {
   const w = 108;
-  const h = REEL_CELL * 3;
+  const h = REEL_CELL * 3 + REEL_PEEK * 2;
   const gap = 10;
   const x0 = 32;
   return { x: x0 + i * (w + gap), y: L.slot.y + 86, w, h };

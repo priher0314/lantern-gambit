@@ -161,9 +161,14 @@ export class Audio {
     this.noise({ t: 0.16, dur: 0.05, vol: 0.3, f: 2600, q: 2 });
   }
   s_coin({ n = 1 } = {}) {
-    const f = 1568 * 2 ** (Math.min(4, n - 1) * 2 / 12);
-    this.tone({ type: 'square', f, dur: 0.06, vol: 0.05, filter: { f: 5000 } });
-    this.tone({ type: 'triangle', f: f * 1.5, t: 0.05, dur: 0.22, vol: 0.09 });
+    // 금속 조각이 맞부딪치는 "챙그랑": 서로 어긋난 높은 배음 여러 개 + 짧은 타격음, 두 번 연달아
+    const base = 2300 + ((n * 137) % 5) * 140;
+    for (const [t0, v] of [[0, 1], [0.045, 0.7]]) {
+      for (const [m, d, a] of [[1, 0.22, 0.05], [1.48, 0.17, 0.04], [2.09, 0.13, 0.032], [2.83, 0.09, 0.022]]) {
+        this.tone({ type: 'sine', f: base * m * (1 + (Math.random() - 0.5) * 0.02), t: t0, dur: d, vol: a * v, attack: 0.001 });
+      }
+      this.noise({ t: t0, dur: 0.018, vol: 0.12 * v, type: 'highpass', f: 6000 });
+    }
   }
   s_cutin({ big = false } = {}) {
     this.noise({ dur: 0.35, vol: 0.3, type: 'bandpass', f: 400, f2: 3200, q: 1.2 });

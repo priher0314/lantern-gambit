@@ -3,11 +3,12 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.9';
+export const GAME_VERSION = 'v0.10';
 
-export const ROWS = 6;
+export const ROWS = 7;
 export const LANES = 3;
 export const FRONT = ROWS - 1; // 플레이어(결계선) 바로 앞 줄
+const ROWS_REACH = FRONT - 1; // 우산·북 도깨비는 앞 두 줄에서 공격한다
 export const GUARD_CAP = 6;
 export const EMBER_CAP = 3;
 export const REROLLS_PER_TURN = 2;
@@ -111,7 +112,7 @@ export function shotDesc(symbol, tier, gild = 0) {
 
 export const ENEMIES = {
   kasa: {
-    name: '우산 도깨비', hp: 9, atk: 3, reach: 4,
+    name: '우산 도깨비', hp: 9, atk: 3, reach: ROWS_REACH,
     act: '체력이 가득하면 2칸씩 뛴다.',
     how: '한 대만 쳐도 느려진다. 공격은 막기.',
   },
@@ -121,7 +122,7 @@ export const ENEMIES = {
     how: '두 번 치면 깨진다. 파동 옆 피해·연쇄·중독은 바로 통한다.',
   },
   drum: {
-    name: '북 도깨비', hp: 8, atk: 3, reach: 4,
+    name: '북 도깨비', hp: 8, atk: 3, reach: ROWS_REACH,
     act: '지그재그로 레인을 바꾸며 다가온다.',
     how: '머리 위 화살표가 다음 레인. 미리 노려라.',
   },
@@ -226,15 +227,15 @@ export const OBJ_INFO = {
 export const MODS = {
   fullMoon: { name: '보름달', en: 'Full Moon', desc: '적 체력 +25%' },
   rage: { name: '성난 밤', en: 'Angry Night', desc: '적 공격력 +1' },
-  gust: { name: '맞바람', en: 'Headwind', desc: '매 턴 적 하나가 1칸 더 전진' },
+  gust: { name: '빠른 걸음', en: 'Quick March', desc: '매 턴, 적 하나가 한 칸 더 다가온다' },
   fog: { name: '안개', en: 'Fog', desc: '뒤쪽 적의 다음 행동이 안 보임' },
 };
 
 // 코인: 어떻게 싸웠는지에 따라 달라진다
 // 그냥 처치하는 것만으로는 벌리지 않는다. 연속 처치·퍼펙트·빙고·절약(다시 돌리기를 안 쓴 턴)·클리어로 번다.
-export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, thrift: 1, clearBase: 3, riskyMult: 1.5 };
+export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, thrift: 1, clearBase: 3, riskyMult: 2 };
 export const COIN_LABEL = { kill: '처치', combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어' };
-export const SHOP_PRICES = { relic: 22, up: 16, fuse: 26, heal: 7, maxhp: 12, charm: 9, trim: 9, reroll: 3 };
+export const SHOP_PRICES = { relic: 18, up: 14, fuse: 22, heal: 7, maxhp: 12, charm: 9, trim: 9, reroll: 3 };
 
 export const BASE_STRIP = [
   'blade', 'wave', 'frost', 'spark', 'lantern', 'venom',

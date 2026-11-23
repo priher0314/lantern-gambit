@@ -5,7 +5,7 @@ import {
   nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen,
 } from '../src/core/battle.js';
 import { evaluateReels, evaluateLines } from '../src/core/slot.js';
-import { BATTLES, BASE_STRIP, RELIC_IDS } from '../src/core/data.js';
+import { BATTLES, BASE_STRIP, RELIC_IDS, FRONT } from '../src/core/data.js';
 import { judge } from '../src/core/timing.js';
 import { createRun, battleOptions, rollRewards, rollStartRelics, applyReward, recordBattle, advance, availableFusions } from '../src/core/run.js';
 import { rand, randInt } from '../src/core/rng.js';
@@ -191,7 +191,7 @@ test('반응: 퍼펙트 막기 → 피해 0 + 되치기 + 불씨, 회피 → 노
   assert.deepEqual(pv.events, ev);
   assert.equal(ev.filter((e) => e.type === 'hit').length, 2, '되치기는 레인 전체 관통');
 
-  const st2 = mk([['mask', 1, 5]]);
+  const st2 = mk([['mask', 1, FRONT]]);
   st2.enemies[0].braced = true;
   setShots(st2, []);
   endPlayerTurn(st2);
@@ -203,7 +203,7 @@ test('반응: 퍼펙트 막기 → 피해 0 + 되치기 + 불씨, 회피 → 노
 });
 
 test('강공격은 일반 막기로 못 막음, 방어막이 먼저 흡수', () => {
-  const st = mk([['mask', 1, 5]], { guard: 1 });
+  const st = mk([['mask', 1, FRONT]], { guard: 1 });
   st.enemies[0].braced = true;
   setShots(st, []);
   endPlayerTurn(st);
@@ -545,10 +545,10 @@ test('밤 생성: 같은 판이면 같은 구성, 첫 무리는 간격을 두고
         assert.deepEqual(a, generateNight(run, stage, risky));
         assert.equal(a.mods.length, risky ? (stage >= 3 ? 2 : 1) : 0);
         const first = a.waves[0].units.filter((u) => u[0] !== 'archer');
-        for (const u of a.waves.flatMap((w) => w.units)) assert.ok(u[1] >= 0 && u[1] <= 2 && u[2] >= 0 && u[2] <= 3);
+        for (const u of a.waves.flatMap((w) => w.units)) assert.ok(u[1] >= 0 && u[1] <= 2 && u[2] >= 0 && u[2] <= 4);
         for (let l = 0; l < 3; l++) {
           const rows = first.filter((u) => u[1] === l).map((u) => u[2]).sort((x, y) => x - y);
-          for (let i = 1; i < rows.length; i++) assert.ok(rows[i] - rows[i - 1] >= 2 || rows[i] === 3, `seed ${seed} stage ${stage}`);
+          for (let i = 1; i < rows.length; i++) assert.ok(rows[i] - rows[i - 1] >= 2 || rows[i] === 4, `seed ${seed} stage ${stage}`);
         }
       }
     }
@@ -622,7 +622,7 @@ test('조건: 보름달(체력), 성난 밤(공격력), 엽전 강화 시 대가
 test('상점: 코인으로 사고, 모자라면 못 사고, 효과는 바로 적용', () => {
   const run = createRun(11);
   const shop = rollShop(run);
-  assert.ok(shop.items.length >= 5);
+  assert.equal(shop.items.length, 4);
   assert.equal(cantBuy(run, shop.items[0]), '코인 부족');
   assert.equal(buyItem(run, shop, 0), false);
   run.coins = 100;

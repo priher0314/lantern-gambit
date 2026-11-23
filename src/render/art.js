@@ -1562,3 +1562,118 @@ export function drawDrum(ctx, x, y, k, a) {
   if (a.frozen) frostOverlay(ctx, k, 62 * k);
   ctx.restore();
 }
+
+// ───── 상점 주인: 보따리 도깨비 ─────
+// 큰 보따리를 멘 느긋한 도깨비. mood: 'idle' | 'happy' | 'sorry'
+export function drawMerchant(ctx, x, y, k, mood = 'idle', t = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  const bob = Math.sin(t * 2.2) * 1.5 * k;
+  ctx.translate(0, bob);
+  // 보따리(등 뒤)
+  ctx.beginPath();
+  ctx.ellipse(-20 * k, -46 * k, 34 * k, 30 * k, -0.2, 0, TAU);
+  fillInk(ctx, '#7a4a8a', 3 * k);
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 2 * k;
+  for (const a of [-0.5, 0, 0.5]) {
+    ctx.beginPath();
+    ctx.arc(-20 * k, -46 * k, 22 * k, a - 0.3, a + 0.3);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.ellipse(-34 * k, -74 * k, 9 * k, 6 * k, -0.4, 0, TAU);
+  fillInk(ctx, '#9a62aa', 2.4 * k);
+  // 몸(도포)
+  ctx.beginPath();
+  ctx.moveTo(-26 * k, 0);
+  ctx.quadraticCurveTo(-30 * k, -40 * k, -12 * k, -52 * k);
+  ctx.lineTo(18 * k, -52 * k);
+  ctx.quadraticCurveTo(34 * k, -40 * k, 30 * k, 0);
+  ctx.closePath();
+  fillInk(ctx, '#2f6a5a', 3 * k);
+  ctx.fillStyle = '#f3d38a';
+  ctx.fillRect(-25 * k, -22 * k, 54 * k, 5 * k);
+  // 멜빵 끈
+  ctx.beginPath();
+  ctx.moveTo(-8 * k, -52 * k);
+  ctx.lineTo(-20 * k, -14 * k);
+  ctx.lineWidth = 5 * k;
+  ctx.strokeStyle = '#5a3a2a';
+  ctx.stroke();
+  // 머리
+  ellipse(ctx, 4 * k, -70 * k, 24 * k, 21 * k);
+  fillInk(ctx, '#e8a06a', 3 * k);
+  // 뿔 하나 + 머리털
+  ctx.beginPath();
+  ctx.moveTo(-2 * k, -89 * k);
+  ctx.lineTo(4 * k, -108 * k);
+  ctx.lineTo(11 * k, -89 * k);
+  ctx.closePath();
+  fillInk(ctx, '#fff0c0', 2.4 * k);
+  ctx.beginPath();
+  ctx.moveTo(-18 * k, -80 * k);
+  ctx.quadraticCurveTo(4 * k, -98 * k, 26 * k, -80 * k);
+  ctx.quadraticCurveTo(4 * k, -86 * k, -18 * k, -80 * k);
+  fillInk(ctx, INK, 1.5 * k);
+  // 눈
+  for (const s of [-1, 1]) {
+    const ex = 4 * k + s * 9 * k;
+    ctx.beginPath();
+    if (mood === 'happy') {
+      ctx.moveTo(ex - 5 * k, -70 * k);
+      ctx.quadraticCurveTo(ex, -77 * k, ex + 5 * k, -70 * k);
+      ink(ctx, 2.6 * k);
+    } else {
+      ellipse(ctx, ex, -71 * k, 4 * k, mood === 'sorry' ? 3 * k : 5 * k);
+      ctx.fillStyle = INK;
+      ctx.fill();
+      ellipse(ctx, ex - 1 * k, -73 * k, 1.4 * k, 1.4 * k);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+    }
+    // 눈썹
+    ctx.beginPath();
+    ctx.moveTo(ex - 6 * k, (mood === 'sorry' ? -78 : -80) * k + (mood === 'sorry' ? s * 2 * k : 0));
+    ctx.lineTo(ex + 6 * k, (mood === 'sorry' ? -78 : -80) * k - (mood === 'sorry' ? s * 2 * k : 0));
+    ink(ctx, 2.4 * k);
+  }
+  // 볼
+  ctx.fillStyle = 'rgba(226,69,60,0.45)';
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(4 * k + s * 16 * k, -62 * k, 4.5 * k, 3.2 * k, 0, 0, TAU);
+    ctx.fill();
+  }
+  // 입(송곳니 하나)
+  ctx.beginPath();
+  if (mood === 'sorry') {
+    ctx.moveTo(-3 * k, -58 * k);
+    ctx.quadraticCurveTo(4 * k, -61 * k, 11 * k, -58 * k);
+    ink(ctx, 2.4 * k);
+  } else {
+    ctx.moveTo(-5 * k, -61 * k);
+    ctx.quadraticCurveTo(4 * k, mood === 'happy' ? -48 * k : -53 * k, 13 * k, -61 * k);
+    ctx.closePath();
+    fillInk(ctx, '#3a0d18', 2.2 * k);
+    ctx.fillStyle = '#fff6e6';
+    ctx.beginPath();
+    ctx.moveTo(7 * k, -61 * k);
+    ctx.lineTo(9 * k, -56 * k);
+    ctx.lineTo(11 * k, -61 * k);
+    ctx.fill();
+  }
+  // 손 + 금화
+  ellipse(ctx, 34 * k, -30 * k, 8 * k, 7 * k);
+  fillInk(ctx, '#e8a06a', 2.4 * k);
+  ctx.beginPath();
+  ctx.ellipse(36 * k, -42 * k, 8 * k, 6.5 * k, 0, 0, TAU);
+  fillInk(ctx, '#f0b82e', 2 * k);
+  ctx.beginPath();
+  ctx.moveTo(32 * k, -43 * k);
+  ctx.lineTo(40 * k, -41 * k);
+  ctx.lineWidth = 1.6 * k;
+  ctx.strokeStyle = '#8a5a10';
+  ctx.stroke();
+  ctx.restore();
+}

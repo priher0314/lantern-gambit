@@ -77,7 +77,7 @@ export function generateNight(run, stage, risky) {
     const lane = laneOrder[li % LANES];
     li++;
     if (i < firstShare) {
-      const row = Math.min(3, nextRow[lane]);
+      const row = Math.min(4, nextRow[lane]);
       nextRow[lane] += 2;
       waves[0].units.push([t === 'archer' ? 'archer' : t, lane, t === 'archer' ? 0 : row]);
     } else {
@@ -143,17 +143,20 @@ export function bankBattle(run, st) {
 
 export function rollShop(run, keepRerolls = 0) {
   const P = SHOP_PRICES;
-  const items = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id)), 2).map((id) => ({ id, price: P.relic }));
+  // 진열대는 단출하게: 유물 2칸(융합·강화가 가능하면 둘째 칸에), 소모품 1칸, 회복
+  const fresh = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id)), 2).map((id) => ({ id, price: P.relic }));
   const fuse = availableFusions(run);
   const upg = run.relics.filter((id) => !FUSIONS[id] && (run.relicLv[id] || 1) < 2);
+  const items = [fresh[0]].filter(Boolean);
   if (fuse.length) items.push({ id: 'fuse:' + fuse[0], price: P.fuse });
-  else if (upg.length) items.push({ id: 'up:' + upg[randInt(run, upg.length)], price: P.up });
+  else if (upg.length && randInt(run, 2)) items.push({ id: 'up:' + upg[randInt(run, upg.length)], price: P.up });
+  else if (fresh[1]) items.push(fresh[1]);
   const charms = Object.keys(REWARDS).filter((k) => REWARDS[k].sym);
-  items.push({ id: 'heal', price: P.heal });
-  items.push({ id: 'maxhp', price: P.maxhp });
-  items.push({ id: charms[randInt(run, charms.length)], price: P.charm });
   const trimmable = Object.keys(SYMBOLS).filter((s) => s !== 'counter' && run.strips.every((st) => st.filter((x) => x === s).length >= 2));
-  if (trimmable.length) items.push({ id: 'trim:' + trimmable[randInt(run, trimmable.length)], price: P.trim });
+  const extras = [{ id: 'maxhp', price: P.maxhp }, { id: charms[randInt(run, charms.length)], price: P.charm }];
+  if (trimmable.length) extras.push({ id: 'trim:' + trimmable[randInt(run, trimmable.length)], price: P.trim });
+  items.push(extras[randInt(run, extras.length)]);
+  items.push({ id: 'heal', price: P.heal });
   return { items: items.map((it) => ({ ...it, sold: false })), rerolls: keepRerolls };
 }
 

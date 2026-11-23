@@ -84,7 +84,6 @@ export function playRun(seed, P) {
     if (st.result === 'lose') return { win: false, reached, run };
     bankBattle(run, st);
     if (stage === RUN_LENGTH - 1) break;
-    if (run.def.risky) applyReward(run, rollRewards(run)[0]);
     shopBot(run);
     const paths = rollPaths(run);
     advance(run, paths.length > 1 && rand(r) < P.risk ? paths[1] : paths[0]);

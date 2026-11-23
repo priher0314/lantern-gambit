@@ -1,16 +1,18 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
 import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT } from './core/data.js';
-import { createRun, battleOptions, recordBattle, rollRewards, rollStartRelics, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop } from './core/run.js';
+import { createRun, battleOptions, recordBattle, rollStartRelics, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop } from './core/run.js';
 import { judge, lateLimit } from './core/timing.js';
 import { shotForReel, BINGO_LINES } from './core/slot.js';
 import { hashSeed } from './core/rng.js';
 import { FX } from './render/fx.js';
 import { W, computeLayout, cellPos, laneAt, reelRect, leverRect, bingoRect, slotCell, cabinetRect, trayRect, LANE_SPACING } from './render/layout.js';
 import { Renderer, REEL_CELL } from './render/scene.js';
+import { REEL_PEEK } from './render/layout.js';
+import { MODS } from './core/data.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const MODS_NAME = (m) => ({ fullMoon: '보름달', rage: '성난 밤', gust: '맞바람', fog: '안개' }[m] || m);
+const MODS_NAME = (m) => ({ fullMoon: '보름달', rage: '성난 밤', gust: '빠른 걸음', fog: '안개' }[m] || m);
 const ease = (t) => 1 - (1 - t) ** 3;
 
 const EL_COLORS = {
@@ -37,6 +39,16 @@ const CONCEPTS = {
     lines: [
       { label: '효과', text: '그 칸의 공격이 피해 +1, 효과 +1.' },
       { label: '얻기', text: '다시 돌리기 · 퍼펙트 막기/회피.' },
+    ],
+  },
+  coin: {
+    kicker: '알아두기', title: '코인 버는 법', color: '#ffd84a',
+    lines: [
+      { label: '연속 처치', text: '한 턴에 2마리째부터 +1, 4마리째부터 +2.' },
+      { label: '퍼펙트', text: '막기·회피를 정확히 하면 +1.' },
+      { label: '빙고', text: '한 줄마다 +1.' },
+      { label: '절약', text: '다시 돌리기를 안 쓴 턴에 +1.' },
+      { label: '클리어', text: '밤을 넘기면 보너스. 험한 길은 2배.' },
     ],
   },
   bingo: {
@@ -88,6 +100,7 @@ export class Game {
     this.pile = 0; // 쟁반에 쌓인 코인 수
     this.coinShown = 0; // 쌓였거나 날아가는 중인 코인 수
     this.flies = [];
+    this.landAt = {}; // 코인이 쟁반에 떨어진 시각(통통 튀는 연출)
     this.banked = false;
     this.mode = 'title';
     this.views = new Map();
@@ -564,6 +577,14 @@ export class Game {
       return;
     }
     if (!reacting && this.st) {
+      if (inR(trayRect(this.L), 2)) {
+        this.showCard(CONCEPTS.coin);
+        return;
+      }
+      if (this.st.def.mods.length && p.y >= this.L.hudH && p.y <= this.L.hudH + 30 && p.x < 300) {
+        this.showCard({ kicker: '험한 길', title: '이번 밤의 조건', color: '#ff9a8a', lines: this.st.def.mods.map((m) => ({ label: MODS[m].name, text: MODS[m].desc, color: '#ff9a8a' })) });
+        return;
+      }
       const shown = this.shownRelics;
       for (let i = 0; i < shown.length; i++) {
         if (inR(this.relicRect(i), 3)) {
@@ -591,7 +612,7 @@ export class Game {
     for (let i = 0; i < 3; i++) {
       const r = reelRect(this.L, i);
       if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h + 34) {
-        const row = clamp(Math.floor((p.y - r.y) / REEL_CELL), 0, 2);
+        const row = clamp(Math.floor((p.y - r.y - REEL_PEEK) / REEL_CELL), 0, 2);
         const st = this.st;
         if (st && p.y <= r.y + r.h && this.ui.phase === 'aim' && !this.busy) {
           const hits = (st.bingos || []).filter((b) => b.cells.some(([c, rr]) => c === i && rr === row))
@@ -1228,21 +1249,9 @@ export class Game {
       }
       this.store.save();
       this.mode = 'reward';
-      // 험한 길을 넘겼으면 전리품(무료 유물)을 먼저 고른 뒤 상점으로
+      // 밤을 넘기면 바로 상점으로(무료 보상은 없다: 유물은 코인으로 산다)
       const toShop = () => this.overlay.showShop(this.run, rollShop(this.run), bank, (id) => this.noteRelic(id), () => this.choosePath());
-      if (st.def.risky) {
-        this.overlay.showPick({
-          title: '전리품 하나를 고르세요',
-          req: '험한 길을 넘긴 보상',
-          ids: rollRewards(this.run),
-          go: '상점으로',
-          run: this.run,
-          used: meta.relicsUsed || [],
-        }, (id) => {
-          this.takeReward(id);
-          toShop();
-        });
-      } else toShop();
+      toShop();
     } else {
       const timeUp = st.loseReason === 'time';
       this.audio.play('lose');
@@ -1338,9 +1347,9 @@ export class Game {
       case 'turn':
         break;
       case 'coin': {
-        // 코인 획득: 번 만큼의 금화가 슬롯머신 위 쟁반으로 날아가 쌓인다
+        // 코인 획득: 왜 벌었는지 그 자리에 적고, 금화가 튀어 올랐다가 쟁반으로 빨려 들어간다
         this.coinPulse = 1;
-        const label = { combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어' }[ev.why] || '';
+        const label = { combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약(안 돌림)', clear: '클리어' }[ev.why] || '';
         const tr = trayRect(L);
         let sx = this.player.x;
         let sy = L.playerY - 60;
@@ -1352,13 +1361,28 @@ export class Game {
           const q = slotCell(L, 1, 1);
           sx = q.x;
           sy = q.y;
+        } else if (ev.why === 'clear') {
+          sx = W / 2;
+          sy = L.fieldTop + L.fieldH * 0.45;
         }
         for (let i = 0; i < ev.n; i++) {
-          const spot = this.coinSpot(this.coinShown + i);
-          this.flies.push({ sx: sx + (Math.random() - 0.5) * 24, sy: sy + (Math.random() - 0.5) * 16, tx: spot.x, ty: spot.y, rot: spot.rot, t: -i * 0.07, dur: 0.5, arc: 50 + Math.random() * 40 });
+          const idx = this.coinShown + i;
+          const spot = this.coinSpot(idx);
+          const side = Math.random() < 0.5 ? -1 : 1;
+          this.flies.push({
+            idx, sx, sy,
+            bx: sx + side * (30 + Math.random() * 50), by: sy - 60 - Math.random() * 50, // 튀어 오르는 꼭짓점
+            cx: spot.x + (Math.random() - 0.5) * 60, cy: spot.y - 110 - Math.random() * 40, // 쟁반 위에서 떨어지는 지점
+            tx: spot.x, ty: spot.y, rot: spot.rot, t: -i * 0.09, dur: 0.78 + Math.random() * 0.12,
+          });
         }
         this.coinShown += ev.n;
-        if (label) this.uiFx.text(tr.x + tr.w / 2 - 30, tr.y - 10, `${label} +${ev.n}`, { color: '#ffd84a', size: 16, font: 'num', life: 1.2, vy: -12 });
+        if (label) {
+          const txt = `${label} +${ev.n} 코인`;
+          if (v) fx.text(sx, sy - 74, txt, { color: '#ffd84a', size: 19, font: 'num', life: 1.3, vy: -26, delay: 0.15 });
+          else this.uiFx.text(Math.min(W - 110, Math.max(110, sx)), Math.min(sy - 30, tr.y - 14), txt, { color: '#ffd84a', size: 19, font: 'num', life: 1.4, vy: -16 });
+        }
+        this.conceptCard('coin');
         break;
       }
       case 'evolve': {
@@ -1465,7 +1489,7 @@ export class Game {
         this.audio.play('move', { hop: ev.hop });
         if (ev.gust) {
           const gp = this.impactPoint(v);
-          fx.text(gp.x, gp.y - 60, '맞바람', { color: '#c9e8ff', size: 18, font: 'num' });
+          fx.text(gp.x, gp.y - 60, '빠른 걸음', { color: '#c9e8ff', size: 18, font: 'num' });
         }
         if (ev.fromLane != null && ev.fromLane !== ev.lane) {
           const start2 = this.time;
@@ -2169,9 +2193,14 @@ export class Game {
     // 날아가는 코인 → 쟁반에 떨어지면 짤랑
     if (this.flies.length) {
       for (const f of this.flies) f.t += realDt;
-      const landedN = this.flies.filter((f) => f.t >= f.dur).length;
+      const landed = this.flies.filter((f) => f.t >= f.dur);
+      const landedN = landed.length;
       if (landedN) {
         this.flies = this.flies.filter((f) => f.t < f.dur);
+        for (const f of landed) {
+          this.landAt[f.idx] = this.now();
+          this.uiFx.burst(f.tx, f.ty, { n: 5, speed: 90, color: ['#ffe08a', '#ffffff'], kind: 'streak', size: 2.5, life: 0.25 });
+        }
         this.pile += landedN;
         this.audio.play('coin', { n: 1 + (this.pile % 4) });
         this.slotJolt = Math.max(this.slotJolt, 0.22);

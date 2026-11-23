@@ -1,6 +1,6 @@
 // 화면 그리기: 배경(미리 렌더), 전장, 캐릭터, 슬롯 사당, HUD, 버튼
 import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS } from '../core/data.js';
-import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL } from './layout.js';
+import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL, REEL_PEEK } from './layout.js';
 import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix } from './art.js';
 import { drawGlow } from './fx.js';
 
@@ -411,7 +411,13 @@ export class Renderer {
     ctx.fillRect(tr.x, tr.y, tr.w, 10);
     // 코인(아래쪽 것이 위에 겹치도록 y 순서로)
     const spots = [];
-    for (let i = 0; i < g.pile; i++) spots.push(g.coinSpot(i));
+    const tnow = g.now();
+    for (let i = 0; i < g.pile; i++) {
+      const s = g.coinSpot(i);
+      const age = g.landAt[i] != null ? (tnow - g.landAt[i]) / 1000 : 9;
+      if (age < 0.4) s.y -= Math.abs(Math.sin((age / 0.4) * Math.PI * 2)) * 7 * (1 - age / 0.4);
+      spots.push(s);
+    }
     spots.sort((a, b) => a.y - b.y);
     for (const s of spots) drawCoin(ctx, s.x, s.y, 8, s.rot, 1);
     ctx.restore();
@@ -440,9 +446,11 @@ export class Renderer {
     for (const f of g.flies) {
       if (f.t < 0) continue;
       const k = Math.min(1, f.t / f.dur);
-      const e = k * k * (3 - 2 * k);
-      const x = f.sx + (f.tx - f.sx) * e;
-      const y = f.sy + (f.ty - f.sy) * e - Math.sin(k * Math.PI) * f.arc;
+      // 처음엔 툭 튀어 오르고(느리게), 끝에는 쟁반으로 떨어진다(빠르게)
+      const e = k < 0.35 ? (k / 0.35) * 0.28 * (2 - k / 0.35) : 0.28 + 0.72 * ((k - 0.35) / 0.65) ** 2;
+      const m = 1 - e;
+      const x = m * m * m * f.sx + 3 * m * m * e * f.bx + 3 * m * e * e * f.cx + e * e * e * f.tx;
+      const y = m * m * m * f.sy + 3 * m * m * e * f.by + 3 * m * e * e * f.cy + e * e * e * f.ty;
       drawGlow(ctx, x, y, 14, '#ffd84a', 0.5);
       drawCoin(ctx, x, y, 8 + Math.sin(k * Math.PI) * 4, f.rot + k * 9, Math.abs(Math.cos(k * 14)) * 0.7 + 0.3);
     }
@@ -1537,6 +1545,7 @@ export class Renderer {
     const L = this.L;
     const st = g.st;
     const CELL = REEL_CELL;
+    const PEEK = REEL_PEEK;
     const shots = st && g.ui.phase !== 'spinning' && st.shots.length ? st.shots : null;
     const idle = ['enemy', 'react', 'counter', 'over', 'spin'].includes(g.ui.phase);
     const live = !!shots && !idle;
@@ -1600,27 +1609,28 @@ export class Renderer {
       }
       const blur = Math.min(1, Math.abs(reel.vel || 0) / 25);
       const base = Math.floor(reel.pos);
-      for (let j = -2; j <= 2; j++) {
+      for (let j = -3; j <= 3; j++) {
         const idx = base + j;
         const y = cy + (reel.pos - idx) * CELL;
         if (y < r.y - CELL || y > r.y + r.h + CELL) continue;
         const sym = strip[((idx % strip.length) + strip.length) % strip.length];
         const row = Math.round((y - cy) / CELL) + 1;
         const isMid = row === 1;
-        const inBingo = bingoCells.has(i + ',' + row);
+        const peek = row < 0 || row > 2; // 창 가장자리에 걸친 문양
+        const inBingo = !peek && bingoCells.has(i + ',' + row);
         ctx.save();
         ctx.translate(r.x + r.w / 2, y);
         if (blur > 0.05) ctx.scale(1, 1 + blur * 0.7);
-        ctx.globalAlpha = (1 - blur * 0.55) * (reel.spinning || isMid || inBingo ? 1 : 0.86);
+        ctx.globalAlpha = (1 - blur * 0.55) * (reel.spinning || isMid || inBingo ? 1 : peek ? 0.75 : 0.9);
         const gold = inBingo || (gilded && isMid && !used);
         ctx.fillStyle = gold && isMid && gilded ? '#fff6d0' : SYMBOLS[sym].tint;
         ctx.beginPath();
-        ctx.arc(0, 0, 23, 0, TAU);
+        ctx.arc(0, 0, 21, 0, TAU);
         ctx.fill();
         ctx.strokeStyle = gold ? '#b8791a' : 'rgba(23,13,34,0.25)';
         ctx.lineWidth = gold ? 4 : 2;
         ctx.stroke();
-        drawSymbol(ctx, sym, 0, 0, 17.5);
+        drawSymbol(ctx, sym, 0, 0, 16);
         ctx.restore();
       }
       // 금빛 반짝이
@@ -1636,10 +1646,13 @@ export class Renderer {
       }
       // 위·아래 줄: 살짝만 어둡게(잘 보이도록)
       const sh = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
-      sh.addColorStop(0, 'rgba(20,8,12,0.3)');
-      sh.addColorStop(0.3, 'rgba(20,8,12,0)');
-      sh.addColorStop(0.7, 'rgba(20,8,12,0)');
-      sh.addColorStop(1, 'rgba(20,8,12,0.3)');
+      // 둥근 통 느낌: 위·아래 끝으로 갈수록 어두워진다(걸친 문양은 보이되 한 발 물러나 보이게)
+      sh.addColorStop(0, 'rgba(20,8,12,0.72)');
+      sh.addColorStop(PEEK / r.h, 'rgba(20,8,12,0.22)');
+      sh.addColorStop(0.32, 'rgba(20,8,12,0)');
+      sh.addColorStop(0.68, 'rgba(20,8,12,0)');
+      sh.addColorStop(1 - PEEK / r.h, 'rgba(20,8,12,0.22)');
+      sh.addColorStop(1, 'rgba(20,8,12,0.72)');
       ctx.fillStyle = sh;
       ctx.fillRect(r.x, r.y, r.w, r.h);
       ctx.fillStyle = 'rgba(216,165,72,0.55)';
@@ -1670,7 +1683,7 @@ export class Renderer {
           ctx.fillStyle = 'rgba(15,8,18,0.34)';
           for (let row = 0; row < 3; row++) {
             if (selCells.has(i + ',' + row)) continue;
-            ctx.fillRect(r.x, r.y + row * CELL, r.w, CELL);
+            ctx.fillRect(r.x, r.y + PEEK + row * CELL, r.w, CELL);
           }
         }
       }
@@ -1720,7 +1733,7 @@ export class Renderer {
       for (const key of selCells) {
         const [c, row] = key.split(',').map(Number);
         const r = reelRect(L, c);
-        const y0 = r.y + row * CELL;
+        const y0 = r.y + PEEK + row * CELL;
         drawGlow(ctx, r.x + r.w / 2, y0 + CELL / 2, 62, selShot.gild ? '#ffd84a' : SYMBOLS[selShot.symbol].fx, 0.3 * pulse);
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 4;
