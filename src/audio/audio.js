@@ -161,14 +161,19 @@ export class Audio {
     this.noise({ t: 0.16, dur: 0.05, vol: 0.3, f: 2600, q: 2 });
   }
   s_coin({ n = 1 } = {}) {
-    // 금속 조각이 맞부딪치는 "챙그랑": 서로 어긋난 높은 배음 여러 개 + 짧은 타격음, 두 번 연달아
-    const base = 2300 + ((n * 137) % 5) * 140;
-    for (const [t0, v] of [[0, 1], [0.045, 0.7]]) {
-      for (const [m, d, a] of [[1, 0.22, 0.05], [1.48, 0.17, 0.04], [2.09, 0.13, 0.032], [2.83, 0.09, 0.022]]) {
-        this.tone({ type: 'sine', f: base * m * (1 + (Math.random() - 0.5) * 0.02), t: t0, dur: d, vol: a * v, attack: 0.001 });
+    // 동전 여러 닢이 쏟아져 부딪치는 "짜라랑": 높이가 조금씩 다른 금속음이 빠르게 이어지고 끝이 길게 울린다
+    const base = 2500 + ((n * 137) % 5) * 150;
+    const hits = [[0, 1, 1], [0.035, 0.8, 1.12], [0.075, 0.9, 0.94], [0.12, 0.65, 1.26], [0.17, 0.5, 1.06], [0.23, 0.36, 1.19]];
+    for (const [t0, v, p] of hits) {
+      const f0 = base * p * (1 + (Math.random() - 0.5) * 0.04);
+      for (const [m, d, a] of [[1, 0.16, 0.045], [1.51, 0.12, 0.034], [2.13, 0.09, 0.026], [2.9, 0.06, 0.018]]) {
+        this.tone({ type: 'sine', f: f0 * m, t: t0, dur: d, vol: a * v, attack: 0.001 });
       }
-      this.noise({ t: t0, dur: 0.018, vol: 0.12 * v, type: 'highpass', f: 6000 });
+      this.noise({ t: t0, dur: 0.014, vol: 0.1 * v, type: 'highpass', f: 6500 });
     }
+    // 여운
+    this.tone({ type: 'sine', f: base * 1.5, t: 0.2, dur: 0.5, vol: 0.02, attack: 0.02 });
+    this.tone({ type: 'sine', f: base * 2.02, t: 0.22, dur: 0.42, vol: 0.014, attack: 0.02 });
   }
   s_cutin({ big = false } = {}) {
     this.noise({ dur: 0.35, vol: 0.3, type: 'bandpass', f: 400, f2: 3200, q: 1.2 });
@@ -188,9 +193,16 @@ export class Audio {
     this.gong(0, 0.3);
   }
   s_venom() {
-    this.noise({ dur: 0.3, vol: 0.25, type: 'bandpass', f: 500, f2: 1600, q: 4 });
-    this.tone({ type: 'sine', f: 300, f2: 140, dur: 0.25, vol: 0.18 });
-    for (let i = 0; i < 4; i++) this.tone({ type: 'sine', f: 500 + Math.random() * 700, f2: 1500, t: 0.05 + i * 0.05, dur: 0.06, vol: 0.07 });
+    // 물약병: 유리 "달그락" → 병 속 액체가 "뽀글뽀글"
+    for (const [t0, f] of [[0, 2900], [0.05, 3500]]) {
+      this.tone({ type: 'sine', f, t: t0, dur: 0.09, vol: 0.07, attack: 0.001 });
+      this.tone({ type: 'sine', f: f * 1.47, t: t0, dur: 0.06, vol: 0.04, attack: 0.001 });
+    }
+    for (let i = 0; i < 6; i++) {
+      const f = 240 + Math.random() * 260;
+      this.tone({ type: 'sine', f, f2: f * 2.3, t: 0.07 + i * 0.045 + Math.random() * 0.015, dur: 0.055, vol: 0.16, attack: 0.004 });
+    }
+    this.noise({ t: 0.05, dur: 0.3, vol: 0.1, type: 'bandpass', f: 500, f2: 1100, q: 6 });
   }
   s_shieldBreak() {
     this.noise({ dur: 0.35, vol: 0.5, type: 'bandpass', f: 1800, f2: 500, q: 0.8 });
@@ -231,40 +243,55 @@ export class Audio {
     this.tone({ type: 'sine', f: 1200, dur: 0.05, vol: 0.05 });
   }
   s_blade({ strong = false } = {}) {
-    this.noise({ dur: 0.18, vol: 0.35, type: 'highpass', f: 1500, f2: 6000, q: 0.7 });
-    this.tone({ type: 'sawtooth', f: 1800, f2: 600, dur: 0.12, vol: 0.05, filter: { f: 4000 } });
-    if (strong) this.noise({ t: 0.03, dur: 0.3, vol: 0.25, type: 'bandpass', f: 900, f2: 4000, q: 1 });
+    // 칼바람 "쉬익" + 칼날 울림 "챙"
+    this.noise({ dur: 0.16, vol: 0.32, type: 'bandpass', f: 1800, f2: 7500, q: 1.6 });
+    for (const [f, d] of [[3300, 0.28], [4950, 0.2], [6700, 0.13]]) this.tone({ type: 'sine', f, t: 0.05, dur: d, vol: 0.035, attack: 0.001 });
+    if (strong) {
+      this.noise({ t: 0.04, dur: 0.3, vol: 0.24, type: 'bandpass', f: 1200, f2: 5200, q: 1.2 });
+      this.tone({ type: 'sine', f: 2480, t: 0.08, dur: 0.45, vol: 0.03, attack: 0.001 });
+    }
   }
   s_wave() {
-    this.tone({ type: 'sine', f: 180, f2: 60, dur: 0.4, vol: 0.4 });
-    this.noise({ dur: 0.45, vol: 0.25, type: 'lowpass', f: 1400, f2: 200 });
+    // 물결: 밀려오는 "쏴아" + 묵직한 물 덩어리
+    this.noise({ dur: 0.55, vol: 0.3, type: 'lowpass', f: 300, f2: 2400, q: 0.8, attack: 0.12 });
+    this.noise({ t: 0.25, dur: 0.4, vol: 0.2, type: 'bandpass', f: 2600, f2: 700, q: 0.7, attack: 0.05 });
+    this.tone({ type: 'sine', f: 150, f2: 55, dur: 0.45, vol: 0.34 });
   }
   s_burst() {
     this.tone({ type: 'sine', f: 120, f2: 40, dur: 0.5, vol: 0.55 });
     this.noise({ dur: 0.5, vol: 0.3, type: 'lowpass', f: 2600, f2: 120 });
   }
   s_frost() {
-    [2093, 2637, 3136].forEach((f, k) => this.tone({ type: 'sine', f, t: k * 0.025, dur: 0.3, vol: 0.06 }));
-    this.noise({ dur: 0.25, vol: 0.12, type: 'highpass', f: 5000 });
+    // 얼음: 유리처럼 맑은 "쨍" + 서리가 번지는 "사각사각"
+    [2794, 3520, 4186, 5274].forEach((f, k) => this.tone({ type: 'sine', f, t: k * 0.03, dur: 0.34 - k * 0.04, vol: 0.05, attack: 0.001 }));
+    for (let i = 0; i < 7; i++) this.noise({ t: 0.04 + i * 0.028 + Math.random() * 0.01, dur: 0.018, vol: 0.13, type: 'highpass', f: 6000 + Math.random() * 2500 });
+    this.noise({ dur: 0.3, vol: 0.07, type: 'highpass', f: 7000 });
   }
   s_freeze() {
     this.noise({ dur: 0.35, vol: 0.2, type: 'bandpass', f: 4200, q: 3 });
     [1568, 2349].forEach((f, k) => this.tone({ type: 'triangle', f, t: 0.03 * k, dur: 0.4, vol: 0.06 }));
   }
   s_spark() {
+    // 번개: "찌지직" 튀는 방전음(불규칙한 짧은 파열) + 낮게 웅웅거리는 전류
     const c = this.ctx;
     const st = c.currentTime;
     const o = c.createOscillator();
     o.type = 'sawtooth';
     const g = c.createGain();
-    for (let i = 0; i < 10; i++) o.frequency.setValueAtTime(120 + Math.random() * 900, st + i * 0.018);
-    g.gain.setValueAtTime(0.14, st);
-    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.22);
-    o.connect(g);
+    for (let i = 0; i < 16; i++) o.frequency.setValueAtTime(90 + Math.random() * 1500, st + i * 0.021);
+    g.gain.setValueAtTime(0.0001, st);
+    for (let i = 0; i < 16; i++) g.gain.setValueAtTime(Math.random() < 0.28 ? 0.008 : 0.07 + Math.random() * 0.07, st + i * 0.021);
+    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.38);
+    const hp = c.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 700;
+    o.connect(hp);
+    hp.connect(g);
     g.connect(this.sfxBus);
     o.start(st);
-    o.stop(st + 0.25);
-    this.noise({ dur: 0.08, vol: 0.35, type: 'highpass', f: 3000 });
+    o.stop(st + 0.4);
+    for (let i = 0; i < 9; i++) this.noise({ t: i * 0.036 + Math.random() * 0.02, dur: 0.012 + Math.random() * 0.022, vol: 0.2 + Math.random() * 0.14, type: 'highpass', f: 3500 + Math.random() * 3500 });
+    this.tone({ type: 'square', f: 58, dur: 0.34, vol: 0.05, filter: { f: 420 } });
   }
   s_chain() {
     this.noise({ dur: 0.07, vol: 0.25, type: 'highpass', f: 2500 });
@@ -276,16 +303,46 @@ export class Audio {
   s_heal() {
     [0, 4, 7, 12].forEach((n, k) => this.tone({ type: 'triangle', f: 523 * 2 ** (n / 12), t: k * 0.07, dur: 0.4, vol: 0.08 }));
   }
-  s_hit({ dmg = 2 } = {}) {
-    // 저음 몸통 + 찢어지는 중음 + 짧은 "딱" → 피해가 클수록 낮고 크게
+  s_hit({ dmg = 2, el = null } = {}) {
+    // 공통: 묵직한 몸통(피해가 클수록 낮고 크게). 그 위에 원소마다 다른 소리를 얹는다.
     const v = Math.min(0.85, 0.4 + dmg * 0.07);
     const f = Math.max(90, 190 - dmg * 12);
-    this.tone({ type: 'sine', f, f2: 38, dur: 0.22 + dmg * 0.012, vol: v });
-    this.tone({ type: 'square', f: f * 1.5, f2: 60, dur: 0.06, vol: v * 0.16, filter: { f: 1400 } });
-    this.noise({ dur: 0.035, vol: v * 0.8, type: 'highpass', f: 2800 });
-    this.noise({ t: 0.01, dur: 0.14, vol: v * 0.55, type: 'bandpass', f: 900, f2: 300, q: 0.7 });
-    this.tone({ type: 'sawtooth', f: 70, f2: 30, dur: 0.16, vol: v * 0.35, filter: { f: 260 } }); // 배에 울리는 저음
-    this.noise({ t: 0.05, dur: 0.22, vol: v * 0.18, type: 'lowpass', f: 500 }); // 잔향
+    const body = el && el !== 'counter' ? 0.6 : 1; // 원소 소리가 있을 땐 몸통을 줄여 구분이 들리게
+    this.tone({ type: 'sine', f, f2: 38, dur: 0.22 + dmg * 0.012, vol: v * body });
+    this.tone({ type: 'sawtooth', f: 70, f2: 30, dur: 0.16, vol: v * 0.35 * body, filter: { f: 260 } }); // 배에 울리는 저음
+    this.noise({ t: 0.05, dur: 0.22, vol: v * 0.16 * body, type: 'lowpass', f: 500 }); // 잔향
+    switch (el) {
+      case 'blade': // 베는 소리: 날카로운 "촥" + 쇠 울림
+        this.noise({ dur: 0.07, vol: v * 0.7, type: 'highpass', f: 4200 });
+        this.noise({ t: 0.01, dur: 0.12, vol: v * 0.4, type: 'bandpass', f: 5200, f2: 1700, q: 1.4 });
+        this.tone({ type: 'sine', f: 3700, t: 0.01, dur: 0.2, vol: 0.04, attack: 0.001 });
+        break;
+      case 'wave': // 물벼락 "철썩"
+        this.noise({ dur: 0.26, vol: v * 0.6, type: 'lowpass', f: 3400, f2: 380, q: 0.6 });
+        this.noise({ t: 0.05, dur: 0.24, vol: v * 0.28, type: 'bandpass', f: 1500, f2: 500, q: 0.9 });
+        break;
+      case 'frost':
+      case 'ice': // 얼음 "쩍" + 맑은 잔울림
+        this.noise({ dur: 0.02, vol: v * 0.7, type: 'highpass', f: 7000 });
+        for (let i = 0; i < 4; i++) this.noise({ t: 0.02 + i * 0.022, dur: 0.012, vol: v * 0.3, type: 'highpass', f: 5500 + Math.random() * 3000 });
+        [3136, 4186].forEach((ff, k) => this.tone({ type: 'sine', f: ff, t: k * 0.02, dur: 0.24, vol: 0.045, attack: 0.001 }));
+        break;
+      case 'spark': // 감전 "파지직"
+        for (let i = 0; i < 6; i++) this.noise({ t: i * 0.026 + Math.random() * 0.012, dur: 0.012 + Math.random() * 0.016, vol: v * (0.5 - i * 0.05), type: 'highpass', f: 3200 + Math.random() * 4000 });
+        this.tone({ type: 'sawtooth', f: 1400 + Math.random() * 600, f2: 160, dur: 0.11, vol: 0.06, filter: { type: 'highpass', f: 600 } });
+        break;
+      case 'venom': // 끈적한 "뿌직" + 방울
+        this.noise({ dur: 0.16, vol: v * 0.45, type: 'bandpass', f: 420, f2: 1250, q: 5 });
+        for (let i = 0; i < 3; i++) {
+          const bf = 300 + Math.random() * 280;
+          this.tone({ type: 'sine', f: bf, f2: bf * 2.1, t: 0.03 + i * 0.05, dur: 0.05, vol: 0.13 });
+        }
+        break;
+      default: // 되치기 등: 단단한 "딱"
+        this.tone({ type: 'square', f: f * 1.5, f2: 60, dur: 0.06, vol: v * 0.16, filter: { f: 1400 } });
+        this.noise({ dur: 0.035, vol: v * 0.8, type: 'highpass', f: 2800 });
+        this.noise({ t: 0.01, dur: 0.14, vol: v * 0.55, type: 'bandpass', f: 900, f2: 300, q: 0.7 });
+    }
   }
   s_block() {
     this.tone({ type: 'square', f: 300, f2: 280, dur: 0.12, vol: 0.08 });

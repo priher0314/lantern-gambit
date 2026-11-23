@@ -1,6 +1,6 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
-import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT } from './core/data.js';
+import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT, MAX_TIER } from './core/data.js';
 import { createRun, battleOptions, recordBattle, rollStartChoices, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop, tutorialNight } from './core/run.js';
 import { SAVE_VERSION } from './save.js';
 import { setLang } from './i18n.js';
@@ -10,7 +10,7 @@ import { hashSeed } from './core/rng.js';
 import { FX } from './render/fx.js';
 import { W, computeLayout, cellPos, laneAt, reelRect, leverRect, bingoRect, slotCell, cabinetRect, trayRect, LANE_SPACING } from './render/layout.js';
 import { Renderer, REEL_CELL } from './render/scene.js';
-import { REEL_PEEK } from './render/layout.js';
+import { REEL_PEEK, computeWideLayout, toScreen, fromScreen, WIDE_W } from './render/layout.js';
 import { MODS } from './core/data.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -46,10 +46,10 @@ const CONCEPTS = {
   coin: {
     kicker: '알아두기', title: '코인 버는 법', color: '#ffd84a',
     lines: [
-      { label: '연속 처치', text: '한 턴에 2마리째부터 +1, 4마리째부터 +2.' },
+      { label: '연속 처치', text: '한 턴에 3마리째부터 +1, 5마리째부터 +2.' },
       { label: '퍼펙트', text: '막기·회피를 정확히 하면 +1.' },
       { label: '빙고', text: '한 줄마다 +1.' },
-      { label: '절약', text: '다시 돌리기를 안 쓴 턴에 +1.' },
+      { label: '절약', text: '밤 내내 다시 돌리기를 안 쓰면 클리어 때 +3.' },
       { label: '클리어', text: '밤을 넘기면 보너스. 험한 길은 2배.' },
     ],
   },
@@ -146,23 +146,32 @@ export class Game {
     // 탭이 숨겨진 상태로 로드되면 크기가 0일 수 있다 → 기본값으로 대체
     const vw = window.innerWidth || document.documentElement.clientWidth || 540;
     const vh = window.innerHeight || document.documentElement.clientHeight || 960;
-    const H = clamp(Math.round((W * vh) / vw), 960, 1200);
-    const scale = Math.min(vw / W, vh / H);
+    // 화면 방향: 세로(기본) / 가로(왼쪽 전장 + 오른쪽 슬롯)
+    const wide = this.settings.layout === 'wide';
+    let scale;
+    if (wide) {
+      const SH = clamp(Math.round((WIDE_W * vh) / vw), 580, 760);
+      scale = Math.min(vw / WIDE_W, vh / SH);
+      this.L = computeWideLayout(SH);
+    } else {
+      const H = clamp(Math.round((W * vh) / vw), 960, 1200);
+      scale = Math.min(vw / W, vh / H);
+      this.L = computeLayout(H);
+    }
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     this.cssScale = scale;
-    this.L = computeLayout(H);
     this.renderer.resize(this.L, scale * dpr);
-    this.canvas.style.width = `${W * scale}px`;
-    this.canvas.style.height = `${H * scale}px`;
+    this.canvas.style.width = `${this.L.SW * scale}px`;
+    this.canvas.style.height = `${this.L.SH * scale}px`;
     this.gearRect = { x: W - 50, y: 12, w: 40, h: 42 };
     this.helpRect = { x: W - 96, y: 12, w: 40, h: 42 };
-    this.overlay.fit(W * scale, H * scale, scale);
+    this.overlay.fit(this.L.SW * scale, this.L.SH * scale, scale, wide);
     if (!this.player.x) this.player.x = W / 2;
   }
 
   toLogical(clientX, clientY) {
     const r = this.canvas.getBoundingClientRect();
-    return { x: ((clientX - r.left) / r.width) * W, y: ((clientY - r.top) / r.height) * this.L.H };
+    return fromScreen(this.L, ((clientX - r.left) / r.width) * this.L.SW, ((clientY - r.top) / r.height) * this.L.SH) || { x: -999, y: -999 };
   }
 
   // ─────────────── 타이틀 장면 ───────────────
@@ -194,7 +203,10 @@ export class Game {
     this.audio.unlock();
     this.audio.startBgm();
     const s = seed ?? hashSeed(String(Date.now()));
-    this.run = createRun(s);
+    const meta0 = this.store.meta;
+    const first = !meta0.tutorialDone;
+    // 단계와 가져온 유물(첫 판 따라 하기에서는 쓰지 않는다)
+    this.run = createRun(s, first ? {} : { tier: meta0.tier || 0, heirloom: meta0.heirloom || null });
     // 개발용: ?stage=2 로 특정 전투부터 시작
     const devStage = Number(new URLSearchParams(location.search).get('stage'));
     if (devStage > 0 && devStage < RUN_LENGTH) {
@@ -280,7 +292,7 @@ export class Game {
 
   // ───── 코인 쟁반 ─────
   trayTarget() {
-    return (this.run ? this.run.coins : 0) + (this.st && this.mode === 'battle' ? this.st.coins : 0);
+    return (this.run ? this.run.coins : 0) + (this.st && this.mode === 'battle' && !this.banked ? this.st.coins : 0);
   }
 
   // i번째 코인이 놓일 자리(같은 번호는 항상 같은 자리 → 쌓인 모양이 유지된다)
@@ -503,7 +515,7 @@ export class Game {
     this.ui = { phase: 'busy', sel: null, hoverLane: -1, armedLane: -1, preview: null, react: null, counter: null };
     this.busy = true;
     this.refresh();
-    this.showBanner(`${def.night} · ${def.name}`, def.intro + (def.mods && def.mods.length ? '  ·  조건: ' + def.mods.map((m) => MODS_NAME(m)).join(', ') : ''), 2.4);
+    this.showBanner(`${this.run.tier ? `${this.run.tier + 1}단계 · ` : ''}${def.night} · ${def.name}`, def.intro + (def.mods && def.mods.length ? '  ·  조건: ' + def.mods.map((m) => MODS_NAME(m)).join(', ') : ''), 2.4);
     this.audio.play('turn');
     await this.wait(500);
     await this.playEvents(events);
@@ -1342,14 +1354,32 @@ export class Game {
       this.audio.play('win');
       this.showBanner('밤을 넘겼다', `${this.def.night} 클리어`, 1.8, '#ffe08a', 44);
       recordBattle(this.run, st);
+      // 날아오는 코인이 전부 쟁반에 떨어질 때까지 기다린다
+      const settle = async () => {
+        for (let i = 0; i < 80 && this.flies.length; i++) await this.waitReal(50);
+      };
+      await settle();
+      const earned = st.coins;
       const bank = bankBattle(this.run, st);
+      // 험한 길 배율로 더 받은 몫도 눈앞에서 들어온다
+      if (bank.gained > earned) {
+        this.run.coins -= bank.gained; // 연출 중에는 쟁반 목표가 겹치지 않게 잠시 빼 둔다
+        await this.playEvent({ type: 'coin', n: bank.gained - earned, why: 'risky' });
+        this.run.coins += bank.gained;
+        this.coinShown = this.run.coins;
+        await settle();
+      }
       this.banked = true;
       const last = this.run.stage >= RUN_LENGTH - 1;
       if (last) meta.bestScore = Math.max(meta.bestScore || 0, this.run.totals.score);
-      await this.waitReal(1700);
+      await this.waitReal(1300);
       meta.best = Math.max(meta.best || 0, this.run.stage + 1);
       if (last) {
         meta.wins = (meta.wins || 0) + 1;
+        // 지금 단계를 넘겼으면 다음 단계가 열린다
+        const tier = this.run.tier || 0;
+        this.run.unlocked = tier >= (meta.tier || 0) && tier < MAX_TIER;
+        if (this.run.unlocked) meta.tier = tier + 1;
         this.store.run = null;
         this.store.save();
         this.mode = 'result';
@@ -1413,7 +1443,7 @@ export class Game {
   impactPoint(v) {
     const p = this.renderer.viewPos(v);
     const h = { kasa: 42, mask: 46, archer: 48, elder: 48, bomber: 40, healer: 40, boar: 34 }[v.type] || 40;
-    return { x: p.x, y: p.y - h * p.k, k: p.k };
+    return { x: p.x, y: p.y - h * p.k * 0.86, k: p.k };
   }
 
   playerMuzzle() {
@@ -1459,7 +1489,7 @@ export class Game {
       case 'coin': {
         // 코인 획득: 왜 벌었는지 그 자리에 적고, 금화가 튀어 올랐다가 쟁반으로 빨려 들어간다
         this.coinPulse = 1;
-        const label = { combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약(안 돌림)', clear: '클리어', elite: '정예 처치' }[ev.why] || '';
+        const label = { combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약(한 번도 안 돌림)', clear: '클리어', elite: '정예 처치', risky: '험한 길 보너스' }[ev.why] || '';
         const tr = trayRect(L);
         let sx = this.player.x;
         let sy = L.playerY - 60;
@@ -1479,17 +1509,20 @@ export class Game {
           const idx = this.coinShown + i;
           const spot = this.coinSpot(idx);
           const side = Math.random() < 0.5 ? -1 : 1;
+          const a = toScreen(L, sx, sy);
+          const b = toScreen(L, spot.x, spot.y);
           this.flies.push({
-            idx, sx, sy,
-            bx: sx + side * (30 + Math.random() * 50), by: sy - 60 - Math.random() * 50, // 튀어 오르는 꼭짓점
-            cx: spot.x + (Math.random() - 0.5) * 60, cy: spot.y - 110 - Math.random() * 40, // 쟁반 위에서 떨어지는 지점
-            tx: spot.x, ty: spot.y, rot: spot.rot, t: -i * 0.09, dur: 0.78 + Math.random() * 0.12,
+            idx, sx: a.x, sy: a.y,
+            bx: a.x + side * (30 + Math.random() * 50), by: a.y - 60 - Math.random() * 50, // 튀어 오르는 꼭짓점
+            cx: b.x + (Math.random() - 0.5) * 60, cy: b.y - 110 - Math.random() * 40, // 쟁반 위에서 떨어지는 지점
+            tx: b.x, ty: b.y, lx: spot.x, ly: spot.y, rot: spot.rot, t: -i * 0.09, dur: 0.78 + Math.random() * 0.12,
           });
         }
         this.coinShown += ev.n;
         if (label) {
           const txt = `${label} +${ev.n} 코인`;
           if (v) fx.text(sx, sy - 74, txt, { color: '#ffd84a', size: 19, font: 'num', life: 1.3, vy: -26, delay: 0.15 });
+          else if (sy < L.info.y) fx.text(Math.min(W - 110, Math.max(110, sx)), sy - 30, txt, { color: '#ffd84a', size: 19, font: 'num', life: 1.4, vy: -16 });
           else this.uiFx.text(Math.min(W - 110, Math.max(110, sx)), Math.min(sy - 30, tr.y - 14), txt, { color: '#ffd84a', size: 19, font: 'num', life: 1.4, vy: -16 });
         }
         this.conceptCard('coin');
@@ -2189,7 +2222,7 @@ export class Game {
     fx.text(ip.x + (Math.random() - 0.5) * 22, ip.y - 50, `${ev.dmg}`, {
       color: ev.dmg >= 5 ? '#ffe08a' : '#ffffff', size: 32 + Math.min(26, ev.dmg * 3), font: 'num', vy: -110,
     });
-    this.audio.play('hit', { dmg: ev.dmg });
+    this.audio.play('hit', { dmg: ev.dmg, el: ev.el });
     this.hitstop = Math.max(this.hitstop, minor ? 0.045 : Math.min(0.22, 0.09 + ev.dmg * 0.02));
     fx.shake(strong ? 3 : minor ? 1 : 2);
     if (!minor) fx.punchIn(Math.min(0.035, 0.01 + ev.dmg * 0.004));
@@ -2379,7 +2412,7 @@ export class Game {
         this.flies = this.flies.filter((f) => f.t < f.dur);
         for (const f of landed) {
           this.landAt[f.idx] = this.now();
-          this.uiFx.burst(f.tx, f.ty, { n: 5, speed: 90, color: ['#ffe08a', '#ffffff'], kind: 'streak', size: 2.5, life: 0.25 });
+          this.uiFx.burst(f.lx, f.ly, { n: 5, speed: 90, color: ['#ffe08a', '#ffffff'], kind: 'streak', size: 2.5, life: 0.25 });
         }
         this.pile += landedN;
         this.audio.play('coin', { n: 1 + (this.pile % 4) });

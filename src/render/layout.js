@@ -20,7 +20,37 @@ export function computeLayout(H) {
   L.fieldH = L.fieldBottom - L.fieldTop;
   L.ch = L.fieldH / ROWS;
   L.cx = W / 2;
+  L.SW = W;
+  L.SH = H;
   return L;
+}
+
+export const UI_H = 444; // 안내 줄 + 슬롯 + 버튼의 높이
+export const WIDE_W = W * 2;
+
+// 가로형: 화면 높이 SH만큼의 전장 + 오른쪽 칸. 내부 좌표의 split(=안내 줄 위쪽) 아래가 오른쪽 칸으로 간다.
+export function computeWideLayout(SH) {
+  const L = computeLayout(SH + UI_H - 30); // 주인공 발밑 단이 잘리지 않게 전장을 조금 올린다
+  L.wide = true;
+  L.SW = WIDE_W;
+  L.SH = SH;
+  L.split = L.info.y;
+  L.uiY = Math.round((SH - UI_H) / 2);
+  return L;
+}
+
+// 내부 좌표 → 화면 좌표
+export function toScreen(L, x, y) {
+  if (!L.wide || y < L.split) return { x, y };
+  return { x: x + W, y: y - L.split + L.uiY };
+}
+
+// 화면 좌표 → 내부 좌표(빈 곳이면 null)
+export function fromScreen(L, sx, sy) {
+  if (!L.wide) return { x: sx, y: sy };
+  if (sx < W) return { x: sx, y: Math.min(sy, L.split - 0.01) };
+  const y = sy - L.uiY + L.split;
+  return y >= L.split ? { x: sx - W, y } : null;
 }
 
 export function rowScale(L, rowF) {

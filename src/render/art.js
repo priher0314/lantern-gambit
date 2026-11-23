@@ -4,6 +4,8 @@
 import { drawGlow } from './fx.js';
 
 export const INK = '#170d22';
+// 위에서 내려다보는 정도. 캐릭터의 키를 줄이고(y) 옆으로 살짝 넓힌다(x). 발 위치는 그대로다.
+export const TILT = { x: 1.07, y: 0.8 };
 const TAU = Math.PI * 2;
 
 // ───── 색 도우미 ─────
@@ -58,9 +60,9 @@ function ellipse(ctx, x, y, rx, ry, rot = 0) {
   ctx.beginPath();
   ctx.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), rot, 0, TAU);
 }
-function shadow(ctx, w, alpha = 0.38) {
+function shadow(ctx, w, alpha = 0.4) {
   ctx.fillStyle = `rgba(5,2,15,${alpha})`;
-  ellipse(ctx, 0, 0, w, w * 0.44);
+  ellipse(ctx, 0, 0, w * 1.08, w * 0.58);
   ctx.fill();
 }
 function frostOverlay(ctx, k, h) {
@@ -172,7 +174,7 @@ export function drawKasa(ctx, x, y, k, a) {
   const rimPts = [];
   for (let i = 0; i <= ribs; i++) {
     const u = i / ribs;
-    rimPts.push([-W + 2 * W * u, rim + Math.sin(u * Math.PI) * 15 * k * (1 - close * 0.6)]);
+    rimPts.push([-W + 2 * W * u, rim + Math.sin(u * Math.PI) * 20 * k * (1 - close * 0.6)]);
   }
   const dome = () => {
     ctx.beginPath();
@@ -210,7 +212,7 @@ export function drawKasa(ctx, x, y, k, a) {
   ctx.fill();
   ctx.restore();
   // 살: 꼭지(갓 윗면 한가운데)에서 테두리로 퍼진다
-  const apexY = top + H * 0.24;
+  const apexY = top + H * 0.3;
   ctx.lineWidth = 1.3 * k;
   ctx.strokeStyle = 'rgba(23,13,34,0.6)';
   for (let i = 0; i <= ribs; i++) {
@@ -219,6 +221,15 @@ export function drawKasa(ctx, x, y, k, a) {
     ctx.quadraticCurveTo(rimPts[i][0] * 0.62, (apexY + rimPts[i][1]) / 2 - H * 0.12, rimPts[i][0], rimPts[i][1]);
     ctx.stroke();
   }
+  ctx.save();
+  dome();
+  ctx.clip();
+  ctx.lineWidth = 2.4 * k;
+  ctx.strokeStyle = T('#f3d38a');
+  ctx.beginPath();
+  ctx.ellipse(0, apexY + 2 * k, W * 0.5, H * 0.3, 0, 0, TAU);
+  ctx.stroke();
+  ctx.restore();
   dome();
   ink(ctx, 3 * k);
   // 꼭지(위에서 보이는 둥근 마개)
@@ -228,7 +239,7 @@ export function drawKasa(ctx, x, y, k, a) {
   ctx.fillStyle = T('#f3d38a');
   ctx.fill();
   // 눈
-  const ey = rim - H * 0.3;
+  const ey = rim - H * 0.22;
   const er = 11 * k * (1 - close * 0.25);
   ellipse(ctx, 0, ey, er, er * 1.1);
   fillInk(ctx, T('#fff6e6'), 2.6 * k);
@@ -247,7 +258,7 @@ export function drawKasa(ctx, x, y, k, a) {
     ink(ctx, 3 * k);
   }
   // 입
-  const my = rim + 4 * k;
+  const my = rim + 8 * k;
   ctx.beginPath();
   ctx.moveTo(-12 * k * (1 - close * 0.4), my - 3 * k);
   ctx.quadraticCurveTo(0, my + 7 * k, 12 * k * (1 - close * 0.4), my - 3 * k);
@@ -487,9 +498,9 @@ export function drawArcher(ctx, x, y, k, a) {
   ctx.roundRect(-14 * k, 20 * k, 28 * k, 8 * k, 3 * k);
   fillInk(ctx, T('#3a2418'), 2.4 * k);
   // 뚜껑(위에서 보여 둥근 판으로 보인다)
-  ellipse(ctx, 0, -23 * k, 18 * k, 8 * k);
+  ellipse(ctx, 0, -22 * k, 21 * k, 11 * k);
   fillInk(ctx, T('#3a2418'), 2.4 * k);
-  ellipse(ctx, 0, -24.5 * k, 11 * k, 4.2 * k);
+  ellipse(ctx, 0, -24 * k, 13 * k, 6 * k);
   ctx.fillStyle = T('#6a4630');
   ctx.fill();
   ctx.beginPath();
@@ -687,6 +698,7 @@ export function drawPlayer(ctx, x, y, k, a) {
   if (pose === 'dodge') lean += (a.dodgeDir || 1) * 0.3 * Math.sin(pt * Math.PI);
   ctx.translate(0, bob);
   ctx.rotate(lean);
+  ctx.scale(TILT.x, TILT.y + 0.04);
   // 목도리 꼬리(바람에 펄럭)
   const wv = Math.sin(t * 4) * 6 * k;
   ctx.beginPath();
@@ -726,11 +738,11 @@ export function drawPlayer(ctx, x, y, k, a) {
   ellipse(ctx, 0, -62 * k, 10 * k, 9 * k);
   fillInk(ctx, T('#2a1a1a'), 2.4 * k);
   // 삿갓(위에서 내려다본 넓은 원뿔: 꼭지에서 테두리로 살이 퍼진다)
-  const hatY = -66 * k;
-  ellipse(ctx, 0, hatY, 37 * k, 21 * k);
+  const hatY = -62 * k;
+  ellipse(ctx, 0, hatY, 40 * k, 27 * k);
   fillInk(ctx, T('#d9b26a'), 3 * k);
   ctx.save();
-  ellipse(ctx, 0, hatY, 37 * k, 21 * k);
+  ellipse(ctx, 0, hatY, 40 * k, 27 * k);
   ctx.clip();
   const apY = hatY - 7 * k;
   ctx.strokeStyle = 'rgba(120,80,30,0.45)';
@@ -739,15 +751,15 @@ export function drawPlayer(ctx, x, y, k, a) {
     const an = (i / 16) * TAU;
     ctx.beginPath();
     ctx.moveTo(0, apY);
-    ctx.lineTo(Math.cos(an) * 40 * k, hatY + Math.sin(an) * 24 * k);
+    ctx.lineTo(Math.cos(an) * 43 * k, hatY + Math.sin(an) * 30 * k);
     ctx.stroke();
   }
   // 뒤쪽(화면 위쪽) 비탈은 조금 어둡게
   ctx.fillStyle = 'rgba(90,55,20,0.16)';
-  ctx.fillRect(-40 * k, hatY - 24 * k, 80 * k, 17 * k);
+  ctx.fillRect(-44 * k, hatY - 30 * k, 88 * k, 22 * k);
   ctx.restore();
   ctx.beginPath();
-  ctx.ellipse(0, apY + 1 * k, 15 * k, 8.5 * k, 0, 0, TAU);
+  ctx.ellipse(0, apY + 1 * k, 17 * k, 11 * k, 0, 0, TAU);
   ctx.lineWidth = 3 * k;
   ctx.strokeStyle = T('#8a3a2a');
   ctx.stroke();

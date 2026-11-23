@@ -69,10 +69,11 @@ export class Overlay {
     root.appendChild(this.layer);
   }
 
-  fit(w, h, scale) {
+  fit(w, h, scale, wide = false) {
     this.root.style.width = w + 'px';
     this.root.style.height = h + 'px';
     this.root.style.setProperty('--s', scale);
+    this.root.classList.toggle('wide', wide);
   }
 
   clear() {
@@ -101,10 +102,10 @@ export class Overlay {
         <button class="btn ${saved ? '' : 'btn-primary'}" data-a="start">새 게임</button>
         <button class="btn" data-a="howto">게임 방법</button>
         <button class="btn" data-a="settings">설정</button>
-        <button class="btn btn-small btn-lang" data-a="lang">${getLang() === 'en' ? '한국어' : 'English'}</button>
       </div>
       <div class="title-meta">${meta.runs ? `플레이 ${meta.runs}회 · 클리어 ${meta.wins || 0}회 · 최고 기록 ${meta.best || 0}/${RUN_LENGTH}` : '첫 플레이'}</div>
       <div class="title-meta">유물 ${used}/${RELIC_IDS.length}</div>
+      ${meta.tier ? `<div class="title-tier"><b>${meta.tier + 1}단계</b>${meta.heirloom && RELICS[meta.heirloom] ? `<span>가져갈 유물</span>${relicChip(meta.heirloom)}` : ''}</div>` : ''}
       <div class="title-foot">${GAME_VERSION}</div>
     `, 'title');
     p.addEventListener('click', (e) => {
@@ -145,7 +146,7 @@ export class Overlay {
         <div class="ht"><b>Gilded reel</b><span>That reel's attack gets +1 damage and +1 effect.</span></div>
         <div class="ht"><b>Aim</b><span>Pick a reel, then click a lane.</span></div>
         <div class="ht"><b>Parry</b><span><em class="g">Gold or orange ring</em> → Block (precise = counter)<br><em class="r">Red ring</em> → Dodge (enemy exposed, double damage)</span></div>
-        <div class="ht"><b>Coins</b><span>Earned from <em>combos</em>, <em>perfects</em>, <em>bingos</em> and turns with no reroll (<em>thrift</em>). A plain kill pays 0.</span></div>
+        <div class="ht"><b>Coins</b><span>Earned from <em>combos</em> (3rd kill in a turn onward), <em>perfects</em> and <em>bingos</em>. Clear a night without rerolling for a <em>thrift</em> bonus. A plain kill pays 0.</span></div>
         <div class="ht"><b>Roads</b><span>Each night, choose a <em>Safe Road</em> or a <em class="r">Rough Road</em> (extra condition, double coins).</span></div>
         <div class="ht"><b>Relics</b><span>Upgrade to <em>II</em>; a II relic that triggers 6 times <em>evolves to III</em>. Matching pairs can be <em>fused</em>.</span></div>
         <div class="ht"><b>Enemy info</b><span><em>Right-click</em> an enemy (or press and hold).</span></div>
@@ -161,7 +162,7 @@ export class Overlay {
         <div class="ht"><b>금빛 릴</b><span>그 칸의 공격이 피해 +1, 효과 +1.</span></div>
         <div class="ht"><b>조준</b><span>슬롯의 문양을 고르고 레인을 누른다.</span></div>
         <div class="ht"><b>받아치기</b><span><em class="g">금빛·주황 고리</em> → 막기 (정확하면 되치기)<br><em class="r">붉은 고리</em> → 회피 (적에게 빈틈, 피해 2배)</span></div>
-        <div class="ht"><b>코인</b><span><em>연속 처치</em>, <em>퍼펙트</em>, <em>빙고</em>, 다시 돌리기를 안 쓴 턴(<em>절약</em>)에 번다. 그냥 처치하면 0.</span></div>
+        <div class="ht"><b>코인</b><span><em>연속 처치</em>(한 턴 3마리째부터), <em>퍼펙트</em>, <em>빙고</em>로 번다. 밤 내내 다시 돌리기를 안 쓰면 <em>절약</em> 보너스. 그냥 처치하면 0.</span></div>
         <div class="ht"><b>길</b><span>밤마다 <em>순한 길</em>과 <em class="r">험한 길</em>(조건 추가, 코인 2배) 중 고른다.</span></div>
         <div class="ht"><b>유물</b><span>강화하면 <em>II</em>, II가 6번 발동하면 <em>III 진화</em>. 짝이 맞는 두 유물은 <em>융합</em>.</span></div>
         <div class="ht"><b>적 정보</b><span>적을 <em>우클릭</em> (터치는 길게 누르기).</span></div>
@@ -362,16 +363,24 @@ export class Overlay {
   showPaths(run, defs, onPick) {
     let picked = defs.length === 1 ? 0 : null;
     const card = (d, i) => {
-      const enemies = Object.entries(d.counts).map(([t, n]) => `${ENEMIES[t].name} ${n}`).join(' · ') + (d.elites ? ` · 정예 ${d.elites}` : '');
+      const enemies = d.elites ? `정예 ${d.elites}` : '';
       const mods = d.mods.map((m) => `<span class="mod"><b>${MODS[m].name}</b> ${MODS[m].desc}</span>`).join('');
       const kind = d.objective.type === 'hunt' ? '보스' : d.risky ? '험한 길' : '순한 길';
       const reward = d.objective.type === 'hunt' ? '' : d.risky ? `<span class="pay hot">코인 ×${d.coinMult}</span>` : '<span class="pay">코인 ×1</span>';
       return `<button class="rw-card path ${d.risky ? 'risky' : ''} ${picked === i ? 'sel' : ''}" data-i="${i}" style="--c:${d.risky ? '#ff6a5a' : '#8fe8ff'}">
         <span class="rw-top"><span class="rw-name">${d.name}</span><span class="rw-tag">${kind}</span></span>
-        <span class="rw-desc"><span>목표: ${OBJ_INFO[d.objective.type].desc(d.objective)}</span><span class="foes">${enemies}</span>${mods}${reward}</span>
+        <span class="rw-desc"><span>목표: ${OBJ_INFO[d.objective.type].desc(d.objective)}</span>${enemies ? `<span class="foes">${enemies}</span>` : ''}${mods}${reward}</span>
       </button>`;
     };
+    // 진행 지도: 지나온 밤 · 다음 밤 · 남은 밤 · 보스
+    const nextStage = defs[0].stage;
+    const map = Array.from({ length: RUN_LENGTH }, (_, i) => {
+      const boss = i === RUN_LENGTH - 1;
+      const cls = i < nextStage ? 'done' : i === nextStage ? 'next' : '';
+      return `<span class="mn ${cls} ${boss ? 'boss' : ''}"><i>${i < nextStage ? '✓' : boss ? '★' : i + 1}</i><em>${i === nextStage ? '다음' : boss ? '보스' : ''}</em></span>`;
+    }).join('<span class="ml"></span>');
     const p = this.panel(`
+      <div class="map-wrap"><div class="map-title">${run.tier ? `${run.tier + 1}단계 · ` : ''}${RUN_LENGTH}번의 밤 중 ${nextStage}번을 넘겼다</div><div class="map">${map}</div></div>
       <div class="rw-head">
         <h2>${defs.length === 1 ? defs[0].night : `${defs[0].night}의 길을 고르세요`}</h2>
         <div class="rw-req">체력 ${run.hp}/${run.maxHp} · 코인 ${run.coins}</div>
@@ -403,6 +412,12 @@ export class Overlay {
     const hint = unseen.length
       ? `<div class="rs-next"><b>아직 안 써본 유물 ${unseen.length}개</b><div>${unseen.slice(0, 3).map((id) => relicChip(id, 'dim')).join('')}</div></div>`
       : '';
+    const keep = win ? run.relics.filter((id) => !FUSIONS[id]) : [];
+    let heir = keep.includes(meta.heirloom) ? meta.heirloom : keep[0] || null;
+    if (win && heir) this.hooks.setHeirloom(heir);
+    const carry = win && keep.length
+      ? `<div class="rs-next carry"><b>${run.unlocked ? `${(run.tier || 0) + 2}단계가 열렸다` : '유물 물려주기'}</b><span>${run.unlocked ? '적이 더 강해집니다. ' : ''}다음 판에 가져갈 유물 하나를 고르세요</span><div>${keep.map((id) => `<button class="heir ${id === heir ? 'sel' : ''}" data-heir="${id}">${relicChip(id)}</button>`).join('')}</div></div>`
+      : '';
     const p = this.panel(`
       <h2 class="${win ? 'win' : 'lose'}">${win ? '날이 밝았다' : '등불이 꺼졌다'}</h2>
       <div class="rs-sub">${win ? `${RUN_LENGTH}번의 밤을 모두 넘겼습니다.` : `${run.def.night} · ${run.def.name} (${reached}/${RUN_LENGTH})`}</div>
@@ -417,13 +432,21 @@ export class Overlay {
       </div>
       <div class="rs-score"><b>${t.score.toLocaleString()}</b>점 ${t.score >= (meta.bestScore || 0) ? '<em>최고 기록!</em>' : `<span>최고 ${(meta.bestScore || 0).toLocaleString()}</span>`}</div>
       <div class="rs-dex">유물 ${used.length}/${RELIC_IDS.length} · 플레이 ${meta.runs || 1}회 · 클리어 ${meta.wins || 0}회</div>
-      ${hint}
+      ${carry || hint}
       <div class="title-btns">
-        <button class="btn btn-primary" data-a="again">다시 하기</button>
+        <button class="btn btn-primary" data-a="again">${win && run.unlocked ? '다음 단계 도전' : '다시 하기'}</button>
         <button class="btn" data-a="title">메인으로</button>
       </div>
     `, 'result');
     p.addEventListener('click', (e) => {
+      const h = e.target.closest('[data-heir]');
+      if (h) {
+        heir = h.dataset.heir;
+        this.hooks.setHeirloom(heir);
+        this.hooks.sound('select');
+        p.querySelectorAll('.heir').forEach((x) => x.classList.toggle('sel', x === h));
+        return;
+      }
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (!a) return;
       this.hooks.sound('ui');
@@ -438,12 +461,16 @@ export class Overlay {
     const inBattle = !back;
     const p = this.panel(`
       <h2>설정</h2>
+      <h3 class="set-sec">소리</h3>
       <label class="row">배경음악 <input type="range" min="0" max="1" step="0.05" data-k="bgm" value="${s.bgm}"></label>
       <label class="row">효과음 <input type="range" min="0" max="1" step="0.05" data-k="sfx" value="${s.sfx}"></label>
       <label class="row chk"><input type="checkbox" data-k="mute" ${s.mute ? 'checked' : ''}> 전체 음소거</label>
+      <h3 class="set-sec">화면</h3>
+      <label class="row">화면 방향 <select data-k="layout"><option value="portrait" ${s.layout !== 'wide' ? 'selected' : ''}>세로</option><option value="wide" ${s.layout === 'wide' ? 'selected' : ''}>가로</option></select></label>
       <label class="row chk"><input type="checkbox" data-k="shake" ${s.shake ? 'checked' : ''}> 화면 흔들림·진동</label>
       <label class="row chk"><input type="checkbox" data-k="flash" ${s.flash ? 'checked' : ''}> 번쩍임 효과</label>
       <label class="row chk"><input type="checkbox" data-k="assist" ${s.assist ? 'checked' : ''}> 쉬운 타이밍 (판정 넓게)</label>
+      <h3 class="set-sec">언어</h3>
       <label class="row">언어 <select data-k="lang"><option value="ko" ${s.lang !== 'en' ? 'selected' : ''}>한국어</option><option value="en" ${s.lang === 'en' ? 'selected' : ''}>English</option></select></label>
       <div class="title-btns">
         <button class="btn btn-primary" data-a="close">닫기</button>
@@ -454,7 +481,7 @@ export class Overlay {
     p.addEventListener('input', (e) => {
       const k = e.target.dataset.k;
       if (!k) return;
-      const val = e.target.type === 'checkbox' ? e.target.checked : k === 'lang' ? e.target.value : Number(e.target.value);
+      const val = e.target.type === 'checkbox' ? e.target.checked : e.target.tagName === 'SELECT' ? e.target.value : Number(e.target.value);
       this.hooks.setSetting(k, val);
       if (k === 'lang') this.openSettings(back); // 바뀐 언어로 다시 그린다
     });

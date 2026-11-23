@@ -70,6 +70,7 @@ export function createBattle(def, opt) {
       id: def.id, name: def.name, night: def.night || '', objective: { ...def.objective },
       mods: (def.mods || []).slice(), clearCoins: def.clearCoins || 0, coinMult: def.coinMult || 1, risky: !!def.risky,
       hpScale: def.hpScale || 1, // 밤이 깊어질수록 적이 단단해진다
+      tier: def.tier || 0, atkUp: def.atkUp || 0, bossScale: def.bossScale || 1, // 단계가 오르면 더 강해진다
     },
     coins: 0, // 이번 전투에서 번 코인(전투가 끝나면 런에 합산)
     coinBy: {},
@@ -153,12 +154,12 @@ function spawnEnemy(st, type, lane, row, events, src = 'wave', elite = false) {
   const sp = ENEMIES[type];
   const e = {
     id: st.nextId++, type, lane: cell.lane, row: cell.row,
-    hp: sp.hp, maxHp: sp.hp, alive: true, atkUp: st.def.mods.includes('rage') ? 1 : 0,
+    hp: sp.hp, maxHp: sp.hp, alive: true, atkUp: (st.def.mods.includes('rage') ? 1 : 0) + (st.def.atkUp || 0),
     frozen: 0, exposed: false, braced: false, charge: false,
     fury: 0, step: 0, vulnerable: false, shieldBroken: false, phase2: false,
     shieldHp: sp.shieldHp || 0, poison: 0, dir: 1,
   };
-  const hpMul = (sp.boss ? 1 : st.def.hpScale) * (st.def.mods.includes('fullMoon') ? 1.25 : 1) * (elite ? ELITE.hp : 1);
+  const hpMul = (sp.boss ? st.def.bossScale || 1 : st.def.hpScale) * (st.def.mods.includes('fullMoon') ? 1.25 : 1) * (elite ? ELITE.hp : 1);
   if (elite) {
     e.elite = true;
     e.atkUp += ELITE.atk;
@@ -399,7 +400,7 @@ function hit(st, e, dmg, o, events, depth = 0) {
     st.laneKills[e.lane]++;
     addCoins(st, sp.boss ? COIN.boss : COIN.kill, 'kill', events, e.id);
     if (e.elite) addCoins(st, COIN.elite, 'elite', events, e.id);
-    if (st.turnKills >= 2) addCoins(st, st.turnKills >= 4 ? 2 : 1, 'combo', events, e.id); // 2·3연속 +1, 4연속부터 +2
+    if (st.turnKills >= COIN.comboFrom) addCoins(st, st.turnKills >= COIN.comboFrom + 2 ? 2 : 1, 'combo', events, e.id); // 3·4연속 +1, 5연속부터 +2
     if (st.turnKills >= 2) {
       const ember = st.turnKills === 3;
       if (ember) st.player.embers = Math.min(EMBER_CAP, st.player.embers + 1);
@@ -750,8 +751,12 @@ export function decide(st, e) {
     case 'boar': {
       if (e.row >= FRONT) return { kind: 'attack', style: 'heavy', dmg: sp.atk + e.fury + (e.atkUp || 0) };
       if (!e.charge) return { kind: 'rev' };
-      const steps = freeSteps(st, e, 99);
-      return steps > 0 ? { kind: 'move', steps, dash: true } : { kind: 'wait' };
+      // 앞에 다른 적이 있어도 뛰어넘어, 그 레인에서 가장 앞쪽의 빈칸까지 간다
+      let to = -1;
+      for (let r = FRONT; r > e.row; r--) {
+        if (!enemyAt(st, e.lane, r)) { to = r; break; }
+      }
+      return to > e.row ? { kind: 'move', steps: to - e.row, dash: true } : { kind: 'wait' };
     }
     case 'archer': {
       if (e.row < sp.post && freeSteps(st, e, 1)) return { kind: 'move', steps: 1 };
@@ -798,7 +803,6 @@ export function computeIntents(st) {
 export function endPlayerTurn(st) {
   if (st.phase !== 'aim' || st.result) throw new Error('endPlayerTurn: wrong phase');
   const events = [];
-  if (st.rerollCount === 0 && st.reels.length) addCoins(st, COIN.thrift, 'thrift', events);
   for (const e of st.enemies) e.exposed = false;
   st.phase = 'enemy';
   // 중독: 턴이 끝날 때 중독 수치만큼 피해(방패 무시), 그 뒤 1 줄어든다
@@ -1092,6 +1096,7 @@ function win(st, events) {
   if (st.result) return;
   st.result = 'win';
   st.phase = 'over';
+  if (st.stats.rerolls === 0 && st.def.clearCoins > 0) addCoins(st, COIN.thrift, 'thrift', events); // 절약: 한 번도 다시 돌리지 않고 넘긴 밤
   addCoins(st, st.def.clearCoins, 'clear', events);
   events.push({ type: 'win' });
 }

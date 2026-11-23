@@ -1,7 +1,7 @@
 // 화면 그리기: 배경(미리 렌더), 전장, 캐릭터, 슬롯 사당, HUD, 버튼
 import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS } from '../core/data.js';
-import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL, REEL_PEEK } from './layout.js';
-import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix, drawBomber, drawHealer, drawBoar, drawEliteRing, drawEliteCrown } from './art.js';
+import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL, REEL_PEEK, UI_H } from './layout.js';
+import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix, drawBomber, drawHealer, drawBoar, drawEliteRing, drawEliteCrown, TILT } from './art.js';
 // 적 머리 높이(예고 배지·말풍선 위치)
 export const HEAD_H = { kasa: 86, mask: 96, archer: 104, elder: 118, drum: 92, bomber: 110, healer: 100, boar: 100 };
 import { drawGlow } from './fx.js';
@@ -30,8 +30,8 @@ export class Renderer {
   resize(L, scale) {
     this.L = L;
     this.sc = scale;
-    this.cv.width = Math.round(W * scale);
-    this.cv.height = Math.round(L.H * scale);
+    this.cv.width = Math.round(L.SW * scale);
+    this.cv.height = Math.round(L.SH * scale);
     this.bg = this.buildBackground(L, scale);
   }
 
@@ -684,6 +684,12 @@ export class Renderer {
     const ctx = this.ctx;
     const L = this.L;
     ctx.setTransform(this.sc, 0, 0, this.sc, 0, 0);
+    ctx.save(); // 가로형에서는 여기서부터가 왼쪽 칸(전장)
+    if (L.wide) {
+      ctx.beginPath();
+      ctx.rect(0, 0, W, L.SH);
+      ctx.clip();
+    }
     ctx.drawImage(this.bg, 0, 0, W, L.H);
     this.drawAmbient(g);
     const fx = g.fx;
@@ -714,25 +720,55 @@ export class Renderer {
     if (g.mode === 'battle') {
       this.drawReactRing(g);
       this.drawHud(g);
+      this.drawBanner(g);
+      this.drawCutin(g);
+    }
+    const coach = g.mode === 'battle' ? g.coachHint() : null;
+    if (coach && coach.rect.y < L.info.y) this.drawCoach(g, coach);
+    if (L.wide) {
+      // 오른쪽 칸: 슬롯머신이 놓인 어두운 단
+      ctx.restore();
+      ctx.save();
+      const pg = ctx.createLinearGradient(W, 0, L.SW, 0);
+      pg.addColorStop(0, '#0d0612');
+      pg.addColorStop(0.08, '#1c0e1c');
+      pg.addColorStop(1, '#120914');
+      ctx.fillStyle = pg;
+      ctx.fillRect(W, 0, W, L.SH);
+      ctx.fillStyle = '#d8a548';
+      ctx.fillRect(W, 0, 2, L.SH);
+      ctx.beginPath();
+      ctx.rect(W + 2, 0, W - 2, L.SH);
+      ctx.clip();
+      ctx.translate(W, L.uiY - L.split);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, L.split, W, UI_H);
+      ctx.clip();
+      ctx.drawImage(this.bg, 0, 0, W, L.H);
+      ctx.restore();
+    }
+    if (g.mode === 'battle') {
       this.drawInfo(g);
       this.drawMachine(g);
       this.drawButtons(g);
-      this.drawCoach(g);
-      this.drawBanner(g);
-      this.drawCutin(g);
+      if (coach && coach.rect.y >= L.info.y) this.drawCoach(g, coach);
       this.drawCard(g);
     } else {
       this.drawMachine(g);
     }
     g.uiFx.drawWorld(ctx);
     g.uiFx.drawTexts(ctx, FONTS);
+    ctx.restore();
+    ctx.save();
+    ctx.setTransform(this.sc, 0, 0, this.sc, 0, 0);
     if (g.mode === 'battle') this.drawCoinFlies(g);
-    fx.drawScreen(ctx, W, L.H);
+    fx.drawScreen(ctx, L.SW, L.SH);
+    ctx.restore();
   }
 
   // 첫 판 따라 하기: 눌러야 할 곳을 금빛 점선으로 두르고 한 줄로 설명한다
-  drawCoach(g) {
-    const c = g.coachHint();
+  drawCoach(g, c) {
     if (!c) return;
     const ctx = this.ctx;
     const t = g.rt;
@@ -986,6 +1022,10 @@ export class Renderer {
     };
     if (v.dying > 0) a.flash = Math.max(a.flash || 0, 1 - v.dying);
     if (v.elite && !v.dying) drawEliteRing(ctx, p.x, p.y - 2, k, g.rt);
+    ctx.save();
+    ctx.translate(p.x, y);
+    ctx.scale(TILT.x, TILT.y);
+    ctx.translate(-p.x, -y);
     if (v.type === 'bomber') drawBomber(ctx, p.x, y, k, { ...a, close: v.close || 0 });
     else if (v.type === 'healer') drawHealer(ctx, p.x, y, k, { ...a, close: v.close || 0 });
     else if (v.type === 'boar') drawBoar(ctx, p.x, y, k, { ...a, raise: v.raise || 0, charge: v.charge });
@@ -993,7 +1033,8 @@ export class Renderer {
     else if (v.type === 'drum') drawDrum(ctx, p.x, y, k, { ...a, close: v.close || 0 });
     else if (v.type === 'mask') drawMask(ctx, p.x, y, k, { ...a, raise: v.raise || 0, slam: v.slam || 0, shield: v.shieldHp > 0, broken: v.shieldBroken || v.shieldHp === 1, braced: v.braced });
     else if (v.type === 'archer') drawArcher(ctx, p.x, y, k, { ...a, charge: v.chargeA || 0, puff: v.puff || 0 });
-    else if (v.type === 'elder') drawElder(ctx, p.x, y, k * 0.7, { ...a, vulnerable: v.vulnerable, phase2: v.phase2, charge: v.charge });
+    else if (v.type === 'elder') drawElder(ctx, p.x, y, k * 0.74, { ...a, vulnerable: v.vulnerable, phase2: v.phase2, charge: v.charge });
+    ctx.restore();
     if (v.blockT > 0) {
       drawGlow(ctx, p.x, y - 40 * k, 50 * k, '#50f0be', v.blockT);
     }
@@ -1039,7 +1080,7 @@ export class Renderer {
     }
     // 예고 배지
     const it = g.intents?.[v.id];
-    const headY = p.y - (HEAD_H[v.type] || 90) * k;
+    const headY = p.y - (HEAD_H[v.type] || 90) * k * TILT.y - 6 * p.s;
     if (v.elite) drawEliteCrown(ctx, p.x - 30 * p.s, by + 4 * p.s, p.s * 0.9);
     if (it && (g.ui.phase === 'aim' || g.ui.phase === 'spin' || g.ui.phase === 'spinning' || g.ui.phase === 'busy')) {
       const foggy = g.st.def.mods.includes('fog') && v.row < 3;

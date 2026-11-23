@@ -17,6 +17,10 @@ const overlay = new Overlay(document.getElementById('overlay'), {
   start: () => game.startRun(),
   resume: () => game.resumeRun(),
   getSaved: () => store.run,
+  setHeirloom: (id) => {
+    store.meta.heirloom = id;
+    store.save();
+  },
   abandon: () => game.clearCheckpoint(),
   replayTutorial: () => {
     store.meta.tutorialDone = false;
@@ -37,6 +41,7 @@ const overlay = new Overlay(document.getElementById('overlay'), {
     store.settings[k] = v;
     store.save();
     game.applySettings(store.settings);
+    if (k === 'layout') fitStage();
   },
   pause: (p) => (paused = p),
 });

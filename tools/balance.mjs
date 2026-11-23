@@ -71,8 +71,8 @@ function shopBot(run) {
   }
 }
 
-export function playRun(seed, P) {
-  const run = createRun(seed);
+export function playRun(seed, P, opt = {}) {
+  const run = createRun(seed, opt);
   applyReward(run, rollStartRelics(run)[0]);
   const r = { rng: seed * 101 + 7 };
   const reached = [];
@@ -91,6 +91,7 @@ export function playRun(seed, P) {
   return { win: true, reached, run };
 }
 
+const TIER_ARG = Number(process.argv[2]) || 0; // node tools/balance.mjs 2 → 3단계 기준
 if (process.argv[1] && process.argv[1].endsWith('balance.mjs')) {
   for (const [name, P] of Object.entries(PROFILES)) {
     const N = 400;
@@ -98,7 +99,7 @@ if (process.argv[1] && process.argv[1].endsWith('balance.mjs')) {
     const z = () => Array(RUN_LENGTH).fill(0);
     const lostAt = z(), turns = z(), hpAfter = z(), cnt = z(), atk = z();
     for (let s = 1; s <= N; s++) {
-      const res = playRun(s, P);
+      const res = playRun(s, P, { tier: TIER_ARG, heirloom: TIER_ARG ? 'thunderDrum' : null });
       if (res.win) wins++;
       coins += res.run.totals.coins;
       relics += res.run.relics.length;

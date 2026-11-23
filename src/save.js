@@ -3,7 +3,7 @@ const KEY = 'lantern-gambit-v1';
 export const SAVE_VERSION = 2; // 저장된 판의 형식이 바뀌면 올린다
 
 const DEFAULTS = {
-  settings: { bgm: 0.55, sfx: 0.8, mute: false, shake: true, flash: true, assist: false, lang: null },
+  settings: { bgm: 0.55, sfx: 0.8, mute: false, shake: true, flash: true, assist: false, lang: null, layout: 'portrait' },
   meta: { runs: 0, wins: 0, best: 0, tips: [] },
 };
 

@@ -567,18 +567,22 @@ test('코인: 그냥 처치는 0, 연속 처치·퍼펙트·절약·클리어로
   st.def.clearCoins = 4;
   setShots(st, [['wave', 1]]);
   fireShot(st, 0, 1);
-  assert.deepEqual(st.coinBy, { combo: 2, clear: 4 });
+  assert.deepEqual(st.coinBy, { combo: 1, thrift: 3, clear: 4 });
   assert.equal(st.result, 'win');
-  // 절약: 다시 돌리기를 안 쓴 턴
-  st = mk([['kasa', 1, 0]]);
-  spin(st);
-  endPlayerTurn(st);
-  assert.equal(st.coinBy.thrift, 1);
-  st = mk([['kasa', 1, 0]]);
+  // 절약: 다시 돌리기를 한 번이라도 쓰면 없다
+  st = mk([['kasa', 1, 3]]);
+  st.def.clearCoins = 4;
   spin(st);
   reroll(st);
-  endPlayerTurn(st);
+  st.enemies[0].hp = 1;
+  setShots(st, [['blade', 1]]);
+  fireShot(st, 0, 1);
+  assert.equal(st.result, 'win');
   assert.equal(st.coinBy.thrift, undefined);
+  // 멧돼지는 앞에 적이 있어도 뛰어넘는다
+  st = mk([['boar', 1, 0], ['kasa', 1, 2]]);
+  st.enemies[0].charge = true;
+  assert.equal(decide(st, st.enemies[0]).steps, FRONT);
   // 퍼펙트
   st = mk([['kasa', 1, 5]]);
   setShots(st, []);
@@ -701,4 +705,17 @@ test('정예: 더 단단하고 아프며, 처치하면 코인을 준다 · 엽�
   applyReward(run, 'purse');
   assert.equal(run.coins, 15);
   assert.equal(run.relics.length, 0);
+});
+
+test('단계: 높을수록 적이 단단하고 아프며, 유물 하나를 가져간다', () => {
+  const a = createRun(9);
+  const b = createRun(9, { tier: 2, heirloom: 'thunderDrum' });
+  assert.deepEqual(b.relics, ['thunderDrum']);
+  assert.ok(b.def.hpScale > a.def.hpScale);
+  assert.equal(b.def.atkUp, 1);
+  const st = createBattle(b.def, battleOptions(b)).st;
+  assert.ok(st.enemies.every((e) => e.atkUp >= 1));
+  assert.ok(!rollStartRelics(b).includes('thunderDrum'));
+  const boss = createBattle(rollPaths({ ...b, stage: RUN_LENGTH - 2 })[0], battleOptions(b)).st.enemies.find((e) => e.type === 'elder');
+  assert.equal(boss.maxHp, Math.ceil(80 * 1.3));
 });

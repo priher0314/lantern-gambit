@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.11';
+export const GAME_VERSION = 'v0.12';
 
 export const ROWS = 7;
 export const LANES = 3;
@@ -145,7 +145,7 @@ export const ENEMIES = {
   },
   boar: {
     name: '멧돼지', hp: 12, atk: 5,
-    act: '콧김을 뿜은 다음 턴, 맨 앞까지 돌진해 들이받는다.',
+    act: '콧김을 뿜은 다음 턴, 앞의 적도 뛰어넘어 돌진한다.',
     how: '얼리면 돌진이 풀린다. 들이받기는 회피.',
   },
   elder: {
@@ -229,6 +229,9 @@ export const BATTLES = [
 
 // ───── 한 판의 구조: 무작위로 만들어지는 밤 5개 + 보스 ─────
 export const RUN_LENGTH = 6;
+// 단계(0부터): 보스를 잡을 때마다 다음 단계가 열린다. 단계마다 적 체력·수가 늘고, 2단계마다 공격력 +1.
+export const MAX_TIER = 5;
+export const TIER = { hp: 0.12, budget: 0.07, boss: 0.15, atkEvery: 2, coin: 1 };
 export const NIGHT_NAMES = ['첫째 밤', '둘째 밤', '셋째 밤', '넷째 밤', '다섯째 밤', '마지막 밤'];
 
 // 밤의 목표
@@ -249,8 +252,8 @@ export const MODS = {
 };
 
 // 코인: 어떻게 싸웠는지에 따라 달라진다
-// 그냥 처치하는 것만으로는 벌리지 않는다. 연속 처치·퍼펙트·빙고·절약(다시 돌리기를 안 쓴 턴)·클리어로 번다.
-export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, thrift: 1, clearBase: 3, riskyMult: 2, elite: 3 };
+// 그냥 처치하는 것만으로는 벌리지 않는다. 연속 처치(한 턴 3마리째부터)·퍼펙트·빙고·절약(밤 내내 다시 돌리기를 안 씀)·클리어로 번다.
+export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, thrift: 3, clearBase: 3, riskyMult: 2, elite: 3, comboFrom: 3 };
 export const COIN_LABEL = { kill: '처치', combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어', elite: '정예 처치' };
 export const START_PURSE = 15; // 유물 대신 고를 수 있는 시작 코인
 export const SHOP_PRICES = { relic: 18, up: 14, fuse: 22, heal: 7, maxhp: 12, charm: 9, trim: 9, reroll: 3 };

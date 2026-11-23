@@ -2,13 +2,15 @@
 import { randInt, shuffle } from './rng.js';
 import {
   BATTLES, BASE_STRIP, REWARDS, RELICS, RELIC_IDS, FUSIONS, FUSION_IDS,
-  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE,
+  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE, TIER, MAX_TIER,
 } from './data.js';
 
-export function createRun(seed) {
+export function createRun(seed, opt = {}) {
   const run = {
     seed: seed >>> 0 || 1,
     rng: seed >>> 0 || 1,
+    tier: Math.max(0, Math.min(MAX_TIER, opt.tier || 0)), // 단계(높을수록 어렵다)
+    heirloom: null, // 지난 판에서 가져온 유물
     stage: 0,
     hp: 15,
     maxHp: 15,
@@ -22,6 +24,10 @@ export function createRun(seed) {
     totals: { kills: 0, perfect: 0, counters: 0, jackpots: 0, bingos: 0, shatters: 0, dmgDealt: 0, turns: 0, score: 0, coins: 0 },
   };
   run.strips = [0, 1, 2].map(() => makeStrip(run));
+  if (opt.heirloom && RELICS[opt.heirloom] && !FUSIONS[opt.heirloom]) {
+    run.relics.push(opt.heirloom);
+    run.heirloom = opt.heirloom;
+  }
   run.def = generateNight(run, 0, false);
   return run;
 }
@@ -32,7 +38,7 @@ export function createRun(seed) {
 const UNIT_COST = { kasa: 2, drum: 2, archer: 2, mask: 3, bomber: 2, healer: 3, boar: 3 };
 const ELITE_COST = 2;
 const BUDGET = [14, 20, 25, 29, 33]; // 밤이 깊어질수록 적이 많아지고
-const HP_SCALE = [1, 1.2, 1.4, 1.55, 1.7, 1.6]; // 단단해진다(마지막은 보스의 부하들)
+const HP_SCALE = [1, 1.15, 1.3, 1.42, 1.55, 1.5]; // 단단해진다(마지막은 보스의 부하들)
 
 function pickWeighted(r, table) {
   const total = table.reduce((a, [, w]) => a + w, 0);
@@ -44,8 +50,15 @@ function pickWeighted(r, table) {
   return table[0][0];
 }
 
+// 단계에 따른 강화값
+function tierMods(run) {
+  const t = run.tier || 0;
+  return { tier: t, atkUp: Math.floor(t / TIER.atkEvery), hp: 1 + TIER.hp * t, bossScale: 1 + TIER.boss * t };
+}
+
 export function generateNight(run, stage, risky) {
-  if (stage >= RUN_LENGTH - 1) return bossNight();
+  if (stage >= RUN_LENGTH - 1) return bossNight(run);
+  const tm = tierMods(run);
   const r = { rng: ((run.seed * 977 + stage * 131 + (risky ? 7 : 3)) >>> 0) || 1 };
   // 목표: 첫 밤은 소탕, 그 뒤로는 길마다 다른 목표
   const kinds = ['annihilate', 'survive', 'lanes', 'rush'];
@@ -59,7 +72,7 @@ export function generateNight(run, stage, risky) {
     ['kasa', 4], ['drum', stage >= 1 ? 3 : 1], ['archer', 2], ['mask', stage === 0 ? 0 : stage >= 3 ? 3 : 2],
     ['bomber', stage >= 1 ? 2 : 0], ['boar', stage >= 2 ? 2 : 0], ['healer', stage >= 2 ? 1 : 0],
   ].filter(([, w]) => w > 0);
-  let budget = Math.round(BUDGET[stage] * (kind === 'survive' ? 1.15 : 1) * (risky ? 1.1 : 1));
+  let budget = Math.round(BUDGET[stage] * (kind === 'survive' ? 1.15 : 1) * (risky ? 1.1 : 1) * (1 + TIER.budget * tm.tier));
   // 정예: 셋째 밤부터(험한 길은 둘째 밤부터) 하나, 다섯째 밤은 둘
   const elites = stage >= (risky ? 1 : 2) ? (stage >= 4 ? 2 : 1) : 0;
   budget -= elites * ELITE_COST;
@@ -119,8 +132,9 @@ export function generateNight(run, stage, risky) {
     pullWaves: kind !== 'survive',
     waves: waves.filter((w) => w.units.length),
     mods,
-    hpScale: HP_SCALE[stage],
-    clearCoins: COIN.clearBase + stage + (risky ? 2 : 0),
+    hpScale: HP_SCALE[stage] * tm.hp,
+    tier: tm.tier, atkUp: tm.atkUp, bossScale: tm.bossScale,
+    clearCoins: COIN.clearBase + stage + (risky ? 2 : 0) + TIER.coin * tm.tier,
     coinMult: risky ? COIN.riskyMult : 1,
     counts: types.reduce((a, t) => ((a[t] = (a[t] || 0) + 1), a), {}),
     elites: waves.flatMap((w) => w.units).filter((u) => u[3] === 'elite').length,
@@ -143,14 +157,16 @@ export function tutorialNight() {
   };
 }
 
-function bossNight() {
+function bossNight(run) {
   const b = BATTLES[BATTLES.length - 1];
+  const tm = tierMods(run || {});
   return {
+    tier: tm.tier, atkUp: tm.atkUp, bossScale: tm.bossScale,
     ...b,
     id: 'boss', stage: RUN_LENGTH - 1, risky: false,
     night: NIGHT_NAMES[RUN_LENGTH - 1],
     waves: b.waves.map((w) => ({ at: w.at, units: w.units.map((u) => u.slice()) })),
-    mods: [], clearCoins: 0, coinMult: 1, hpScale: HP_SCALE[RUN_LENGTH - 1],
+    mods: [], clearCoins: 0, coinMult: 1, hpScale: HP_SCALE[RUN_LENGTH - 1] * tm.hp,
     counts: b.waves.flatMap((w) => w.units).reduce((a, u) => ((a[u[0]] = (a[u[0]] || 0) + 1), a), {}),
   };
 }
@@ -158,7 +174,7 @@ function bossNight() {
 // 다음 밤의 길: 순한 길 / 험한 길 (마지막은 보스 하나)
 export function rollPaths(run) {
   const next = run.stage + 1;
-  if (next >= RUN_LENGTH - 1) return [bossNight()];
+  if (next >= RUN_LENGTH - 1) return [bossNight(run)];
   return [generateNight(run, next, false), generateNight(run, next, true)];
 }
 
@@ -292,7 +308,7 @@ export function rewardInfo(id) {
 
 // 런 시작: 유물 3개 중 하나를 고른다 → 빌드의 출발점
 export function rollStartRelics(run) {
-  return pickSome(run, RELIC_IDS, 3);
+  return pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id)), 3);
 }
 // 시작 선택지: 유물 3개 + 유물 없이 코인으로 시작
 export function rollStartChoices(run) {
