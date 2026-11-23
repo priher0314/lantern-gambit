@@ -721,6 +721,7 @@ export class Game {
 
   // ─────────────── 입력 ───────────────
   onPointerDown(e) {
+    if (e.button === 2) return; // 우클릭은 onContext 에서
     this.audio.unlock();
     const p = this.toLogical(e.clientX, e.clientY);
     const touch = e.pointerType !== 'mouse';
@@ -738,6 +739,15 @@ export class Game {
     if (inR(this.helpRect)) {
       if (!reacting) this.openGuide();
       return;
+    }
+    // 릴 고정 자물쇠(코인 쟁반과 가까워서 가장 먼저 확인한다)
+    if (!reacting && this.st && this.ui.phase === 'aim' && !this.busy && B.canReroll(this.st)) {
+      for (let i = 0; i < 3; i++) {
+        if (inR(this.holdRect(i), 5)) {
+          this.toggleHold(i);
+          return;
+        }
+      }
     }
     if (!reacting && this.st) {
       if (inR(trayRect(this.L), 2)) {
@@ -1021,7 +1031,7 @@ export class Game {
   // 릴 위 자물쇠의 위치(다시 돌리기가 가능할 때만 누를 수 있다)
   holdRect(i) {
     const r = reelRect(this.L, i);
-    return { x: r.x + r.w / 2 - 30, y: r.y - 13, w: 60, h: 24 };
+    return { x: r.x + r.w / 2 - 34, y: r.y - 5, w: 68, h: 26 }; // 코인 쟁반 아래, 릴 위쪽 가장자리
   }
 
   toggleHold(i) {
@@ -1667,6 +1677,8 @@ export class Game {
 
   // ─────────────── 연출 재생 ───────────────
   wait(ms) {
+    // 한꺼번에 터지는 공격 중에는 타격 사이의 짧은 대기를 건너뛴다
+    if (this.volley && ms <= 260) return Promise.resolve();
     return new Promise((res) => this.timers.push({ t: this.time + ms / 1000, res }));
   }
 
@@ -1704,10 +1716,137 @@ export class Game {
     for (let i = 0; i < evs.length; i++) {
       this.evAhead = evs;
       this.evAt = i;
-      await this.playEvent(evs[i]);
+      const ev = evs[i];
+      // 전체 공격(잭팟·더블 빙고)과 반달 베기는 모든 적을 한 번에 친다
+      if (ev.type === 'fire' && (ev.global || (ev.symbol === 'blade' && ev.tier === 3 && !ev.side))) {
+        let j = -1;
+        if (ev.global) j = evs.findIndex((e, k) => k > i && e.type === 'fireEnd' && e.global);
+        else {
+          for (let k = i + 1; k < evs.length; k++) {
+            if (evs[k].type !== 'fireEnd') continue;
+            const nx = evs[k + 1];
+            if (!(nx && nx.type === 'fire' && nx.symbol === 'blade' && nx.side)) { j = k; break; }
+          }
+        }
+        if (j > i) {
+          await this.playVolley(evs, i, j);
+          i = j;
+          continue;
+        }
+      }
+      await this.playEvent(ev);
     }
     this.evAhead = null;
     this.syncViews();
+  }
+
+  // 여러 적을 동시에 치는 공격: 시전 → 화면 가득한 연출 → 모든 타격을 한순간에
+  async playVolley(evs, i0, i1) {
+    const head = evs[i0];
+    const fx = this.fx;
+    const L = this.L;
+    const P = this.player;
+    const sym = head.symbol;
+    const col = SYMBOLS[sym]?.fx || '#ffffff';
+    const targets = [...this.views.values()].filter((v) => !v.dying);
+    if (head.global) await this.onFire(head);
+    else {
+      // 반달 베기: 가운데에서 세 레인으로 칼날을 한꺼번에 뿌린다
+      P.tx = W / 2;
+      P.pose = 'cast';
+      P.poseT = 0;
+      const m0 = this.playerMuzzle();
+      fx.ring(m0.x, m0.y, { r0: 70, r1: 8, color: '#cfd8ff', w: 7, life: 0.26 });
+      this.audio.play('blade', { strong: true });
+      await this.wait(240);
+      this.audio.play('blade', { strong: true });
+      this.cur = { global: true, sym: 'blade' };
+    }
+    // 화면 가득한 연출
+    fx.dim(0.5);
+    fx.flash(col, 0.4);
+    fx.shake(4);
+    fx.punchIn(0.05);
+    fx.kick(0, -12);
+    this.buzz(120);
+    const midY = L.fieldTop + L.fieldH * 0.5;
+    if (sym === 'blade') {
+      for (let l = 0; l < 3; l++) {
+        const lx = W / 2 + (l - 1) * LANE_SPACING * 0.9;
+        fx.slash(lx, midY, { ang: Math.PI / 2 + (l - 1) * 0.1, len: L.fieldH * 0.62, color: '#ffffff', w: 20, life: 0.4 });
+        fx.slash(lx + 10, midY, { ang: Math.PI / 2 + (l - 1) * 0.1, len: L.fieldH * 0.55, color: '#8fa8ff', w: 9, life: 0.6 });
+        fx.burst(lx, L.fieldBottom, { n: 16, speed: 900, color: ['#ffffff', '#cfd8ff'], kind: 'streak', size: 5, life: 0.4, angle: -Math.PI / 2, spread: 0.35 });
+      }
+      // 초승달 모양 칼바람이 위로 훑고 지나간다
+      for (let k = 0; k < 4; k++) fx.slash(W / 2, L.fieldBottom - (k + 0.5) * (L.fieldH / 4), { ang: (k % 2 ? 0.12 : -0.12), len: W * 0.46, color: k % 2 ? '#cfd8ff' : '#ffffff', w: 14 - k * 2, life: 0.3 + k * 0.07 });
+    } else if (sym === 'frost') {
+      // 한파: 눈보라가 전장을 덮고 모든 적 위로 서리가 핀다
+      for (let n = 0; n < 60; n++) fx.particle({ x: Math.random() * W, y: L.fieldTop - 20 + Math.random() * L.fieldH, vx: -160 - Math.random() * 180, vy: 260 + Math.random() * 240, life: 0.7 + Math.random() * 0.4, max: 1.1, size: 3 + Math.random() * 4, color: Math.random() < 0.5 ? '#ffffff' : '#bfe6ff', kind: Math.random() < 0.4 ? 'shard' : 'streak', add: true, drag: 0.99 });
+      for (const v of targets) {
+        const ip = this.impactPoint(v);
+        fx.ring(ip.x, ip.y, { r0: 70, r1: 10, color: '#ffffff', w: 6, life: 0.3 });
+        fx.burst(ip.x, ip.y, { n: 12, speed: 260, color: ['#ffffff', '#bfe6ff', '#7cc8ff'], kind: 'shard', size: 6, life: 0.6, add: false });
+        const foot = this.renderer.viewPos(v);
+        fx.decal(foot.x, foot.y, { kind: 'frost', r: 44 * foot.s, life: 5 });
+      }
+      for (let k = 0; k < 3; k++) fx.ring(W / 2, midY, { r0: 30 + k * 40, r1: 420, color: k ? '#bfe6ff' : '#ffffff', w: 10 - k * 3, life: 0.6 + k * 0.15, sy: 0.75 });
+    } else if (sym === 'wave') {
+      // 해일: 물결이 아래에서 위로 전장을 쓸고 간다
+      for (let k = 0; k < 5; k++) {
+        const y = L.fieldBottom - k * (L.fieldH / 5);
+        fx.ring(W / 2, y, { r0: 40, r1: 420, color: k % 2 ? '#8fffe2' : '#4ff0c4', w: 12, life: 0.45 + k * 0.08, sy: 0.16 });
+        fx.burst(W / 2, y, { n: 18, speed: 560, color: ['#eafff8', '#8fffe2', '#2fd0a8'], kind: 'streak', size: 5, life: 0.5, angle: -Math.PI / 2, spread: 2.6, g: 700, jitter: W * 0.8 });
+      }
+    } else if (sym === 'spark') {
+      // 벼락: 모든 적에게 동시에 내리꽂힌다
+      for (const v of targets) {
+        const ip = this.impactPoint(v);
+        fx.bolt(ip.x + (Math.random() - 0.5) * 90, L.fieldTop - 60, ip.x, ip.y, { color: '#ffffff', color2: '#ffe45c', w: 7, life: 0.4, segs: 12 });
+        fx.bolt(ip.x + (Math.random() - 0.5) * 60, L.fieldTop - 60, ip.x, ip.y, { color: '#ffe45c', color2: '#b77cff', w: 3.5, life: 0.5, segs: 9 });
+        fx.ring(ip.x, ip.y + 20, { r0: 8, r1: 80, color: '#ffe45c', w: 6, life: 0.35, sy: 0.4 });
+        const foot = this.renderer.viewPos(v);
+        fx.decal(foot.x, foot.y, { kind: 'scorch', r: 34 * foot.s, color: 'rgba(12,6,20,0.9)', life: 4.5 });
+      }
+      fx.flash('#ffffff', 0.5);
+    } else if (sym === 'venom') {
+      // 독안개: 초록 안개가 피어오른다
+      for (let n = 0; n < 70; n++) fx.particle({ x: Math.random() * W, y: L.fieldTop + Math.random() * L.fieldH, vx: (Math.random() - 0.5) * 60, vy: -30 - Math.random() * 60, g: -30, life: 0.9 + Math.random() * 0.7, max: 1.6, size: 9 + Math.random() * 12, color: Math.random() < 0.6 ? '#a6f04a' : '#6a2fb0', kind: 'glow', drag: 0.98 });
+      for (const v of targets) {
+        const foot = this.renderer.viewPos(v);
+        fx.ring(foot.x, foot.y, { r0: 10, r1: 70, color: '#a6f04a', w: 9, life: 0.9, sy: 0.34 });
+        fx.decal(foot.x, foot.y, { kind: 'puddle', r: 38 * foot.s, color: 'rgba(120,200,50,0.9)', life: 5 });
+      }
+    } else if (sym === 'bomb') {
+      // 불꽃놀이: 모든 적 위에서 동시에 터진다
+      this.audio.play('bomb');
+      for (const v of targets) {
+        const ip = this.impactPoint(v);
+        fx.impact(ip.x, ip.y, 100, '#ffd84a');
+        fx.ring(ip.x, ip.y, { r0: 10, r1: 110, color: '#ff8a3d', w: 9, life: 0.45, sy: 0.6 });
+        fx.burst(ip.x, ip.y, { n: 22, speed: 420, color: ['#ffd84a', '#ff8a3d', '#ffffff', '#ff5a8a', '#7fe8ff'], kind: 'streak', size: 5, life: 0.6, g: 420 });
+        const foot = this.renderer.viewPos(v);
+        fx.decal(foot.x, foot.y, { kind: 'scorch', r: 40 * foot.s, color: 'rgba(12,6,16,0.9)', life: 5 });
+      }
+    }
+    // 모든 타격을 한순간에
+    this.volley = true;
+    this.volleyHits = 0;
+    try {
+      for (let k = i0 + 1; k <= i1; k++) {
+        const ev = evs[k];
+        this.evAt = k;
+        if (ev.type === 'fire') continue; // 옆 레인 발사는 위에서 함께 그렸다
+        if (ev.type === 'fireEnd') continue;
+        await this.playEvent(ev);
+      }
+    } finally {
+      this.volley = false;
+    }
+    this.hitstop = Math.max(this.hitstop, 0.16);
+    this.killProj();
+    this.cur = null;
+    await this.wait(480);
+    P.pose = 'idle';
   }
 
   // 지금 재생 중인 처치가 이 밤의 마지막 처치인가(뒤에 다른 처치 없이 승리가 이어지는가)
@@ -2626,7 +2765,7 @@ export class Game {
     }
     if (strong && !minor) fx.dim(0.32);
     fx.kick((Math.random() - 0.5) * 3, minor ? -2 : -(4 + Math.min(9, ev.dmg * 1.3)));
-    this.audio.play('hit', { dmg: ev.dmg, el: ev.el });
+    if (!this.volley || this.volleyHits++ < 3) this.audio.play('hit', { dmg: ev.dmg, el: ev.el });
     this.hitstop = Math.max(this.hitstop, minor ? 0.045 : Math.min(0.22, 0.09 + ev.dmg * 0.02));
     fx.shake(strong ? 3 : minor ? 1 : 2);
     if (!minor) fx.punchIn(Math.min(0.035, 0.01 + ev.dmg * 0.004));

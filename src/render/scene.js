@@ -1524,6 +1524,20 @@ export class Renderer {
     for (let i = 0; i < 3; i++) {
       const r = g.holdRect(i);
       const on = !!holds[i];
+      if (on) {
+        // 고정된 릴: 보라색 테두리
+        const rr = reelRect(this.L, i);
+        ctx.save();
+        ctx.strokeStyle = '#d9a0ff';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#d9a0ff';
+        ctx.shadowBlur = 12;
+        ctx.globalAlpha = 0.75 + Math.sin(g.rt * 5) * 0.2;
+        ctx.beginPath();
+        ctx.roundRect(rr.x - 2, rr.y - 2, rr.w + 4, rr.h + 4, 10);
+        ctx.stroke();
+        ctx.restore();
+      }
       if (!can && !on) continue;
       ctx.save();
       ctx.globalAlpha = can ? 1 : 0.55;
