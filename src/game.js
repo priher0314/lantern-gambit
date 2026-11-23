@@ -24,7 +24,7 @@ const EL_COLORS = {
 
 const CONCEPTS = {
   reroll: {
-    kicker: '알아두기', title: '다시 굴리기', color: '#d9a0ff',
+    kicker: '알아두기', title: '다시 돌리기', color: '#d9a0ff',
     lines: [
       { label: '효과', text: '공격 전에 릴을 전부 다시 돌린다.' },
       { label: '대가', text: '버튼에 적힌 일이 먼저 일어난다.', color: '#ffb8c8' },
@@ -35,13 +35,14 @@ const CONCEPTS = {
     kicker: '알아두기', title: '금빛 릴', color: '#ffd27a',
     lines: [
       { label: '효과', text: '그 칸의 공격이 피해 +1, 효과 +1.' },
-      { label: '얻기', text: '다시 굴리기 · 퍼펙트 막기/회피.' },
+      { label: '얻기', text: '다시 돌리기 · 퍼펙트 막기/회피.' },
     ],
   },
   bingo: {
     kicker: '알아두기', title: '빙고!', color: '#ffe08a',
     lines: [
-      { label: '효과', text: '가로·대각선 한 줄이 맞으면 보너스 기술 +1.' },
+      { label: '효과', text: '위·아래 줄이나 대각선 3칸이 같으면 보너스 기술 +1.' },
+      { label: '조커', text: '방어막 문양은 아무 문양으로나 쳐 준다.' },
       { label: '사용', text: '릴 위의 금색 줄을 눌러 고른다.' },
     ],
   },
@@ -180,11 +181,10 @@ export class Game {
     this.card = null;
     this.cardQueue = [];
     this.overlay.showPick({
-      kicker: '출발 준비',
-      title: '첫 유물을 고르세요',
-      req: '유물이 이번 도전의 싸움 방식(빌드)을 정합니다',
+      title: '유물 하나를 고르세요',
+      req: '이번 도전이 끝날 때까지 유지됩니다',
       ids: rollStartRelics(this.run),
-      go: `${BATTLES[this.run.stage].night}으로 — ${BATTLES[this.run.stage].name}`,
+      go: '이 유물로 시작',
       run: this.run,
       used: this.store.meta.relicsUsed || [],
     }, (id) => {
@@ -259,7 +259,7 @@ export class Game {
     const l2 = this.st && (this.st.relicLv[id] || 1) >= 2;
     const lines = [{ label: '효과', text: R.desc }];
     if (l2) lines.push({ label: 'II 강화', text: R.up, color: '#ffe08a' });
-    return { kicker: `유물 · ${R.build} 빌드`, title: R.name + (l2 ? ' II' : ''), relic: id, color: R.color, lines };
+    return { kicker: `유물 · ${R.tag}`, title: R.name + (l2 ? ' II' : ''), relic: id, color: R.color, lines };
   }
 
   queueIntros() {
@@ -356,7 +356,7 @@ export class Game {
     this.ui = { phase: 'busy', sel: null, hoverLane: -1, armedLane: -1, preview: null, react: null, counter: null };
     this.busy = true;
     this.refresh();
-    this.showBanner(`${def.night} — ${def.name}`, `${OBJECTIVES[def.objective.type]}${def.objective.turns ? ` (${def.objective.turns}턴)` : ''} · ${def.intro}`, 2.4);
+    this.showBanner(`${def.night} · ${def.name}`, def.intro, 2.2);
     this.audio.play('turn');
     await this.wait(500);
     await this.playEvents(events);
@@ -456,7 +456,7 @@ export class Game {
       const live = ui.phase === 'react' && !ui.react?.input;
       const heavy = ui.react?.attack.style === 'heavy';
       btns.push({ id: 'guard', x: 14, y, w: 252, h, label: '막기', sub: '넓은 판정 · 퍼펙트=되치기', style: 'guard', icon: 'shield', enabled: live, hot: live && !heavy, key: 'J / Space', big: true });
-      btns.push({ id: 'dodge', x: 274, y, w: 252, h, label: '회피', sub: '좁은 판정 · 성공=적 노출', style: 'dodge', icon: 'move', enabled: live, hot: live && heavy, key: 'K / Shift', big: true });
+      btns.push({ id: 'dodge', x: 274, y, w: 252, h, label: '회피', sub: '좁은 판정 · 성공=적에게 빈틈', style: 'dodge', icon: 'move', enabled: live, hot: live && heavy, key: 'K / Shift', big: true });
       return btns;
     }
     const aim = ui.phase === 'aim';
@@ -475,7 +475,7 @@ export class Game {
       sub2 = '보상: 금빛 릴 +1';
       subColors = ['#ffb8c8', '#ffe08a'];
     }
-    btns.push({ id: 'reroll', x: 14, y, w: 322, h, label: '다시 굴리기', pips: myTurn ? st.rerollsLeft : maxRe, pipMax: maxRe, sub, sub2, subColors, style: 'gamble', enabled: canRe, key: 'R' });
+    btns.push({ id: 'reroll', x: 14, y, w: 322, h, label: '다시 돌리기', pips: myTurn ? st.rerollsLeft : maxRe, pipMax: maxRe, sub, sub2, subColors, style: 'gamble', enabled: canRe, key: 'R' });
     const left = B.shotsLeft(st);
     const confirm = ui.confirmEnd;
     btns.push({
@@ -782,7 +782,7 @@ export class Game {
           this.fx.shake(3);
           this.slotJolt = 1.6;
           this.buzz(120);
-          this.showBanner(`잭팟! ${SHOT_NAMES[sh.symbol][3]}`, '세 문양이 하나로', 1.6, '#ffe08a', 40);
+          this.showBanner(`잭팟! ${SHOT_NAMES[sh.symbol][3]}`, null, 1.6, '#ffe08a', 40);
           this.reels.forEach((r) => (r.flashT = 1));
           for (const rc of rects) {
             this.uiFx.burst(rc.x + rc.w / 2, rc.y + rc.h / 2, { n: 26, speed: 340, color: ['#ffe08a', '#ffffff', '#ffb347', SYMBOLS[sh.symbol].fx], kind: 'streak', size: 4.5, life: 0.7, g: 300 });
@@ -826,16 +826,6 @@ export class Game {
           this.showBanner(title, sub, 1.4 + level * 0.3, '#ffe08a', 36 + level * 7);
           this.celebrate(level);
           this.conceptCard('bingo');
-        } else if (top < 2 && ev.grid) {
-          // 한 칸 차이로 놓친 줄이 있으면 "아깝다!"
-          const near = BINGO_LINES.find((ln) => {
-            const s = ln.cells.map(([c, r]) => ev.grid[c][r]);
-            return s[0] === s[1] && s[2] !== s[0];
-          });
-          if (near) {
-            const q = slotCell(this.L, 1, near.cells[1][1]);
-            this.uiFx.text(q.x, q.y - 34, '아깝다!', { color: '#ffb0a0', size: 20, font: 'num', life: 1 });
-          }
         }
         this.waitReal(bingos.length ? 750 + level * 280 : top >= 2 ? 460 : 120).then(resolve);
       };
@@ -1164,7 +1154,7 @@ export class Game {
     await this.wait(500);
     if (st.result === 'win') {
       this.audio.play('win');
-      this.showBanner('승리!', `${this.def.name} 돌파`, 1.8, '#ffe08a', 46);
+      this.showBanner('밤을 넘겼다', `${this.def.night} 클리어`, 1.8, '#ffe08a', 44);
       recordBattle(this.run, st);
       if (this.run.stage >= BATTLES.length - 1) this.store.meta.bestScore = Math.max(this.store.meta.bestScore || 0, this.run.totals.score);
       await this.waitReal(1700);
@@ -1180,11 +1170,10 @@ export class Game {
         this.mode = 'reward';
         const next = BATTLES[this.run.stage + 1];
         this.overlay.showPick({
-          kicker: `${this.def.night} · ${this.def.name} 돌파`,
-          title: '보상을 하나 고르세요',
-          req: `필수 선택 · 체력 ${this.run.hp}/${this.run.maxHp}`,
+          title: '보상 하나를 고르세요',
+          req: `체력 ${this.run.hp}/${this.run.maxHp}`,
           ids: rollRewards(this.run),
-          go: `${next.night}으로 — ${next.name}`,
+          go: `${next.night} 시작`,
           run: this.run,
           used: this.store.meta.relicsUsed || [],
         }, (id) => {
@@ -1195,7 +1184,7 @@ export class Game {
       }
     } else {
       this.audio.play('lose');
-      this.showBanner('등불이 꺼졌다…', '행렬이 다리를 건넜다', 2, '#ff8a7a', 40);
+      this.showBanner('등불이 꺼졌다', '날이 밝기 전에 쓰러졌다', 2, '#ff8a7a', 40);
       recordBattle(this.run, st);
       this.store.meta.bestScore = Math.max(this.store.meta.bestScore || 0, this.run.totals.score);
       this.store.save();
@@ -1260,7 +1249,7 @@ export class Game {
         this.tween(nv, { spawnT: 1 }, 380);
         if (ENEMIES[nv.type].boss) {
           this.audio.play('bossPhase');
-          this.showBanner('등롱 장로', '충전 중엔 등불 심장이 드러난다', 2.2, '#ffb347');
+          this.showBanner(ENEMIES.elder.name, '충전 중엔 받는 피해 +2', 2.2, '#ffb347');
           await this.wait(800);
         }
         await this.wait(110);
@@ -1348,7 +1337,7 @@ export class Game {
       case 'omen': {
         this.audio.play('omen');
         fx.flash('#6a20c0', 0.18);
-        this.showBanner('다시 굴린 대가', ev.desc?.text || '', 1.2, '#e0b0ff', 28);
+        this.showBanner('다시 돌린 대가', ev.desc?.text || '', 1.2, '#e0b0ff', 28);
         await this.wait(420);
         break;
       }
@@ -1555,14 +1544,14 @@ export class Game {
         if (!v) break;
         v.exposed = true;
         const ip = this.impactPoint(v);
-        fx.text(ip.x, ip.y - 50, '노출! 다음 피해 ×2', { color: '#d9a0ff', size: 20, font: 'num' });
+        fx.text(ip.x, ip.y - 50, '빈틈! 다음 피해 2배', { color: '#d9a0ff', size: 20, font: 'num' });
         fx.burst(ip.x, ip.y, { n: 12, speed: 120, color: ['#a050ff', '#e0b0ff'], kind: 'glow', size: 5, life: 0.5 });
         await this.wait(180);
         break;
       }
       case 'enemyPhase':
         this.audio.play('enemyTurn');
-        this.showBanner('행렬의 차례', null, 0.9, '#ff9a8a', 30);
+        this.showBanner('적의 차례', null, 0.9, '#ff9a8a', 30);
         await this.wait(520);
         break;
       case 'frozenSkip': {
@@ -1611,7 +1600,7 @@ export class Game {
         v.vulnerable = true;
         this.audio.play('charge');
         const ip = this.impactPoint(v);
-        fx.text(ip.x, ip.y - 90, '일제 사격 준비 — 심장 노출!', { color: '#ffe08a', size: 20, font: 'num', life: 1.4 });
+        fx.text(ip.x, ip.y - 90, '충전 중 — 받는 피해 +2', { color: '#ffe08a', size: 20, font: 'num', life: 1.4 });
         fx.burst(ip.x, ip.y + 20, { n: 24, speed: 60, color: ['#fff4a0', '#ffb347'], kind: 'glow', size: 6, life: 0.9, vy: -30 });
         await this.wait(650);
         break;
@@ -1629,7 +1618,7 @@ export class Game {
         this.audio.play('bossPhase');
         fx.flash('#ff3b4e', 0.3);
         fx.shake(3);
-        this.showBanner('장로가 타오른다!', '공격 주기가 빨라진다', 1.6, '#ff8a8a');
+        this.showBanner('왕초롱이 달아오른다', '공격이 빨라진다', 1.6, '#ff8a8a');
         await this.wait(700);
         break;
       }
@@ -1727,8 +1716,13 @@ export class Game {
     const sx = ev.side ? W / 2 + (ev.lane - 1) * LANE_SPACING : m.x;
     const sy = ev.side ? L.fieldBottom : m.y;
     if (sym === 'spark') {
+      // 번개 덩어리가 레인을 달려가 내리꽂힌다
       this.audio.play('spark');
-      this.cur = { spark: true, x: m.x, y: m.y };
+      fx.impact(m.x, m.y, 40, '#ffe45c');
+      const sp = this.spawnProj('spark', m.x, m.y, 1250, 13 + (ev.gild ? 3 : 0));
+      sp.tx = W / 2 + (ev.lane - 1) * LANE_SPACING * 0.8;
+      sp.ty = m.y - 40;
+      this.cur = { proj: sp, sym: 'spark', sx: m.x, sy: m.y, first: true };
       return;
     }
     const speed = { blade: 1500, frost: 1000, wave: 880, venom: 920, counter: 2300 }[sym] || 1600;
@@ -1765,6 +1759,11 @@ export class Game {
     const cur = this.cur;
     if (cur && cur.proj && ev.src !== 'shard' && ev.src !== 'splash' && ev.src !== 'chain' && ev.src !== 'relic') {
       await this.flyTo(cur.proj, ip.x, ip.y);
+      if (cur.sym === 'spark' && cur.first) {
+        cur.first = false;
+        fx.bolt(cur.sx, cur.sy, ip.x, ip.y, { color: '#ffe45c', color2: '#b77cff', w: 5, life: 0.4, segs: 14 });
+        this.killProj();
+      }
     } else if (cur && cur.spark && ev.src !== 'chain' && ev.src !== 'relic') {
       fx.bolt(cur.x, cur.y, ip.x, ip.y, { color: '#ffe45c', color2: '#b77cff', w: 5, life: 0.32, segs: 12 });
       cur.spark = false;
@@ -1799,6 +1798,7 @@ export class Game {
           fx.impact(ip.x, ip.y, 46, cols[1]);
         });
         fx.slash(ip.x, ip.y, { ang: -0.5, len: 60, color: cols[2], w: 3, life: 0.55 });
+        fx.burst(ip.x, ip.y, { n: 14, speed: 480, color: ['#ffffff', '#ffe08a'], kind: 'streak', size: 3.5, life: 0.25 });
       } else if (el === 'wave') {
         // 물기둥이 솟는다
         fx.burst(ip.x, ip.y + 20, { n: 26, speed: 520, color: ['#eafff8', '#8fffe2', '#2fd0a8'], kind: 'streak', size: 5, life: 0.55, angle: -Math.PI / 2, spread: 0.7, g: 900 });
@@ -1814,6 +1814,9 @@ export class Game {
       } else if (el === 'venom') {
         // 철퍽 — 독이 튀고 흘러내린다
         fx.ring(ip.x, ip.y, { r0: 8, r1: 70, color: '#a6f04a', w: 8, life: 0.4 });
+        const foot = this.renderer.viewPos(v);
+        fx.ring(foot.x, foot.y, { r0: 10, r1: 58, color: '#8fd63a', w: 10, life: 1.3, sy: 0.32 });
+        fx.ring(foot.x, foot.y, { r0: 6, r1: 40, color: '#6a2fb0', w: 5, life: 1.1, sy: 0.32 });
         fx.burst(ip.x, ip.y, { n: 12, speed: 90, color: ['#a6f04a', '#6a2fb0'], kind: 'dot', size: 5, life: 0.9, g: 500, add: false });
       } else if (el === 'frost') {
         // 서리가 퍼지며 얼어붙는다
@@ -1854,7 +1857,7 @@ export class Game {
       v.shieldBroken = true;
     }
     if (ev.tags.includes('exposed')) {
-      fx.text(ip.x - 46, ip.y - 30, '노출 ×2', { color: '#d9a0ff', size: 24, font: 'num' });
+      fx.text(ip.x - 46, ip.y - 30, '빈틈 2배', { color: '#d9a0ff', size: 24, font: 'num' });
       v.exposed = false;
     }
     if (ev.tags.includes('weak')) fx.text(ip.x - 46, ip.y - 30, '심장 +2', { color: '#ffe08a', size: 22, font: 'num' });
@@ -2013,6 +2016,12 @@ export class Game {
         }
       } else {
         p.alpha -= dt * 8;
+      }
+      if (!p.dead && !p.timed && Math.random() < dt * 60) {
+        if (p.sym === 'blade') this.fx.particle({ x: p.x + (Math.random() - 0.5) * 30, y: p.y + (Math.random() - 0.5) * 30, vx: (Math.random() - 0.5) * 220, vy: 120 + Math.random() * 160, life: 0.3, max: 0.3, size: 3.5, color: Math.random() < 0.5 ? '#ffffff' : '#cfd8ff', kind: 'streak' });
+        else if (p.sym === 'spark') this.fx.bolt(p.x, p.y, p.x + (Math.random() - 0.5) * 90, p.y + 20 + Math.random() * 70, { color: '#ffe45c', color2: '#b77cff', w: 2, life: 0.12, segs: 4 });
+        else if (p.sym === 'venom') this.fx.particle({ x: p.x + (Math.random() - 0.5) * 16, y: p.y + 8, vx: (Math.random() - 0.5) * 30, vy: 90 + Math.random() * 80, g: 500, life: 0.6, max: 0.6, size: 4 + Math.random() * 3, color: Math.random() < 0.7 ? '#a6f04a' : '#6a2fb0', kind: 'dot', add: false });
+        else if (p.sym === 'frost') this.fx.particle({ x: p.x + (Math.random() - 0.5) * 24, y: p.y + 10, vx: (Math.random() - 0.5) * 60, vy: 40, life: 0.5, max: 0.5, size: 4, color: '#e8f8ff', kind: 'shard', rot: Math.random() * 6, vr: 6, add: false });
       }
       p.trail.push([p.x, p.y]);
       if (p.trail.length > 10) p.trail.shift();

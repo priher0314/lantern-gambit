@@ -844,7 +844,7 @@ export class Renderer {
     // 상태 아이콘 줄
     const icons = [];
     if (v.frozen > 0) icons.push(['snow', '#9fdcff', v.frozen]);
-    if (v.exposed) icons.push(['eye', '#c58cff', '노출']);
+    if (v.exposed) icons.push(['eye', '#c58cff', '빈틈']);
     if (v.fury > 0) icons.push(['heavy', '#ff5a5a', '공+' + v.fury]);
     if (v.poison > 0) icons.push(['drop', '#a6f04a', '독 ' + v.poison]);
     if (v.shieldHp > 0) icons.push(['shield', '#50f0be', '방패 ' + v.shieldHp]);
@@ -949,7 +949,63 @@ export class Renderer {
       ctx.translate(p.x, p.y);
       ctx.globalAlpha = p.alpha;
       const s = p.size;
-      if (p.sym === 'blade' || p.sym === 'counter') {
+      if (p.sym === 'blade') {
+        // 회전하며 날아가는 칼: 칼 모양이 또렷이 보이고, 회전 궤적이 원형 잔상으로 남는다
+        const spin = g.time * 26;
+        drawGlow(ctx, 0, 0, s * 3.4, '#8fa8ff', 0.75);
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 3; i++) {
+          ctx.strokeStyle = i === 0 ? 'rgba(255,255,255,0.85)' : 'rgba(170,195,255,0.5)';
+          ctx.lineWidth = 5 - i * 1.4;
+          ctx.beginPath();
+          ctx.arc(0, 0, s * (2.5 - i * 0.28), spin - 1.5 - i * 0.5, spin - 0.15 - i * 0.5);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(0, 0, s * (2.5 - i * 0.28), spin + Math.PI - 1.5 - i * 0.5, spin + Math.PI - 0.15 - i * 0.5);
+          ctx.stroke();
+        }
+        ctx.rotate(spin);
+        // 칼날
+        ctx.beginPath();
+        ctx.moveTo(-s * 0.9, -s * 0.34);
+        ctx.lineTo(s * 2.1, -s * 0.34);
+        ctx.quadraticCurveTo(s * 2.7, -s * 0.2, s * 2.9, s * 0.3);
+        ctx.lineTo(-s * 0.9, s * 0.3);
+        ctx.closePath();
+        const bg = ctx.createLinearGradient(0, -s * 0.4, 0, s * 0.4);
+        bg.addColorStop(0, '#ffffff');
+        bg.addColorStop(1, '#9fb4ff');
+        ctx.fillStyle = bg;
+        ctx.fill();
+        ctx.lineWidth = 2.2;
+        ctx.strokeStyle = INK;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        // 코등이·자루
+        ctx.fillStyle = '#d8a548';
+        ctx.fillRect(-s * 1.1, -s * 0.7, s * 0.34, s * 1.4);
+        ctx.strokeRect(-s * 1.1, -s * 0.7, s * 0.34, s * 1.4);
+        ctx.fillStyle = '#c0392b';
+        ctx.fillRect(-s * 2.1, -s * 0.24, s * 1.0, s * 0.48);
+        ctx.strokeRect(-s * 2.1, -s * 0.24, s * 1.0, s * 0.48);
+      } else if (p.sym === 'spark') {
+        // 전격: 지지직거리며 달리는 번개 덩어리
+        drawGlow(ctx, 0, 0, s * 3.2, '#ffe45c', 0.95);
+        drawGlow(ctx, 0, 0, s * 1.6, '#ffffff', 1);
+        ctx.lineJoin = 'round';
+        const ph = Math.floor(g.rt * 30);
+        for (let i = 0; i < 7; i++) {
+          const a0 = ((i * 2.399 + ph * 1.7) % 6.283);
+          const len = s * (1.6 + ((i * 7 + ph * 3) % 5) * 0.45);
+          ctx.strokeStyle = i % 2 ? '#ffffff' : '#b77cff';
+          ctx.lineWidth = i % 2 ? 2 : 3;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(Math.cos(a0) * len * 0.5 + Math.sin(a0 * 3 + ph) * s * 0.5, Math.sin(a0) * len * 0.5 + Math.cos(a0 * 2 + ph) * s * 0.5);
+          ctx.lineTo(Math.cos(a0) * len, Math.sin(a0) * len);
+          ctx.stroke();
+        }
+      } else if (p.sym === 'counter') {
         // 초승달 검기: 넓은 날 + 뒤로 길게 끌리는 베기 자국
         ctx.rotate(p.ang + Math.PI / 2);
         const tail = ctx.createLinearGradient(0, 0, 0, s * 9);
@@ -993,8 +1049,10 @@ export class Renderer {
       } else if (p.sym === 'venom') {
         // 독 방울
         ctx.rotate(p.ang + Math.PI / 2);
-        drawGlow(ctx, 0, 0, s * 2.6, '#a6f04a', 0.8);
-        drawSymbol(ctx, 'venom', 0, 0, s * 1.25);
+        drawGlow(ctx, 0, 0, s * 3, '#a6f04a', 0.85);
+        const wob = Math.sin(g.rt * 22) * 0.16;
+        ctx.scale(1 + wob, 1 - wob);
+        drawSymbol(ctx, 'venom', 0, 0, s * 1.5);
       } else if (p.sym === 'fire' || p.sym === 'deflect') {
         const col = p.sym === 'deflect' ? '#ffd84a' : '#ff7a3d';
         drawGlow(ctx, 0, 0, s * 2.6, col, 1);
@@ -1107,7 +1165,7 @@ export class Renderer {
 
   drawOmenTag(x, y, text, g) {
     const ctx = this.ctx;
-    const label = `↻ 다시 굴리면 ${text}`;
+    const label = `↻ 다시 돌리면 ${text}`;
     ctx.font = `12px ${FONTS.ui}`;
     const w = ctx.measureText(label).width + 14;
     ctx.globalAlpha = 0.8 + Math.sin(g.rt * 5) * 0.2;
@@ -1311,7 +1369,7 @@ export class Renderer {
       const last = g.relicRect(relics.length - 1);
       ctx.textAlign = 'left';
       ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.fillText('← 유물 (눌러서 설명)', last.x + last.w + 6, last.y + last.h / 2 + 1);
+      ctx.fillText('← 눌러서 보기', last.x + last.w + 6, last.y + last.h / 2 + 1);
     }
     const n = st.enemies.filter((e) => e.alive).length;
     ctx.textAlign = 'right';
@@ -1565,7 +1623,7 @@ export class Renderer {
         ctx.fillText(`✦ 퍼펙트 보상: 다음 턴 금빛 릴 ×${em}`, br.x + br.w / 2, br.y + br.h / 2 + 1);
       } else {
         ctx.fillStyle = 'rgba(216,165,72,0.6)';
-        ctx.fillText('가로·대각선 한 줄 = 빙고 보너스', br.x + br.w / 2, br.y + br.h / 2 + 1);
+        ctx.fillText('위·아래 줄, 대각선 3칸 = 빙고', br.x + br.w / 2, br.y + br.h / 2 + 1);
       }
     }
 
@@ -1609,7 +1667,7 @@ export class Renderer {
       ctx.font = `14px ${FONTS.ui}`;
       ctx.fillStyle = 'rgba(216,165,72,0.7)';
       const c = cabinetRect(L);
-      const msg = g.ui.phase === 'spinning' ? '점괘를 읽는 중…' : g.ui.phase === 'spin' ? '레버를 당기세요 →' : '행렬의 차례';
+      const msg = g.ui.phase === 'spinning' ? '…' : g.ui.phase === 'spin' ? '레버를 당기세요' : '적의 차례';
       ctx.fillText(msg, c.x + c.w / 2, py + 13);
     }
   }

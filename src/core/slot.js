@@ -35,8 +35,12 @@ export const BINGO_LINES = [
 export function evaluateLines(grid) {
   const out = [];
   for (const ln of BINGO_LINES) {
-    const [a, b, c] = ln.cells.map(([col, row]) => grid[col][row]);
-    if (a === b && b === c) out.push({ id: ln.id, symbol: a, cells: ln.cells });
+    // 방어막(lantern) 문양은 조커: 나머지 두 칸만 같아도 빙고(더블·트리플이 실제로 나오게 하는 장치)
+    const syms = ln.cells.map(([col, row]) => grid[col][row]);
+    const rest = syms.filter((s) => s !== 'lantern');
+    if (rest.length === 3 && rest[0] === rest[1] && rest[1] === rest[2]) out.push({ id: ln.id, symbol: rest[0], cells: ln.cells });
+    else if (rest.length === 2 && rest[0] === rest[1]) out.push({ id: ln.id, symbol: rest[0], cells: ln.cells, wild: true });
+    else if (rest.length === 0) out.push({ id: ln.id, symbol: 'lantern', cells: ln.cells });
   }
   return out;
 }

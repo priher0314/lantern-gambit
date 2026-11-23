@@ -993,11 +993,11 @@ export function checkObjective(st, events) {
 
 export function objectiveProgress(st) {
   const o = st.def.objective;
-  if (o.type === 'annihilate') return { label: '적 전멸', value: `${st.kills}/${st.totalEnemies}`, ratio: st.kills / Math.max(1, st.totalEnemies) };
+  if (o.type === 'annihilate') return { label: '적 처치', value: `${st.kills}/${st.totalEnemies}`, ratio: st.kills / Math.max(1, st.totalEnemies) };
   if (o.type === 'survive') {
     const done = Math.min(o.turns, st.turn - (st.result === 'win' ? 0 : 1));
     return { label: '버티기', value: `${done}/${o.turns}턴`, ratio: done / o.turns };
   }
   const t = st.enemies.find((e) => e.type === o.target);
-  return { label: '장로 처치', value: t ? `${t.hp}/${t.maxHp}` : '-', ratio: t ? 1 - t.hp / t.maxHp : 0, bossId: t && t.id };
+  return { label: '보스 체력', value: t ? `${t.hp}/${t.maxHp}` : '-', ratio: t ? 1 - t.hp / t.maxHp : 0, bossId: t && t.id };
 }
