@@ -1,3 +1,7 @@
+/* 글꼴은 게임에 포함되어 있다(SIL Open Font License, fonts/ 폴더의 OFL 문서 참고) */
+@font-face { font-family: "Jua"; src: url("fonts/Jua-Regular.ttf") format("truetype"); font-display: swap; }
+@font-face { font-family: "Black Han Sans"; src: url("fonts/BlackHanSans-Regular.ttf") format("truetype"); font-display: swap; }
+
 :root {
   --gold: #d8a548;
   --gold-hi: #ffe08a;
@@ -387,3 +391,6 @@ body { display: flex; align-items: center; justify-content: center; }
 .title-stats { display: inline-block; margin-top: calc(12px * var(--s) + 2px); padding: 6px 16px; border-radius: 12px; background: rgba(8, 4, 14, 0.55); border: 1px solid rgba(216, 165, 72, 0.28); }
 .title-stats .title-meta { margin-top: 0; font-size: 0.82em; line-height: 1.5; }
 .title .title-foot { margin-top: 8px; }
+
+.keyhint { margin-left: 8px; padding: 1px 7px; border-radius: 6px; border: 1px solid rgba(216, 165, 72, 0.5); color: var(--gold); font-size: 0.72em; opacity: 0.85; }
+.settings select:disabled { opacity: 0.45; }

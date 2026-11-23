@@ -332,6 +332,9 @@ export const EN = {
   '세로': 'Portrait',
   '가로': 'Landscape',
   '자동': 'Auto',
+  '전체 화면': 'Fullscreen',
+  '창 크기': 'Window size',
+  '게임 종료': 'Quit',
 
   // ── 상점·길·결과 ──
   '두 효과는 유지': 'both effects kept',

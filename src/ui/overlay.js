@@ -114,6 +114,7 @@ export class Overlay {
         <button class="btn ${saved ? '' : 'btn-primary'}" data-a="start">새 게임</button>
         <button class="btn" data-a="howto">게임 방법</button>
         <button class="btn" data-a="settings">설정</button>
+        ${window.desktop ? '<button class="btn" data-a="exit">게임 종료</button>' : ''}
       </div>
       <div class="title-stats">
         <div class="title-meta">${meta.runs ? `플레이 ${meta.runs}회 · 클리어 ${meta.wins || 0}회 · 최고 기록 ${meta.best || 0}/${RUN_LENGTH}` : '첫 플레이'}</div>
@@ -142,6 +143,7 @@ export class Overlay {
       }
       if (a === 'howto') this.showHowTo(() => this.showTitle(meta));
       if (a === 'settings') this.openSettings(() => this.showTitle(meta));
+      if (a === 'exit' && window.desktop) window.desktop.quit();
       if (a === 'lang') {
         this.hooks.setSetting('lang', getLang() === 'en' ? 'ko' : 'en');
         this.showTitle(meta);
@@ -480,7 +482,9 @@ export class Overlay {
       <label class="row">효과음 <input type="range" min="0" max="1" step="0.05" data-k="sfx" value="${s.sfx}"></label>
       <label class="row chk"><input type="checkbox" data-k="mute" ${s.mute ? 'checked' : ''}> 전체 음소거</label>
       <h3 class="set-sec">화면</h3>
-      <label class="row">화면 방향 <select data-k="layout"><option value="portrait" ${s.layout !== 'wide' ? 'selected' : ''}>세로</option><option value="wide" ${s.layout === 'wide' ? 'selected' : ''}>가로</option></select></label>
+      <label class="row">화면 방향 <select data-k="layout"><option value="auto" ${s.layout !== 'wide' && s.layout !== 'portrait' ? 'selected' : ''}>자동</option><option value="wide" ${s.layout === 'wide' ? 'selected' : ''}>가로</option><option value="portrait" ${s.layout === 'portrait' ? 'selected' : ''}>세로</option></select></label>
+      <label class="row chk"><input type="checkbox" data-k="fullscreen" ${s.fullscreen ? 'checked' : ''}> 전체 화면 <small class="keyhint">Alt+Enter</small></label>
+      ${window.desktop ? `<label class="row">창 크기 <select data-k="winSize" ${s.fullscreen ? 'disabled' : ''}>${['1280x720', '1600x900', '1920x1080', '2560x1440'].map((v) => `<option value="${v}" ${s.winSize === v ? 'selected' : ''}>${v.replace('x', ' × ')}</option>`).join('')}</select></label>` : ''}
       <label class="row chk"><input type="checkbox" data-k="shake" ${s.shake ? 'checked' : ''}> 화면 흔들림·진동</label>
       <label class="row chk"><input type="checkbox" data-k="flash" ${s.flash ? 'checked' : ''}> 번쩍임 효과</label>
       <label class="row chk"><input type="checkbox" data-k="assist" ${s.assist ? 'checked' : ''}> 쉬운 타이밍 (판정 넓게)</label>
@@ -497,7 +501,7 @@ export class Overlay {
       if (!k) return;
       const val = e.target.type === 'checkbox' ? e.target.checked : e.target.tagName === 'SELECT' ? e.target.value : Number(e.target.value);
       this.hooks.setSetting(k, val);
-      if (k === 'lang') this.openSettings(back); // 바뀐 언어로 다시 그린다
+      if (k === 'lang' || k === 'fullscreen') this.openSettings(back); // 바뀐 상태로 다시 그린다
     });
     p.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;

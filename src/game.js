@@ -147,7 +147,8 @@ export class Game {
     const vw = window.innerWidth || document.documentElement.clientWidth || 540;
     const vh = window.innerHeight || document.documentElement.clientHeight || 960;
     // 화면 방향: 세로(기본) / 가로(왼쪽 전장 + 오른쪽 슬롯)
-    const wide = this.settings.layout === 'wide';
+    // 자동 = 창이 옆으로 넓으면 가로형
+    const wide = this.settings.layout === 'wide' || (this.settings.layout !== 'portrait' && vw > vh * 1.15);
     let scale;
     if (wide) {
       const SH = clamp(Math.round((WIDE_W * vh) / vw), 580, 760);

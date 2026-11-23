@@ -42,9 +42,46 @@ const overlay = new Overlay(document.getElementById('overlay'), {
     store.save();
     game.applySettings(store.settings);
     if (k === 'layout') fitStage();
+    if (k === 'fullscreen') applyFullscreen(v);
+    if (k === 'winSize') applyWinSize(v);
   },
   pause: (p) => (paused = p),
 });
+
+// PC 실행 파일(Electron)에서는 window.desktop 으로 창을 다룬다. 브라우저에서는 브라우저의 전체 화면 기능을 쓴다.
+const desk = window.desktop || null;
+function applyFullscreen(on) {
+  if (desk) desk.setFullscreen(!!on);
+  else if (on) document.documentElement.requestFullscreen?.().catch(() => {});
+  else if (document.fullscreenElement) document.exitFullscreen?.();
+}
+function applyWinSize(v) {
+  const m = /^(\d+)x(\d+)$/.exec(v || '');
+  if (desk && m && !store.settings.fullscreen) desk.setSize(Number(m[1]), Number(m[2]));
+}
+if (desk) {
+  // 지난번에 고른 창 상태로 시작
+  applyWinSize(store.settings.winSize);
+  if (store.settings.fullscreen) applyFullscreen(true);
+} else {
+  // 브라우저는 사용자의 동작 없이 전체 화면이 될 수 없다 → 실제 상태를 따라간다
+  store.settings.fullscreen = false;
+  document.addEventListener('fullscreenchange', () => {
+    store.settings.fullscreen = !!document.fullscreenElement;
+    store.save();
+  });
+}
+window.addEventListener('keydown', (e) => {
+  if ((e.altKey && e.key === 'Enter') || (desk && e.key === 'F11')) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.repeat) return;
+    const on = !store.settings.fullscreen;
+    store.settings.fullscreen = on;
+    store.save();
+    applyFullscreen(on);
+  }
+}, true);
 
 game = new Game(canvas, audio, store, overlay);
 window.__game = game; // 디버그·자동 테스트용
