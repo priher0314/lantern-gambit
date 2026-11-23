@@ -1,6 +1,6 @@
 // 화면 그리기: 배경(미리 렌더), 전장, 캐릭터, 슬롯 사당, HUD, 버튼
 import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS } from '../core/data.js';
-import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, bingoRect, REEL_CELL } from './layout.js';
+import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL } from './layout.js';
 import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix } from './art.js';
 import { drawGlow } from './fx.js';
 
@@ -217,7 +217,7 @@ export class Renderer {
         g.strokeStyle = 'rgba(255,225,170,0.11)';
         g.lineWidth = 1.5;
         g.beginPath();
-        g.ellipse(p.x, p.y - 2, 56 * p.s, 15 * p.s, 0, 0, TAU);
+        g.ellipse(p.x, p.y - 2, 56 * p.s, 23 * p.s, 0, 0, TAU);
         g.fill();
         g.stroke();
       }
@@ -345,54 +345,133 @@ export class Renderer {
     ctx.save();
     ctx.translate(0, (g.slotJolt || 0) * 6);
     this.drawShrineFrame(ctx, this.L);
+    this.drawTray(g);
     this.drawSlot(g);
     this.drawLever(g);
     ctx.restore();
+    if (g.mode === 'battle') this.drawRelicRow(g);
+  }
+
+  // 유물 줄: 슬롯머신 바로 위(누르면 설명)
+  drawRelicRow(g) {
+    const st = g.st;
+    if (!st) return;
+    const relics = g.shownRelics;
+    for (let i = 0; i < relics.length; i++) {
+      const rr = g.relicRect(i);
+      drawRelicBadge(this.ctx, relics[i], rr.x + rr.w / 2, rr.y + rr.h / 2, 13, g.relicPulse[relics[i]] || 0, st.relicLv[relics[i]] || 1);
+    }
+    if (!relics.length) return;
+    if (relics.length <= 4) {
+      const ctx = this.ctx;
+      const last = g.relicRect(relics.length - 1);
+      ctx.font = `12px ${FONTS.ui}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillText('← 유물 (눌러서 보기)', last.x + last.w + 6, last.y + last.h / 2 + 1);
+    }
+  }
+
+  // 코인 쟁반: 번 코인이 실제 개수만큼 흩어져 쌓인다
+  drawTray(g) {
+    const ctx = this.ctx;
+    const tr = trayRect(this.L);
+    // 테두리 + 바닥
+    const rim = ctx.createLinearGradient(0, tr.y, 0, tr.y + tr.h);
+    rim.addColorStop(0, '#e8c070');
+    rim.addColorStop(1, '#8a5a1e');
+    ctx.fillStyle = rim;
+    ctx.beginPath();
+    ctx.roundRect(tr.x - 3, tr.y - 3, tr.w + 6, tr.h + 6, 9);
+    ctx.fill();
+    ctx.fillStyle = '#150b10';
+    ctx.beginPath();
+    ctx.roundRect(tr.x, tr.y, tr.w, tr.h, 7);
+    ctx.fill();
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(tr.x, tr.y, tr.w, tr.h, 7);
+    ctx.clip();
+    // 바닥 격자(펠트 느낌)
+    ctx.strokeStyle = 'rgba(216,165,72,0.09)';
+    ctx.lineWidth = 1;
+    for (let x = tr.x - tr.h; x < tr.x + tr.w; x += 12) {
+      ctx.beginPath();
+      ctx.moveTo(x, tr.y);
+      ctx.lineTo(x + tr.h, tr.y + tr.h);
+      ctx.moveTo(x + tr.h, tr.y);
+      ctx.lineTo(x, tr.y + tr.h);
+      ctx.stroke();
+    }
+    const sh = ctx.createLinearGradient(0, tr.y, 0, tr.y + 10);
+    sh.addColorStop(0, 'rgba(0,0,0,0.55)');
+    sh.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sh;
+    ctx.fillRect(tr.x, tr.y, tr.w, 10);
+    // 코인(아래쪽 것이 위에 겹치도록 y 순서로)
+    const spots = [];
+    for (let i = 0; i < g.pile; i++) spots.push(g.coinSpot(i));
+    spots.sort((a, b) => a.y - b.y);
+    for (const s of spots) drawCoin(ctx, s.x, s.y, 8, s.rot, 1);
+    ctx.restore();
+    // 개수 표지
+    const pw = 62;
+    const px = tr.x + tr.w - pw - 3;
+    ctx.fillStyle = '#2a1404';
+    ctx.strokeStyle = '#d8a548';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(px, tr.y + 4, pw, tr.h - 8, 6);
+    ctx.fill();
+    ctx.stroke();
+    drawCoin(ctx, px + 14, tr.y + tr.h / 2, 7, 0.6, 1);
+    const cp = g.coinPulse || 0;
+    ctx.font = `${19 + cp * 5}px ${FONTS.num}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffd84a';
+    ctx.fillText(String(g.trayTarget()), px + 40, tr.y + tr.h / 2 + 1);
+  }
+
+  // 쟁반으로 날아드는 코인
+  drawCoinFlies(g) {
+    const ctx = this.ctx;
+    for (const f of g.flies) {
+      if (f.t < 0) continue;
+      const k = Math.min(1, f.t / f.dur);
+      const e = k * k * (3 - 2 * k);
+      const x = f.sx + (f.tx - f.sx) * e;
+      const y = f.sy + (f.ty - f.sy) * e - Math.sin(k * Math.PI) * f.arc;
+      drawGlow(ctx, x, y, 14, '#ffd84a', 0.5);
+      drawCoin(ctx, x, y, 8 + Math.sin(k * Math.PI) * 4, f.rot + k * 9, Math.abs(Math.cos(k * 14)) * 0.7 + 0.3);
+    }
   }
 
   drawShrineFrame(g, L) {
     const { x, y, w, h } = cabinetRect(L);
-    // 몸체
+    // 몸체(위에서 내려다본 상자: 윗면은 코인 쟁반)
     const body = g.createLinearGradient(0, y, 0, y + h);
     body.addColorStop(0, '#4a1a22');
     body.addColorStop(1, '#260c14');
     g.fillStyle = body;
     g.beginPath();
-    g.roundRect(x, y + 10, w, h - 14, 10);
+    g.roundRect(x, y, w, h, 12);
     g.fill();
     g.strokeStyle = '#d8a548';
     g.lineWidth = 2.5;
     g.stroke();
-    // 지붕
-    g.fillStyle = '#1a0c14';
+    g.strokeStyle = 'rgba(216,165,72,0.3)';
+    g.lineWidth = 1;
     g.beginPath();
-    g.moveTo(x - 12, y + 16);
-    g.quadraticCurveTo(x + 10, y + 6, x + 26, y - 2);
-    g.lineTo(x + w - 26, y - 2);
-    g.quadraticCurveTo(x + w - 10, y + 6, x + w + 12, y + 16);
-    g.lineTo(x + w, y + 18);
-    g.lineTo(x, y + 18);
-    g.closePath();
-    g.fill();
-    g.strokeStyle = '#d8a548';
-    g.lineWidth = 2;
+    g.roundRect(x + 5, y + 5, w - 10, h - 10, 9);
     g.stroke();
-    // 지붕 술
-    g.strokeStyle = '#e2453c';
-    g.lineWidth = 3;
-    g.beginPath();
-    g.moveTo(x - 8, y + 16);
-    g.lineTo(x - 8, y + 38);
-    g.stroke();
-    g.fillStyle = '#d8a548';
-    g.beginPath();
-    g.arc(x - 8, y + 18, 3.5, 0, TAU);
-    g.fill();
     // 금장 못
+    g.fillStyle = '#d8a548';
     for (let i = 0; i < 10; i++) {
       const xx = x + 14 + ((w - 28) * i) / 9;
       g.beginPath();
-      g.arc(xx, y + h - 10, 2.2, 0, TAU);
+      g.arc(xx, y + h - 8, 2, 0, TAU);
       g.fill();
     }
     // 창 뒤 홈
@@ -634,6 +713,7 @@ export class Renderer {
     }
     g.uiFx.drawWorld(ctx);
     g.uiFx.drawTexts(ctx, FONTS);
+    if (g.mode === 'battle') this.drawCoinFlies(g);
     fx.drawScreen(ctx, W, L.H);
   }
 
@@ -1394,50 +1474,18 @@ export class Renderer {
         ctx.fillText('?', rc.x + rc.w / 2, rc.y + rc.h / 2 + 2);
       }
     }
-    // 유물 줄(HUD 바로 아래) — 누르면 설명
-    const relics = g.shownRelics;
-    for (let i = 0; i < relics.length; i++) {
-      const rr = g.relicRect(i);
-      drawRelicBadge(ctx, relics[i], rr.x + rr.w / 2, rr.y + rr.h / 2, 13, g.relicPulse[relics[i]] || 0, st.relicLv[relics[i]] || 1);
-    }
-    ctx.font = `12px ${FONTS.ui}`;
+    // 조건(험한 길) · 남은 적
+    ctx.font = `12.5px ${FONTS.ui}`;
     ctx.textBaseline = 'middle';
-    if (relics.length && relics.length <= 3 && !st.def.mods.length) {
-      const last = g.relicRect(relics.length - 1);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.fillText('← 눌러서 보기', last.x + last.w + 6, last.y + last.h / 2 + 1);
-    }
-    // 조건(험한 길)과 코인
     if (st.def.mods.length) {
-      ctx.textAlign = 'center';
+      ctx.textAlign = 'left';
       ctx.fillStyle = '#ff9a8a';
-      ctx.font = `12.5px ${FONTS.ui}`;
-      ctx.fillText(st.def.mods.map((m) => MODS[m].name).join(' · '), 316, this.L.hudH + 17);
+      ctx.fillText('조건: ' + st.def.mods.map((m) => MODS[m].name).join(' · '), 14, this.L.hudH + 15);
     }
     const n = st.enemies.filter((e) => e.alive).length;
     ctx.textAlign = 'right';
-    ctx.font = `12px ${FONTS.ui}`;
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.fillText(`남은 적 ${n}`, W - 12, this.L.hudH + 17);
-    const coins = (g.run ? g.run.coins : 0) + st.coins;
-    const cp = g.coinPulse || 0;
-    ctx.font = `${15 + cp * 4}px ${FONTS.num}`;
-    ctx.fillStyle = '#ffd84a';
-    ctx.fillText(String(coins), W - 12, this.L.hudH + 38);
-    const tw = ctx.measureText(String(coins)).width;
-    const cx = W - 12 - tw - 12;
-    const cg = ctx.createRadialGradient(cx - 2, this.L.hudH + 35, 1, cx, this.L.hudH + 37, 8);
-    cg.addColorStop(0, '#fff3b0');
-    cg.addColorStop(0.6, '#e0a020');
-    cg.addColorStop(1, '#8a5a10');
-    ctx.fillStyle = cg;
-    ctx.beginPath();
-    ctx.arc(cx, this.L.hudH + 37, 7 + cp * 2, 0, TAU);
-    ctx.fill();
-    ctx.strokeStyle = '#6a4208';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    ctx.fillText(`남은 적 ${n}`, W - 12, this.L.hudH + 15);
   }
 
   drawInfo(g) {
@@ -1493,6 +1541,16 @@ export class Renderer {
     const idle = ['enemy', 'react', 'counter', 'over', 'spin'].includes(g.ui.phase);
     const live = !!shots && !idle;
     const landed = g.reels.every((r) => !r.spinning);
+    const aiming = live && g.ui.phase === 'aim';
+    const selShot = aiming && g.ui.sel != null ? shots[g.ui.sel] : null;
+    // 지금 고른 기술이 쓰는 칸(col,row) — 여기만 밝게, 나머지는 살짝 어둡게
+    const selCells = new Set();
+    if (selShot && !selShot.used) {
+      if (selShot.bonus) {
+        const ln = (st.bingos || []).find((b) => b.id === selShot.bonus);
+        if (ln) for (const [c, r] of ln.cells) selCells.add(c + ',' + r);
+      } else for (const c of selShot.reels) selCells.add(c + ',1');
+    }
     const bingoCells = new Set();
     if (live && landed) for (const b of st.bingos || []) for (const [c, r] of b.cells) bingoCells.add(c + ',' + r);
 
@@ -1503,7 +1561,6 @@ export class Renderer {
       const shotIdx = shots ? shots.findIndex((s) => s.reels.includes(i)) : -1;
       const shot = shotIdx >= 0 ? shots[shotIdx] : null;
       const used = shot && shot.used;
-      const selected = shot && g.ui.sel === shotIdx && !used && g.ui.phase === 'aim';
       const gilded = st && st.reels[i] && st.reels[i].gilded && !reel.spinning && live;
       const cy = r.y + r.h / 2;
       ctx.save();
@@ -1512,11 +1569,35 @@ export class Renderer {
       ctx.beginPath();
       ctx.roundRect(r.x, r.y, r.w, r.h, 8);
       ctx.clip();
-      ctx.fillStyle = '#d9c9a2';
+      ctx.fillStyle = '#e2d3ac';
       ctx.fillRect(r.x, r.y, r.w, r.h);
-      // 가운데 줄 = 이번 턴의 공격(밝게 강조)
-      ctx.fillStyle = gilded ? '#fbe9a8' : '#f4e8c8';
-      ctx.fillRect(r.x, cy - CELL / 2, r.w, CELL);
+      // 가운데 줄 = 이번 턴의 공격
+      if (gilded && !used) {
+        // 금빛: 칸 전체가 금으로 물들고 빛이 훑고 지나간다
+        const gg = ctx.createLinearGradient(r.x, cy - CELL / 2, r.x + r.w, cy + CELL / 2);
+        gg.addColorStop(0, '#fff2b0');
+        gg.addColorStop(0.5, '#f6c64a');
+        gg.addColorStop(1, '#d8952a');
+        ctx.fillStyle = gg;
+        ctx.fillRect(r.x, cy - CELL / 2, r.w, CELL);
+        const sweep = ((g.rt * 0.9 + i * 0.3) % 1.6) - 0.3;
+        const sx = r.x + sweep * r.w;
+        const sg = ctx.createLinearGradient(sx - 26, 0, sx + 26, 0);
+        sg.addColorStop(0, 'rgba(255,255,255,0)');
+        sg.addColorStop(0.5, 'rgba(255,255,255,0.75)');
+        sg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(r.x, cy - CELL / 2, r.w, CELL);
+        ctx.clip();
+        ctx.transform(1, 0, -0.5, 1, 0, 0);
+        ctx.fillStyle = sg;
+        ctx.fillRect(sx - 26 + cy * 0.5, cy - CELL / 2, 52, CELL);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#f6ebcc';
+        ctx.fillRect(r.x, cy - CELL / 2, r.w, CELL);
+      }
       const blur = Math.min(1, Math.abs(reel.vel || 0) / 25);
       const base = Math.floor(reel.pos);
       for (let j = -2; j <= 2; j++) {
@@ -1530,24 +1611,35 @@ export class Renderer {
         ctx.save();
         ctx.translate(r.x + r.w / 2, y);
         if (blur > 0.05) ctx.scale(1, 1 + blur * 0.7);
-        ctx.globalAlpha = (1 - blur * 0.55) * (reel.spinning || isMid || inBingo ? 1 : 0.62);
-        ctx.fillStyle = SYMBOLS[sym].tint;
+        ctx.globalAlpha = (1 - blur * 0.55) * (reel.spinning || isMid || inBingo ? 1 : 0.86);
+        const gold = inBingo || (gilded && isMid && !used);
+        ctx.fillStyle = gold && isMid && gilded ? '#fff6d0' : SYMBOLS[sym].tint;
         ctx.beginPath();
         ctx.arc(0, 0, 23, 0, TAU);
         ctx.fill();
-        const gold = inBingo || (gilded && isMid);
-        ctx.strokeStyle = gold ? '#d8a548' : 'rgba(23,13,34,0.25)';
+        ctx.strokeStyle = gold ? '#b8791a' : 'rgba(23,13,34,0.25)';
         ctx.lineWidth = gold ? 4 : 2;
         ctx.stroke();
         drawSymbol(ctx, sym, 0, 0, 17.5);
         ctx.restore();
       }
-      // 위·아래 줄은 살짝 어둡게(원통 느낌)
+      // 금빛 반짝이
+      if (gilded && !used) {
+        for (let k = 0; k < 4; k++) {
+          const ph = (g.rt * 1.3 + k * 0.27 + i * 0.4) % 1;
+          const px = r.x + 12 + ((k * 37 + i * 19) % (r.w - 24));
+          const py = cy - CELL / 2 + 8 + ((k * 23) % (CELL - 16));
+          ctx.globalAlpha = Math.sin(ph * Math.PI);
+          drawIcon(ctx, 'spark4', px, py, 10 + Math.sin(ph * Math.PI) * 6, '#ffffff');
+        }
+        ctx.globalAlpha = 1;
+      }
+      // 위·아래 줄: 살짝만 어둡게(잘 보이도록)
       const sh = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
-      sh.addColorStop(0, 'rgba(20,8,12,0.5)');
+      sh.addColorStop(0, 'rgba(20,8,12,0.3)');
       sh.addColorStop(0.3, 'rgba(20,8,12,0)');
       sh.addColorStop(0.7, 'rgba(20,8,12,0)');
-      sh.addColorStop(1, 'rgba(20,8,12,0.5)');
+      sh.addColorStop(1, 'rgba(20,8,12,0.3)');
       ctx.fillStyle = sh;
       ctx.fillRect(r.x, r.y, r.w, r.h);
       ctx.fillStyle = 'rgba(216,165,72,0.55)';
@@ -1566,11 +1658,21 @@ export class Renderer {
         }
       }
       if (shots && idle) {
-        ctx.fillStyle = 'rgba(15,8,18,0.55)';
+        ctx.fillStyle = 'rgba(15,8,18,0.5)';
         ctx.fillRect(r.x, r.y, r.w, r.h);
-      } else if (used) {
-        ctx.fillStyle = 'rgba(15,8,18,0.6)';
-        ctx.fillRect(r.x, cy - CELL / 2, r.w, CELL);
+      } else {
+        if (used) {
+          ctx.fillStyle = 'rgba(15,8,18,0.6)';
+          ctx.fillRect(r.x, cy - CELL / 2, r.w, CELL);
+        }
+        // 고르지 않은 칸은 살짝 어둡게 → 지금 쏠 기술이 도드라진다
+        if (selCells.size) {
+          ctx.fillStyle = 'rgba(15,8,18,0.34)';
+          for (let row = 0; row < 3; row++) {
+            if (selCells.has(i + ',' + row)) continue;
+            ctx.fillRect(r.x, r.y + row * CELL, r.w, CELL);
+          }
+        }
       }
       if (reel.flashT > 0) {
         ctx.fillStyle = `rgba(255,255,255,${reel.flashT * 0.7})`;
@@ -1579,18 +1681,11 @@ export class Renderer {
       ctx.restore();
       // 틀
       ctx.lineWidth = 2.5;
-      ctx.strokeStyle = '#d8a548';
+      ctx.strokeStyle = gilded && !used ? '#ffe08a' : '#d8a548';
       ctx.beginPath();
       ctx.roundRect(r.x, r.y, r.w, r.h, 8);
       ctx.stroke();
-      if (selected) {
-        drawGlow(ctx, r.x + r.w / 2, cy, 90, '#ffd27a', 0.28 + Math.sin(g.rt * 5) * 0.08);
-        ctx.lineWidth = 3.5;
-        ctx.strokeStyle = '#fff1b0';
-        ctx.beginPath();
-        ctx.roundRect(r.x + 2, cy - CELL / 2 + 1, r.w - 4, CELL - 2, 6);
-        ctx.stroke();
-      }
+      if (gilded && !used) drawGlow(ctx, r.x + r.w / 2, cy, 80, '#ffd84a', 0.22 + Math.sin(g.rt * 4 + i) * 0.08);
       // 가운데 줄 눈금
       ctx.fillStyle = '#d8a548';
       for (const sx of [r.x - 2, r.x + r.w + 2]) {
@@ -1599,17 +1694,6 @@ export class Renderer {
         ctx.lineTo(sx + (sx < r.x + 10 ? 8 : -8), cy);
         ctx.lineTo(sx, cy + 7);
         ctx.fill();
-      }
-      if (gilded && !used) {
-        ctx.fillStyle = '#d8a548';
-        ctx.beginPath();
-        ctx.roundRect(r.x + 3, cy - CELL / 2 + 3, 40, 15, 7);
-        ctx.fill();
-        ctx.font = `11px ${FONTS.num}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#2a1404';
-        ctx.fillText('금빛+1', r.x + 23, cy - CELL / 2 + 11);
       }
       if (used && !idle) {
         ctx.save();
@@ -1630,15 +1714,41 @@ export class Renderer {
       ctx.restore();
     }
 
-    // 빙고 줄(가로·대각선) 표시
+    // 고른 기술의 칸에 밝은 테두리("지금 이걸 쏜다")
+    if (selCells.size) {
+      const pulse = 0.7 + Math.sin(g.rt * 7) * 0.3;
+      for (const key of selCells) {
+        const [c, row] = key.split(',').map(Number);
+        const r = reelRect(L, c);
+        const y0 = r.y + row * CELL;
+        drawGlow(ctx, r.x + r.w / 2, y0 + CELL / 2, 62, selShot.gild ? '#ffd84a' : SYMBOLS[selShot.symbol].fx, 0.3 * pulse);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.roundRect(r.x + 2, y0 + 2, r.w - 4, CELL - 4, 7);
+        ctx.stroke();
+        ctx.strokeStyle = selShot.gild ? '#ffd84a' : SYMBOLS[selShot.symbol].fx;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(r.x + 5, y0 + 5, r.w - 10, CELL - 10, 5);
+        ctx.stroke();
+      }
+    }
+
+    // 빙고 줄: 슬롯 칸을 직접 눌러 고른다
     if (live && landed) {
       const pulse = 0.65 + Math.sin(g.rt * 7) * 0.3;
       for (const b of st.bingos || []) {
+        const si = shots.findIndex((s) => s.bonus === b.id);
+        const sh = shots[si];
+        if (!sh) continue;
+        const sel = aiming && g.ui.sel === si && !sh.used;
         const a = slotCell(L, b.cells[0][0], b.cells[0][1]);
         const c = slotCell(L, b.cells[2][0], b.cells[2][1]);
         ctx.lineCap = 'round';
-        for (const [w, col, al] of [[14, '#ffb347', 0.35 * pulse], [7, '#ffe08a', 0.8 * pulse], [2.5, '#ffffff', 0.9]]) {
-          ctx.globalAlpha = al;
+        const dimK = sh.used ? 0.25 : 1;
+        for (const [w, col, al] of [[sel ? 18 : 12, '#ffb347', 0.35 * pulse], [sel ? 9 : 6, '#ffe08a', 0.8 * pulse], [sel ? 3.5 : 2.5, '#ffffff', 0.9]]) {
+          ctx.globalAlpha = al * dimK;
           ctx.strokeStyle = col;
           ctx.lineWidth = w;
           ctx.beginPath();
@@ -1647,52 +1757,32 @@ export class Renderer {
           ctx.stroke();
         }
         ctx.globalAlpha = 1;
-      }
-    }
-
-    // 릴 위 줄: 빙고 보너스 기술(누르면 선택) / 안내
-    const br = bingoRect(L);
-    const bonus = live ? shots.map((s, i) => [s, i]).filter(([s]) => s.bonus) : [];
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    if (bonus.length) {
-      const bw = br.w / bonus.length;
-      bonus.forEach(([sh, si], k) => {
-        const sel = g.ui.sel === si && !sh.used && g.ui.phase === 'aim';
-        const bx = br.x + k * bw + 2;
-        if (!sh.used) drawGlow(ctx, bx + bw / 2, br.y + br.h / 2, bw * 0.5, '#ffb347', 0.3 + Math.sin(g.rt * 6) * 0.12);
-        const gr = ctx.createLinearGradient(0, br.y, 0, br.y + br.h);
-        gr.addColorStop(0, sh.used ? '#3a2a30' : '#ffe08a');
-        gr.addColorStop(1, sh.used ? '#2a1c22' : '#d0902a');
-        ctx.fillStyle = gr;
+        if (sh.used) continue;
+        // 꼬리표: 고르기 전엔 "누르기", 고른 뒤엔 기술 이름
+        const anchor = b.id === 'r0' || b.id === 'r2' ? slotCell(L, 1, b.cells[1][1]) : a;
+        const ty = anchor.y + (b.cells[0][1] === 2 && b.id !== 'r2' ? -CELL / 2 + 10 : CELL / 2 - 10);
+        const label = sel ? `▶ ${SHOT_NAMES[sh.symbol][sh.tier]}` : '빙고! 누르기';
+        ctx.font = `13px ${FONTS.num}`;
+        const tw = ctx.measureText(label).width + 16;
+        ctx.fillStyle = sel ? '#ffe08a' : 'rgba(42,20,4,0.94)';
+        ctx.strokeStyle = sel ? '#ffffff' : '#ffe08a';
+        ctx.lineWidth = sel ? 2.5 : 1.5;
         ctx.beginPath();
-        ctx.roundRect(bx, br.y, bw - 4, br.h, 8);
+        ctx.roundRect(anchor.x - tw / 2, ty - 10, tw, 20, 10);
         ctx.fill();
-        ctx.strokeStyle = sel ? '#ffffff' : INK;
-        ctx.lineWidth = sel ? 3 : 1.5;
         ctx.stroke();
-        ctx.font = `15px ${FONTS.num}`;
-        ctx.fillStyle = sh.used ? 'rgba(255,255,255,0.35)' : '#2a1404';
-        const lvl = st.bingoLevel || 1;
-        const kind = lvl >= 3 ? '트리플 빙고' : lvl === 2 ? '더블 빙고' : '빙고';
-        const tail = sh.used ? ' (사용함)' : sel ? '  ▶ 레인을 누르세요' : '  ← 눌러서 선택';
-        ctx.fillText(`${kind}: ${SHOT_NAMES[sh.symbol][sh.tier]}${bonus.length > 1 ? '' : tail}`, bx + bw / 2 - 2, br.y + br.h / 2 + 1, bw - 12);
-      });
-    } else if (g.mode === 'battle') {
-      const em = st ? st.player.embers : 0;
-      ctx.font = `12.5px ${FONTS.ui}`;
-      if (em > 0) {
-        ctx.fillStyle = '#ffd27a';
-        ctx.fillText(`✦ 퍼펙트 보상: 다음 턴 금빛 릴 ×${em}`, br.x + br.w / 2, br.y + br.h / 2 + 1);
-      } else {
-        ctx.fillStyle = 'rgba(216,165,72,0.6)';
-        ctx.fillText('위·아래 줄, 대각선 3칸 = 빙고', br.x + br.w / 2, br.y + br.h / 2 + 1);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = sel ? '#2a1404' : '#ffe08a';
+        ctx.fillText(label, anchor.x, ty + 1);
       }
     }
 
     // 가운데 줄 기술 이름패(연결은 묶어서)
     const r0 = reelRect(L, 0);
     const py = r0.y + r0.h + 6;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     if (live) {
       shots.forEach((sh, si) => {
         if (sh.bonus) return;
@@ -1714,23 +1804,25 @@ export class Renderer {
             ctx.stroke();
           }
         }
-        const sel = g.ui.sel === si && !sh.used && g.ui.phase === 'aim';
-        ctx.fillStyle = sh.used ? 'rgba(40,20,30,0.8)' : sh.tier === 3 ? '#6a3a08' : sh.tier === 2 ? '#5a1a1a' : '#2a1626';
-        ctx.strokeStyle = sel ? '#fff1b0' : sh.tier >= 2 ? '#ffd27a' : 'rgba(216,165,72,0.6)';
+        const sel = aiming && g.ui.sel === si && !sh.used;
+        ctx.fillStyle = sh.used ? 'rgba(40,20,30,0.8)' : sel ? '#fff1b0' : sh.tier === 3 ? '#6a3a08' : sh.tier === 2 ? '#5a1a1a' : '#2a1626';
+        ctx.strokeStyle = sel ? '#ffffff' : sh.tier >= 2 || sh.gild ? '#ffd27a' : 'rgba(216,165,72,0.6)';
         ctx.lineWidth = sel ? 2.5 : 1.5;
         ctx.beginPath();
         ctx.roundRect(x0 + 3, py, x1 - x0 - 6, 25, 8);
         ctx.fill();
         ctx.stroke();
         ctx.font = `15px ${FONTS.num}`;
-        ctx.fillStyle = sh.used ? 'rgba(255,255,255,0.35)' : sh.tier === 3 ? '#ffe08a' : sh.gild ? '#ffd27a' : '#fff';
-        ctx.fillText(SHOT_NAMES[sh.symbol][sh.tier] + (sh.gild ? ' ✦' : ''), (x0 + x1) / 2, py + 13, x1 - x0 - 12);
+        ctx.fillStyle = sh.used ? 'rgba(255,255,255,0.35)' : sel ? '#2a1404' : sh.tier === 3 ? '#ffe08a' : sh.gild ? '#ffd27a' : '#fff';
+        // 금빛 수치는 숫자로: "절단 ✦+1"
+        ctx.fillText(SHOT_NAMES[sh.symbol][sh.tier] + (sh.gild ? ` ✦+${sh.gild}` : ''), (x0 + x1) / 2, py + 13, x1 - x0 - 12);
       });
     } else if (g.mode === 'battle') {
       ctx.font = `14px ${FONTS.ui}`;
-      ctx.fillStyle = 'rgba(216,165,72,0.7)';
+      ctx.fillStyle = 'rgba(216,165,72,0.75)';
       const c = cabinetRect(L);
-      const msg = g.ui.phase === 'spinning' ? '…' : g.ui.phase === 'spin' ? '레버를 당기세요' : '적의 차례';
+      const em = st ? st.player.embers : 0;
+      const msg = g.ui.phase === 'spinning' ? '…' : g.ui.phase === 'spin' ? (em > 0 ? `레버를 당기세요 · 금빛 릴 ${em}개 대기` : '레버를 당기세요') : '적의 차례';
       ctx.fillText(msg, c.x + c.w / 2, py + 13);
     }
   }
@@ -2001,4 +2093,34 @@ export function wrapText(ctx, text, maxW) {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+// 금화 한 닢(위에서 본 모습). squash: 날아가며 뒤집힐 때의 납작함(0~1)
+export function drawCoin(ctx, x, y, r, rot = 0, squash = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath();
+  ctx.ellipse(1.5, 2.5, r, r * 0.82 * squash, 0, 0, TAU);
+  ctx.fill();
+  const g = ctx.createRadialGradient(-r * 0.3, -r * 0.35, 1, 0, 0, r);
+  g.addColorStop(0, '#fff6c0');
+  g.addColorStop(0.55, '#f0b82e');
+  g.addColorStop(1, '#a86a12');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r, r * 0.82 * squash, 0, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = '#6a4208';
+  ctx.lineWidth = 1.3;
+  ctx.stroke();
+  // 새겨진 무늬(닢마다 방향이 다르다)
+  ctx.rotate(rot);
+  ctx.strokeStyle = 'rgba(110,66,8,0.75)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.42, -r * 0.2 * squash);
+  ctx.lineTo(r * 0.42, r * 0.2 * squash);
+  ctx.stroke();
+  ctx.restore();
 }

@@ -9,13 +9,13 @@ export function computeLayout(H) {
   const L = { W, H };
   L.hudH = 66;
   L.btn = { y: H - 94, h: 94 };
-  L.slot = { y: L.btn.y - 258, h: 258 };
+  L.slot = { y: L.btn.y - 288, h: 288 }; // 위에서부터: 유물 줄, 코인 쟁반, 릴 3×3, 이름패
   L.info = { y: L.slot.y - 40, h: 40 };
   L.playerY = L.info.y - 6;
   L.fieldBottom = L.playerY - 84;
   const maxField = 600;
   // HUD 아래에 여유(유물 줄 + 맨 뒷줄 적의 머리)를 둬서 HUD가 적을 가리지 않게 한다
-  L.fieldTop = Math.max(L.hudH + 62, L.fieldBottom - maxField);
+  L.fieldTop = Math.max(L.hudH + 46, L.fieldBottom - maxField);
   L.fieldH = L.fieldBottom - L.fieldTop;
   L.ch = L.fieldH / ROWS;
   L.cx = W / 2;
@@ -23,7 +23,7 @@ export function computeLayout(H) {
 }
 
 export function rowScale(L, rowF) {
-  return 0.9 + 0.1 * Math.max(0, Math.min(1, (rowF + 0.5) / ROWS));
+  return 0.95 + 0.05 * Math.max(0, Math.min(1, (rowF + 0.5) / ROWS));
 }
 
 // 칸 중심(적의 발 위치) — rowF는 소수 가능(이동 애니메이션)
@@ -62,14 +62,14 @@ export function reelRect(L, i) {
   const h = REEL_CELL * 3;
   const gap = 10;
   const x0 = 32;
-  return { x: x0 + i * (w + gap), y: L.slot.y + 54, w, h };
+  return { x: x0 + i * (w + gap), y: L.slot.y + 86, w, h };
 }
 
 // 슬롯머신 몸체(릴 3개를 감싸는 사당)와 오른쪽 레버
 export function cabinetRect(L) {
   const a = reelRect(L, 0);
   const c = reelRect(L, 2);
-  return { x: a.x - 16, y: L.slot.y + 6, w: c.x + c.w + 16 - (a.x - 16), h: L.slot.h - 8 };
+  return { x: a.x - 16, y: L.slot.y + 34, w: c.x + c.w + 16 - (a.x - 16), h: L.slot.h - 36 };
 }
 
 export function leverRect(L) {
@@ -89,4 +89,10 @@ export function bingoRect(L) {
   const a = reelRect(L, 0);
   const c = reelRect(L, 2);
   return { x: a.x, y: L.slot.y + 25, w: c.x + c.w - a.x, h: 24 };
+}
+
+// 슬롯머신 윗면의 코인 쟁반
+export function trayRect(L) {
+  const c = cabinetRect(L);
+  return { x: c.x + 8, y: L.slot.y + 40, w: c.w - 16, h: 38 };
 }

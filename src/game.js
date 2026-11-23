@@ -6,7 +6,7 @@ import { judge, lateLimit } from './core/timing.js';
 import { shotForReel, BINGO_LINES } from './core/slot.js';
 import { hashSeed } from './core/rng.js';
 import { FX } from './render/fx.js';
-import { W, computeLayout, cellPos, laneAt, reelRect, leverRect, bingoRect, slotCell, LANE_SPACING } from './render/layout.js';
+import { W, computeLayout, cellPos, laneAt, reelRect, leverRect, bingoRect, slotCell, cabinetRect, trayRect, LANE_SPACING } from './render/layout.js';
 import { Renderer, REEL_CELL } from './render/scene.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -85,6 +85,10 @@ export class Game {
     this.hold = null;
     this.battleCount = RUN_LENGTH;
     this.coinPulse = 0;
+    this.pile = 0; // 쟁반에 쌓인 코인 수
+    this.coinShown = 0; // 쌓였거나 날아가는 중인 코인 수
+    this.flies = [];
+    this.banked = false;
     this.mode = 'title';
     this.views = new Map();
     this.projs = [];
@@ -210,8 +214,27 @@ export class Game {
     }
   }
 
+  // ───── 코인 쟁반 ─────
+  trayTarget() {
+    return (this.run ? this.run.coins : 0) + (this.st && this.mode === 'battle' ? this.st.coins : 0);
+  }
+
+  // i번째 코인이 놓일 자리(같은 번호는 항상 같은 자리 → 쌓인 모양이 유지된다)
+  coinSpot(i) {
+    const tr = trayRect(this.L);
+    const rnd = (k) => {
+      const x = Math.sin((i + 1) * 12.9898 + k * 78.233) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    const w = tr.w - 70; // 오른쪽은 개수 표지
+    return { x: tr.x + 11 + rnd(1) * (w - 22), y: tr.y + 9 + rnd(2) * (tr.h - 18), rot: rnd(3) * Math.PI };
+  }
+
   relicRect(i) {
-    return { x: 12 + i * 32, y: this.L.hudH + 5, w: 28, h: 28 };
+    const c = cabinetRect(this.L);
+    const n = Math.max(1, this.shownRelics.length);
+    const step = Math.min(32, (c.w - 8) / n);
+    return { x: c.x + 4 + i * step, y: this.L.slot.y + 3, w: 28, h: 28 };
   }
 
   buzz(ms) {
@@ -363,6 +386,9 @@ export class Game {
     this.fx.clear();
     this.strips = st.strips;
     this.hud.hp = this.hud.hpLag = st.player.hp;
+    this.banked = false;
+    this.pile = this.coinShown = this.run.coins;
+    this.flies = [];
     this.player.x = this.player.tx = W / 2;
     this.ui = { phase: 'busy', sel: null, hoverLane: -1, armedLane: -1, preview: null, react: null, counter: null };
     this.busy = true;
@@ -382,6 +408,11 @@ export class Game {
     this.ui.preview = null;
     this.audio.setIntensity(0);
     this.refresh();
+    // 연출이 생략된 코인이 있으면 쟁반에 맞춰 둔다
+    if (this.coinShown < this.trayTarget()) {
+      this.pile += this.trayTarget() - this.coinShown;
+      this.coinShown = this.trayTarget();
+    }
     this.queueIntros();
     this.nextCard();
     this.tip('spin', '오른쪽 레버를 당겨 이번 턴의 공격을 뽑으세요.');
@@ -556,20 +587,24 @@ export class Game {
       this.pullLever();
       return;
     }
-    // 빙고 보너스 기술 선택(릴 위 금색 줄)
-    const brc = bingoRect(this.L);
-    if (inR(brc, 4) && this.ui.phase === 'aim' && !this.busy && this.st) {
-      const bonus = this.st.shots.map((s, i) => [s, i]).filter(([s]) => s.bonus);
-      if (bonus.length) {
-        const k = clamp(Math.floor((p.x - brc.x) / (brc.w / bonus.length)), 0, bonus.length - 1);
-        this.selectShot(bonus[k][1], touch);
-        return;
-      }
-    }
-    // 릴(공격 패) 선택
+    // 슬롯 칸 선택: 가운데 줄 = 그 릴의 공격, 빙고가 걸린 위·아래 칸 = 그 빙고 기술
     for (let i = 0; i < 3; i++) {
       const r = reelRect(this.L, i);
       if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h + 34) {
+        const row = clamp(Math.floor((p.y - r.y) / REEL_CELL), 0, 2);
+        const st = this.st;
+        if (st && p.y <= r.y + r.h && this.ui.phase === 'aim' && !this.busy) {
+          const hits = (st.bingos || []).filter((b) => b.cells.some(([c, rr]) => c === i && rr === row))
+            .map((b) => st.shots.findIndex((s) => s.bonus === b.id)).filter((si) => si >= 0 && !st.shots[si].used);
+          // 가운데 칸은 그 릴의 공격이 우선. 위·아래 칸(또는 가운데 공격을 이미 쓴 경우)은 빙고 기술.
+          const midIdx = shotForReel(st.shots, i);
+          const midFree = midIdx >= 0 && !st.shots[midIdx].used;
+          if (hits.length && (row !== 1 || !midFree)) {
+            const cur = hits.indexOf(this.ui.sel);
+            this.selectShot(hits[(cur + 1) % hits.length], touch); // 겹치는 칸을 다시 누르면 다른 빙고로
+            return;
+          }
+        }
         this.selectReel(i, touch);
         return;
       }
@@ -1179,6 +1214,7 @@ export class Game {
       this.showBanner('밤을 넘겼다', `${this.def.night} 클리어`, 1.8, '#ffe08a', 44);
       recordBattle(this.run, st);
       const bank = bankBattle(this.run, st);
+      this.banked = true;
       const last = this.run.stage >= RUN_LENGTH - 1;
       if (last) meta.bestScore = Math.max(meta.bestScore || 0, this.run.totals.score);
       await this.waitReal(1700);
@@ -1302,16 +1338,27 @@ export class Game {
       case 'turn':
         break;
       case 'coin': {
-        // 코인 획득: 어디서 벌었는지 작은 글자로
+        // 코인 획득: 번 만큼의 금화가 슬롯머신 위 쟁반으로 날아가 쌓인다
         this.coinPulse = 1;
-        this.audio.play('coin', { n: ev.n });
-        const label = { combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어', kill: '' }[ev.why] || '';
+        const label = { combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어' }[ev.why] || '';
+        const tr = trayRect(L);
+        let sx = this.player.x;
+        let sy = L.playerY - 60;
         if (v) {
           const ip = this.impactPoint(v);
-          fx.text(ip.x + 36, ip.y + 6, `+${ev.n} 코인`, { color: '#ffd84a', size: 17, font: 'num', life: 1, vy: -34, delay: 0.1 });
-        } else {
-          this.uiFx.text(W - 90, L.hudH + 44, `${label} +${ev.n} 코인`, { color: '#ffd84a', size: 16, font: 'num', life: 1.3, vy: -14 });
+          sx = ip.x;
+          sy = ip.y;
+        } else if (ev.why === 'bingo') {
+          const q = slotCell(L, 1, 1);
+          sx = q.x;
+          sy = q.y;
         }
+        for (let i = 0; i < ev.n; i++) {
+          const spot = this.coinSpot(this.coinShown + i);
+          this.flies.push({ sx: sx + (Math.random() - 0.5) * 24, sy: sy + (Math.random() - 0.5) * 16, tx: spot.x, ty: spot.y, rot: spot.rot, t: -i * 0.07, dur: 0.5, arc: 50 + Math.random() * 40 });
+        }
+        this.coinShown += ev.n;
+        if (label) this.uiFx.text(tr.x + tr.w / 2 - 30, tr.y - 10, `${label} +${ev.n}`, { color: '#ffd84a', size: 16, font: 'num', life: 1.2, vy: -12 });
         break;
       }
       case 'evolve': {
@@ -1358,7 +1405,7 @@ export class Game {
         this.audio.play('combo', { n: ev.n });
         fx.text(W / 2, L.fieldTop + L.fieldH * 0.3, label, { color: ev.n >= 3 ? '#ffe08a' : '#ffffff', size: 26 + Math.min(5, ev.n) * 6, font: 'num', life: 1.2, vy: -30 });
         fx.punchIn(0.012 * Math.min(4, ev.n));
-        if (ev.ember) this.uiFx.text(210, L.slot.y + 14, '✦ 연속 처치 보상: 다음 턴 금빛 릴 +1', { color: '#ffd27a', size: 17, font: 'num', delay: 0.3, vy: -8, life: 1.6 });
+        if (ev.ember) this.uiFx.text(210, L.slot.y + 60, '✦ 연속 처치 보상: 다음 턴 금빛 릴 +1', { color: '#ffd27a', size: 17, font: 'num', delay: 0.3, vy: -8, life: 1.6 });
         break;
       }
       case 'poison': {
@@ -1700,7 +1747,7 @@ export class Game {
         if (ev.ember) {
           const P = this.player;
           this.audio.play('ember');
-          this.uiFx.text(210, L.slot.y + 14, '✦ 다음 턴 금빛 릴 +1', { color: '#ffd27a', size: 18, font: 'num', delay: 0.25, vy: -8, life: 1.5 });
+          this.uiFx.text(210, L.slot.y + 60, '✦ 다음 턴 금빛 릴 +1', { color: '#ffd27a', size: 18, font: 'num', delay: 0.25, vy: -8, life: 1.5 });
         }
         break;
       case 'playerHit': {
@@ -2119,6 +2166,22 @@ export class Game {
     this.slotJolt = Math.max(0, this.slotJolt - realDt * 7 - this.slotJolt * realDt * 6);
     for (const k in this.relicPulse) this.relicPulse[k] = Math.max(0, this.relicPulse[k] - realDt * 1.5);
     this.coinPulse = Math.max(0, this.coinPulse - realDt * 4);
+    // 날아가는 코인 → 쟁반에 떨어지면 짤랑
+    if (this.flies.length) {
+      for (const f of this.flies) f.t += realDt;
+      const landedN = this.flies.filter((f) => f.t >= f.dur).length;
+      if (landedN) {
+        this.flies = this.flies.filter((f) => f.t < f.dur);
+        this.pile += landedN;
+        this.audio.play('coin', { n: 1 + (this.pile % 4) });
+        this.slotJolt = Math.max(this.slotJolt, 0.22);
+      }
+    }
+    const coinTarget = this.trayTarget();
+    if (this.mode !== 'battle' || this.coinShown > coinTarget || (this.banked && this.coinShown < coinTarget)) {
+      this.flies = [];
+      this.pile = this.coinShown = coinTarget;
+    }
     this.uiFx.update(realDt, realDt);
     const gp = this.ui.preview;
     if (gp && gp.gild && Math.random() < realDt * 26) {

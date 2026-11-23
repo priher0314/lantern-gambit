@@ -60,7 +60,7 @@ function ellipse(ctx, x, y, rx, ry, rot = 0) {
 }
 function shadow(ctx, w, alpha = 0.38) {
   ctx.fillStyle = `rgba(5,2,15,${alpha})`;
-  ellipse(ctx, 0, 0, w, w * 0.3);
+  ellipse(ctx, 0, 0, w, w * 0.44);
   ctx.fill();
 }
 function frostOverlay(ctx, k, h) {
