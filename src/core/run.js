@@ -41,7 +41,7 @@ export function createRun(seed, opt = {}) {
 const UNIT_COST = { kasa: 2, drum: 2, archer: 2, mask: 3, bomber: 2, healer: 3, boar: 3 };
 const ELITE_COST = 2;
 const BUDGET = [14, 20, 25, 29, 33]; // 밤이 깊어질수록 적이 많아지고
-const HP_SCALE = [1.05, 1.25, 1.42, 1.56, 1.7, 1.62]; // 단단해진다(마지막은 보스의 부하들)
+const HP_SCALE = [1, 1.15, 1.3, 1.42, 1.55, 1.5]; // 단단해진다(마지막은 보스의 부하들)
 
 function pickWeighted(r, table) {
   const total = table.reduce((a, [, w]) => a + w, 0);

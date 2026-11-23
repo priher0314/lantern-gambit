@@ -1244,6 +1244,7 @@ export class Renderer {
     if (!P) return;
     const L = this.L;
     P.scarf = g.run && CHARACTERS[g.run.char] ? CHARACTERS[g.run.char].scarf : null;
+    P.look = g.run ? g.run.char : 'blade';
     drawPlayer(this.ctx, P.x + (P.ox || 0), L.playerY + (P.oy || 0), 1.08, P);
     // 방어막 표시
     if (g.st && g.st.player.guard > 0 && g.mode === 'battle') {
@@ -1274,7 +1275,9 @@ export class Renderer {
         ctx.lineTo(x0 + i * gap, y + 7);
         ctx.lineTo(x0 + i * gap - 6.5, y);
         ctx.closePath();
-        ctx.fillStyle = on ? (warn > 0 ? '#ff8a7a' : '#7fe8ff') : 'rgba(10,6,16,0.7)';
+        // 방금 쓴 칸은 붉게 깜빡이다 꺼진다
+        const lost = g.staminaLost && !on && i < sta + g.staminaLost.n;
+        ctx.fillStyle = on ? (warn > 0 ? '#ff8a7a' : '#7fe8ff') : lost && Math.sin(g.rt * 30) > 0 ? '#ff6a6a' : 'rgba(10,6,16,0.7)';
         ctx.fill();
         ctx.lineWidth = 2;
         ctx.strokeStyle = on ? INK : warn > 0 ? '#ff8a7a' : 'rgba(127,232,255,0.45)';

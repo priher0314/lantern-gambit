@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.20';
+export const GAME_VERSION = 'v0.21';
 
 export const ROWS = 7;
 export const LANES = 3;
@@ -70,7 +70,7 @@ export const ELITE = { hp: 1.6, atk: 1 };
 export const STAGE_EN = { b1: 'Bridgehead', b2: 'Mask Dance', b3: 'Lantern Alley', b4: 'Drumbeat', b5: 'Great Lantern' };
 
 // 기력: 막기·회피에 드는 힘. 매 턴 조금씩 돌아온다. 퍼펙트여도 기력은 든다(퍼펙트 회피만 1로 줄어든다).
-export const STAMINA = { max: 4, regen: 2, guard: 1, dodge: 2, perfectDodge: 1 };
+export const STAMINA = { max: 4, regen: 1, guard: 1, dodge: 2, perfectDodge: 1 };
 // 수련: 상점에서 문양을 단련하면 그 기술이 강해진다(최대 단계)
 export const TRAIN_MAX = 3;
 export const TRAIN_TEXT = { bomb: '피해 +1', blade: '피해 +1', wave: '피해 +1', frost: '피해 +1', spark: '피해 +1', venom: '중독 +1', lantern: '방어막 +1' };

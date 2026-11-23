@@ -721,7 +721,40 @@ export function drawPlayer(ctx, x, y, k, a) {
   ctx.quadraticCurveTo(0, -4 * k, 24 * k, -8 * k);
   ctx.quadraticCurveTo(26 * k, -28 * k, 14 * k, -52 * k);
   ctx.closePath();
-  fillInk(ctx, T('#2d3c78'), 3 * k);
+  const bomber = a.look === 'bomb';
+  fillInk(ctx, T(bomber ? '#7a3f24' : '#2d3c78'), 3 * k);
+  if (bomber) {
+    // 폭탄꾼: 등에 멘 폭탄 자루
+    ctx.beginPath();
+    ctx.ellipse(-15 * k, -24 * k, 13 * k, 15 * k, -0.2, 0, TAU);
+    fillInk(ctx, T('#3a2a44'), 2.6 * k);
+    ctx.beginPath();
+    ctx.moveTo(-22 * k, -36 * k);
+    ctx.quadraticCurveTo(-15 * k, -42 * k, -8 * k, -36 * k);
+    ctx.lineWidth = 3 * k;
+    ctx.strokeStyle = T('#d8a548');
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-19 * k, -27 * k, 3 * k, 0, TAU);
+    ctx.arc(-11 * k, -21 * k, 3 * k, 0, TAU);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fill();
+  } else {
+    // 칼잡이: 등에 비껴 멘 칼
+    ctx.save();
+    ctx.translate(-2 * k, -30 * k);
+    ctx.rotate(-0.62);
+    ctx.beginPath();
+    ctx.roundRect(-3.2 * k, -30 * k, 6.4 * k, 54 * k, 3 * k);
+    fillInk(ctx, T('#1c2444'), 2.4 * k);
+    ctx.beginPath();
+    ctx.roundRect(-6.5 * k, -34 * k, 13 * k, 5 * k, 2 * k);
+    fillInk(ctx, T('#d8a548'), 2 * k);
+    ctx.beginPath();
+    ctx.roundRect(-2.6 * k, -46 * k, 5.2 * k, 13 * k, 2 * k);
+    fillInk(ctx, T('#8a3a2a'), 2 * k);
+    ctx.restore();
+  }
   ctx.beginPath();
   ctx.moveTo(0, -50 * k);
   ctx.lineTo(0, -6 * k);
@@ -737,6 +770,39 @@ export function drawPlayer(ctx, x, y, k, a) {
   // 머리 뒤
   ellipse(ctx, 0, -62 * k, 10 * k, 9 * k);
   fillInk(ctx, T('#2a1a1a'), 2.4 * k);
+  if (bomber) {
+    // 폭탄꾼: 둥근 가죽 모자와 보안경(삿갓보다 작고 둥글다)
+    const cy = -64 * k;
+    ellipse(ctx, 0, cy, 25 * k, 19 * k);
+    fillInk(ctx, T('#8a4a2a'), 3 * k);
+    ctx.beginPath();
+    ctx.ellipse(0, cy - 3 * k, 17 * k, 11 * k, 0, 0, TAU);
+    ctx.fillStyle = T('#a8643a');
+    ctx.fill();
+    // 귀덮개
+    ellipse(ctx, -23 * k, cy + 6 * k, 6 * k, 8 * k);
+    fillInk(ctx, T('#6a3a20'), 2.2 * k);
+    ellipse(ctx, 23 * k, cy + 6 * k, 6 * k, 8 * k);
+    fillInk(ctx, T('#6a3a20'), 2.2 * k);
+    // 모자 위로 올려 쓴 보안경
+    ctx.beginPath();
+    ctx.moveTo(-24 * k, cy + 1 * k);
+    ctx.quadraticCurveTo(0, cy + 12 * k, 24 * k, cy + 1 * k);
+    ctx.lineWidth = 5 * k;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    ctx.lineWidth = 2.6 * k;
+    ctx.strokeStyle = T('#3a2a44');
+    ctx.stroke();
+    for (const gx of [-9, 9]) {
+      ellipse(ctx, gx * k, cy + 8 * k, 7 * k, 5 * k);
+      fillInk(ctx, T('#7fe8ff'), 2.2 * k);
+      ctx.beginPath();
+      ctx.ellipse((gx - 2) * k, cy + 7 * k, 2.4 * k, 1.5 * k, 0, 0, TAU);
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fill();
+    }
+  } else {
   // 삿갓(위에서 내려다본 넓은 원뿔: 꼭지에서 테두리로 살이 퍼진다)
   const hatY = -62 * k;
   ellipse(ctx, 0, hatY, 40 * k, 27 * k);
@@ -765,6 +831,7 @@ export function drawPlayer(ctx, x, y, k, a) {
   ctx.stroke();
   ellipse(ctx, 0, apY, 4 * k, 3 * k);
   fillInk(ctx, T('#b8894a'), 1.8 * k);
+  }
 
   // 지팡이 + 등불
   let sx = 22 * k, sy = -30 * k, ang = -0.15;
