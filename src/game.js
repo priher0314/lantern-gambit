@@ -1,6 +1,6 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
-import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT, MAX_TIER, AFFINITY, WEAK_BONUS, RESIST_CUT } from './core/data.js';
+import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT, MAX_TIER, AFFINITY, WEAK_BONUS, RESIST_CUT, STAMINA } from './core/data.js';
 import { createRun, battleOptions, recordBattle, rollStartChoices, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop, tutorialNight } from './core/run.js';
 import { SAVE_VERSION } from './save.js';
 import { setLang } from './i18n.js';
@@ -28,6 +28,22 @@ const EL_COLORS = {
 };
 
 const CONCEPTS = {
+  stamina: {
+    kicker: '알아두기', title: '기력', color: '#7fe8ff',
+    lines: [
+      { label: '대가', text: '막기 1, 회피 2. 모자라면 타이밍이 맞아도 맞는다.', color: '#ffb8c8' },
+      { label: '절약', text: '퍼펙트 회피는 기력 1만 든다.', color: '#ffe08a' },
+      { label: '얻기', text: '매 턴 +2. 등불 문양을 쓰면 더 찬다.', color: '#8fffe2' },
+    ],
+  },
+  hold: {
+    kicker: '알아두기', title: '릴 고정', color: '#d9a0ff',
+    lines: [
+      { label: '효과', text: '고정한 릴은 다시 돌려도 그대로 남는다.' },
+      { label: '사용', text: '릴 위의 자물쇠를 누른다. (A · S · D 키, 우클릭)', color: '#8fffe2' },
+      { label: '조건', text: '두 개까지. 공격을 시작하기 전에만.', color: '#ffb8c8' },
+    ],
+  },
   snipe: {
     kicker: '알아두기', title: '저격', color: '#ffd84a',
     lines: [
@@ -209,7 +225,7 @@ export class Game {
       close: 0, raise: 0, slam: 0, chargeA: 0, puff: 0, blockT: 0,
       frozen: e.frozen || 0, exposed: !!e.exposed, fury: e.fury || 0, braced: !!e.braced, charge: !!e.charge,
       vulnerable: !!e.vulnerable, phase2: !!e.phase2, shieldBroken: !!e.shieldBroken,
-      poison: e.poison || 0, shieldHp: e.shieldHp || 0, kick: 0, pop: 0, hpLag: e.hp, lagHold: 0,
+      poison: e.poison || 0, shieldHp: e.shieldHp || 0, kick: 0, pop: 0, hpLag: e.hp, lagHold: 0, wet: e.wet || 0,
       elite: !!e.elite, sizeMul: e.elite ? 1.14 : 1,
       spawnT: 0, dying: 0, ox: 0, oy: 0,
     };
@@ -592,10 +608,11 @@ export class Game {
     }
     if (ui.phase === 'aim' && ui.sel != null && st.shots[ui.sel]) {
       const sh = st.shots[ui.sel];
-      let text = (sh.gild ? '✦금빛 ' : '') + shotDesc(sh.symbol, sh.tier, sh.gild);
+      const symLv = (st.symLv && st.symLv[sh.symbol]) || 0;
+      let text = (sh.gild ? '✦금빛 ' : '') + shotDesc(sh.symbol, sh.tier, sh.gild, symLv);
       if (sh.symbol === 'lantern') {
         const cap = B.guardCap(st);
-        const gain = Math.min(cap - st.player.guard, shotStats(sh.symbol, sh.tier, sh.gild).guard);
+        const gain = Math.min(cap - st.player.guard, shotStats(sh.symbol, sh.tier, sh.gild, symLv).guard);
         text = gain > 0 ? `방어막 +${gain} (지금 ${st.player.guard}/${cap})  ▶ 한 번 더 눌러 사용` : `방어막이 이미 가득 (${cap}/${cap}) — 써도 늘지 않는다`;
       }
       let color = SYMBOLS[sh.symbol].fx;
@@ -611,7 +628,8 @@ export class Game {
           const bane = per.some((p) => p.tags.includes('bane'));
           const resist = per.some((p) => p.tags.includes('resist'));
           const pushed = per.some((p) => p.pushed);
-          text = `${ui.preview.snipe ? '저격 · ' : ''}예상 피해 ${dmg}${kills ? ` · 처치 ${kills}` : ''}${bane ? ' · 약점' : ''}${resist ? ' · 저항' : ''}${pushed ? ' · 밀어냄' : ''}${per.some((p) => p.blocked) ? ' · 일부 막힘' : ''}`;
+          const combo = [['shatter', '파쇄'], ['detonate', '감전 폭발'], ['surge', '감전'], ['conduct', '초전도'], ['deepFreeze', '꽁꽁'], ['fester', '독 깊어짐']].filter(([t]) => per.some((p) => p.tags.includes(t))).map(([, n]) => n);
+          text = `${ui.preview.snipe ? '저격 · ' : ''}예상 피해 ${dmg}${kills ? ` · 처치 ${kills}` : ''}${bane ? ' · 약점' : ''}${resist ? ' · 저항' : ''}${pushed ? ' · 밀어냄' : ''}${combo.length ? ' · 조합: ' + combo.join('·') : ''}${per.some((p) => p.blocked) ? ' · 일부 막힘' : ''}`;
         }
       } else if (!ui.preview && sh.symbol !== 'lantern') {
         text += '  ▶ 레인을 누르세요';
@@ -642,8 +660,9 @@ export class Game {
     if (enemyMode) {
       const live = ui.phase === 'react' && !ui.react?.input;
       const heavy = ui.react?.attack.style === 'heavy';
-      btns.push({ id: 'guard', x: 14, y, w: 252, h, label: '막기', sub: '넓은 판정 · 퍼펙트=되치기', style: 'guard', icon: 'shield', enabled: live, hot: live && !heavy, key: 'J / Space', big: true });
-      btns.push({ id: 'dodge', x: 274, y, w: 252, h, label: '회피', sub: '좁은 판정 · 성공=적에게 빈틈', style: 'dodge', icon: 'move', enabled: live, hot: live && heavy, key: 'K / Shift', big: true });
+      const sta = st.player.stamina ?? STAMINA.max;
+      btns.push({ id: 'guard', x: 14, y, w: 252, h, label: '막기', sub: sta >= STAMINA.guard ? `기력 ${STAMINA.guard} · 퍼펙트=되치기` : '기력 없음 — 막을 수 없다', style: 'guard', icon: 'shield', enabled: live, hot: live && !heavy, key: 'J / Space', big: true });
+      btns.push({ id: 'dodge', x: 274, y, w: 252, h, label: '회피', sub: sta >= STAMINA.dodge ? `기력 ${STAMINA.dodge} · 성공=적에게 빈틈` : sta >= STAMINA.perfectDodge ? '기력 부족 — 퍼펙트만 통한다' : '기력 없음 — 피할 수 없다', style: 'dodge', icon: 'move', enabled: live, hot: live && heavy, key: 'K / Shift', big: true });
       return btns;
     }
     const aim = ui.phase === 'aim';
@@ -659,7 +678,7 @@ export class Game {
     else {
       const d = B.describeOmen(st, st.omens[st.rerollCount]);
       sub = B.has(st, 'windfall') && st.rerollCount === 0 ? '대가 없음 (대박)' : `대가: ${d ? d.text : '?'}`;
-      sub2 = '보상: 금빛 릴 +1';
+      sub2 = st.holds && st.holds.some(Boolean) ? '고정한 릴은 그대로 · 금빛 릴 +1' : '보상: 금빛 릴 +1';
       subColors = ['#ffb8c8', '#ffe08a'];
     }
     btns.push({ id: 'reroll', x: 14, y, w: 322, h, label: '다시 돌리기', pips: myTurn ? st.rerollsLeft : maxRe, pipMax: maxRe, sub, sub2, subColors, style: 'gamble', enabled: canRe, key: 'R' });
@@ -741,6 +760,15 @@ export class Game {
       this.pullLever();
       return;
     }
+    // 릴 고정 자물쇠
+    if (this.st && this.ui.phase === 'aim' && !this.busy && B.canReroll(this.st)) {
+      for (let i = 0; i < 3; i++) {
+        if (inR(this.holdRect(i), 4)) {
+          this.toggleHold(i);
+          return;
+        }
+      }
+    }
     // 슬롯 칸 선택: 가운데 줄 = 그 릴의 공격, 빙고가 걸린 위·아래 칸 = 그 빙고 기술
     for (let i = 0; i < 3; i++) {
       const r = reelRect(this.L, i);
@@ -785,7 +813,16 @@ export class Game {
   // 마우스 오른쪽 클릭 = 적 정보
   onContext(e) {
     if (this.mode !== 'battle' || this.card || this.ui.react || this.ui.counter) return;
-    const v = this.enemyAtPoint(this.toLogical(e.clientX, e.clientY));
+    const pt = this.toLogical(e.clientX, e.clientY);
+    // 릴을 우클릭하면 고정
+    for (let i = 0; i < 3; i++) {
+      const r = reelRect(this.L, i);
+      if (pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y - 14 && pt.y <= r.y + r.h) {
+        this.toggleHold(i);
+        return;
+      }
+    }
+    const v = this.enemyAtPoint(pt);
     if (v) this.inspectEnemy(v);
   }
 
@@ -836,6 +873,7 @@ export class Game {
     if (k === 'h' || k === '?') this.openGuide();
     if (k === 'r') this.press('reroll');
     if (k === 'f') this.shiftAim(1, true);
+    if (['a', 's', 'd'].includes(k)) this.toggleHold('asd'.indexOf(k));
     if (k === 'b' && this.st) {
       const bi = this.st.shots.findIndex((s) => s.bonus && !s.used);
       if (bi >= 0) this.selectShot(bi, true);
@@ -961,6 +999,26 @@ export class Game {
     this.audio.play('select');
     if (touch) this.ui.hoverLane = -1;
     this.updatePreview();
+  }
+
+  // 릴 위 자물쇠의 위치(다시 돌리기가 가능할 때만 누를 수 있다)
+  holdRect(i) {
+    const r = reelRect(this.L, i);
+    return { x: r.x + r.w / 2 - 30, y: r.y - 13, w: 60, h: 24 };
+  }
+
+  toggleHold(i) {
+    const st = this.st;
+    if (!st || this.ui.phase !== 'aim' || this.busy) return;
+    if (!B.toggleHold(st, i)) {
+      this.audio.play('deny');
+      this.ui.tipText = !B.canReroll(st) ? (st.shotsFired > 0 ? '공격을 시작한 뒤에는 고정할 수 없다' : '다시 돌리기가 남아 있을 때만 고정할 수 있다') : '릴은 두 개까지만 고정할 수 있다';
+      this.ui.tipUntil = this.now() + 1800;
+      this.updateInfo();
+      return;
+    }
+    this.audio.play(st.holds[i] ? 'select' : 'ui');
+    this.refresh();
   }
 
   selectReel(i, touch) {
@@ -1090,6 +1148,7 @@ export class Game {
     this.updatePreview();
     if (this.st.reels.some((r) => r.gilded)) this.conceptCard('gild');
     if (this.st.turn >= 2 || this.run.stage > 0) this.conceptCard('reroll');
+    if ((this.st.turn >= 3 || this.run.stage > 0) && B.canReroll(this.st)) this.conceptCard('hold');
     if ([0, 1, 2].some((l) => B.laneTargets(this.st, l).length >= 2)) this.conceptCard('snipe');
     this.nextCard();
     this.tip('aim', '릴을 골라 공격을 정하고, 레인을 눌러 조준하세요.');
@@ -1100,6 +1159,11 @@ export class Game {
       this.audio.play('spinStart');
       const now = this.rt;
       this.reels.forEach((r, i) => {
+        if (ev.holds && ev.holds[i]) {
+          r.gilded = ev.reels[i].gilded;
+          r.flashT = 0.5;
+          return;
+        }
         r.spinning = true;
         r.tween = null;
         r.vel = 30 + i * 2;
@@ -1274,6 +1338,9 @@ export class Game {
     this.ui.preview = null;
     this.ui.sel = null;
     this.ui.confirmEnd = false;
+    if (B.alive(st).length) this.conceptCard('stamina');
+    this.nextCard();
+    while (this.card) await this.wait(100);
     this.audio.setIntensity(1);
     this.refresh();
     await this.playEvents(B.endPlayerTurn(st));
@@ -1415,21 +1482,27 @@ export class Game {
     }
     this.projs = this.projs.filter((p) => !p.timed);
     const input = r.input ? { action: r.input.action, grade: r.input.grade } : { action: null, grade: 'miss' };
-    this.reactionFeedback(r, input);
+    // 기력이 모자라면 타이밍이 맞아도 실패
+    const tired = B.reactCost(input.action, input.grade) > (this.st.player.stamina ?? 99);
+    this.reactionFeedback(r, input, tired);
     this.ui.phase = 'enemy';
     this.player.holdGuard = false;
     this.refresh();
     r.resolve(input);
   }
 
-  reactionFeedback(r, input) {
+  reactionFeedback(r, input, tired = false) {
     const P = this.player;
     const x = P.x;
     const y = this.L.playerY - 50;
     const heavy = r.attack.style === 'heavy';
     const fx = this.fx;
     this.audio.play('enemyStrike', { style: r.attack.style });
-    if (input.action === 'guard' && input.grade === 'perfect' && !heavy) {
+    if (tired) {
+      this.audio.play('deny');
+      fx.text(x, y - 74, '기력 부족!', { color: '#7fe8ff', size: 28, font: 'num', life: 1.1 });
+      this.staminaWarn = 1;
+    } else if (input.action === 'guard' && input.grade === 'perfect' && !heavy) {
       this.audio.play('perfect');
       fx.flash('#ffe08a', 0.35);
       fx.ring(x, y, { r0: 20, r1: 120, color: '#ffe08a', w: 8, life: 0.45 });
@@ -1726,6 +1799,16 @@ export class Game {
           fx.shake(3);
           fx.punchIn(0.03);
           this.hitstop = Math.max(this.hitstop, 0.12);
+        } else if (ev.name === 'deepFreeze') {
+          this.audio.play('freeze');
+          fx.text(p.x, cy2 - 60, '꽁꽁! 동결 +1턴', { color: '#bfe6ff', size: 26, font: 'num', life: 1.1 });
+          fx.ring(p.x, cy2, { r0: 10, r1: 110, color: '#bfe6ff', w: 7, life: 0.5 });
+          const dv = this.views.get(ev.id);
+          if (dv) dv.wet = 0;
+        } else if (ev.name === 'fester') {
+          this.audio.play('venom');
+          fx.text(p.x, cy2 - 60, '독이 깊어진다! 중독 +2', { color: '#b8ff5a', size: 24, font: 'num', life: 1.1 });
+          fx.ring(p.x, cy2, { r0: 10, r1: 90, color: '#a6f04a', w: 6, life: 0.45 });
         } else if (ev.name === 'spread') {
           this.audio.play('venom');
           fx.text(p.x, cy2 - 60, '독 확산!', { color: '#b8ff5a', size: 28, font: 'num', life: 1.1 });
@@ -1867,6 +1950,15 @@ export class Game {
         fx.text(p.x, p.y - 40, `공격력 +${ev.amount}`, { color: '#ff6a6a', size: 22, font: 'num' });
         fx.burst(p.x, p.y, { n: 10, speed: 90, color: ['#ff3b3b', '#ff8a5a'], kind: 'glow', size: 5, vy: -60 });
         await this.wait(280);
+        break;
+      }
+      case 'wet': {
+        if (v) v.wet = 2;
+        break;
+      }
+      case 'stamina': {
+        const P = this.player;
+        fx.text(P.x - 44, L.playerY - 120, `기력 +${ev.amount}`, { color: '#7fe8ff', size: 20, font: 'num' });
         break;
       }
       case 'snipe': {
@@ -2401,6 +2493,13 @@ export class Game {
     }
     if (ev.tags.includes('detonate')) fx.text(ip.x - 50, ip.y - 30, `폭발 +`, { color: '#d6ff5a', size: 20, font: 'num' });
     if (ev.tags.includes('conduct')) fx.text(ip.x, ip.y - 96, '초전도! 연쇄 +1', { color: '#bfe6ff', size: 22, font: 'num' });
+    if (ev.tags.includes('surge')) {
+      fx.text(ip.x, ip.y - 96, '감전! +2', { color: '#ffe45c', size: 28, font: 'num', life: 1.1 });
+      fx.ring(ip.x, ip.y, { r0: 10, r1: 110, color: '#ffe45c', w: 7, life: 0.4 });
+      fx.bolt(ip.x - 40, ip.y - 60, ip.x + 30, ip.y + 30, { color: '#ffffff', color2: '#4ff0c4', w: 4, life: 0.3 });
+      this.hitstop = Math.max(this.hitstop, 0.12);
+      v.wet = 0;
+    }
     v.hpShown = ev.hp;
     fx.impact(ip.x, ip.y, (minor ? 26 : 38) + ev.dmg * 7, cols[1]);
     if (el === 'blade' || el === 'counter') {
@@ -2502,6 +2601,7 @@ export class Game {
       v.shieldBroken = e.shieldBroken;
       v.shieldHp = e.shieldHp;
       v.poison = e.poison;
+      v.wet = e.wet || 0;
     }
     this.hud.hp = st.player.hp;
     this.refresh();
@@ -2587,6 +2687,7 @@ export class Game {
     P.x += (P.tx - P.x) * Math.min(1, dt * 14);
     P.poseT = Math.min(1, P.poseT + dt * (P.pose === 'dodge' ? 3.2 : 2.5));
     P.flash = Math.max(0, P.flash - dt * 4);
+    this.staminaWarn = Math.max(0, (this.staminaWarn || 0) - realDt * 1.6);
     P.rec = (P.rec || 0) * 0.8 ** (realDt * 60);
     P.oy = P.rec < 0.3 ? 0 : P.rec;
     this.hud.shake = Math.max(0, (this.hud.shake || 0) - realDt * 3.5);

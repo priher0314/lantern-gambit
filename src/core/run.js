@@ -2,8 +2,7 @@
 import { randInt, shuffle } from './rng.js';
 import {
   BATTLES, BASE_STRIP, REWARDS, RELICS, RELIC_IDS, FUSIONS, FUSION_IDS,
-  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE, TIER, MAX_TIER,
-} from './data.js';
+  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE, TIER, MAX_TIER, SYMBOL_IDS, TRAIN_MAX, TRAIN_TEXT } from './data.js';
 
 export function createRun(seed, opt = {}) {
   const run = {
@@ -204,6 +203,13 @@ export function rollShop(run, keepRerolls = 0) {
   const extras = [{ id: 'maxhp', price: P.maxhp }, { id: charms[randInt(run, charms.length)], price: P.charm }];
   if (trimmable.length) extras.push({ id: 'trim:' + trimmable[randInt(run, trimmable.length)], price: P.trim });
   items.push(extras[randInt(run, extras.length)]);
+  // 수련: 문양 하나를 단련(단계가 오를수록 비싸다)
+  const lvOf = (s) => (run.symLv && run.symLv[s]) || 0;
+  const trainable = SYMBOL_IDS.filter((s) => lvOf(s) < TRAIN_MAX);
+  if (trainable.length) {
+    const s = trainable[randInt(run, trainable.length)];
+    items.push({ id: 'train:' + s, price: P.train + P.trainStep * lvOf(s) });
+  }
   items.push({ id: 'heal', price: P.heal });
   return { items: items.map((it) => ({ ...it, sold: false })), rerolls: keepRerolls };
 }
@@ -260,6 +266,7 @@ export function battleOptions(run) {
     relics: run.relics,
     relicLv: run.relicLv,
     relicProc: run.relicProc,
+    symLv: run.symLv || {},
   };
 }
 
@@ -301,6 +308,10 @@ export function rewardInfo(id) {
   if (id.startsWith('trim:')) {
     const s = id.slice(5);
     return { id, relic: false, name: `${SYMBOLS[s].name} 덜기`, desc: `${SYMBOLS[s].name} 문양이 덜 나옴`, icon: s };
+  }
+  if (id.startsWith('train:')) {
+    const s = id.slice(6);
+    return { id, relic: false, name: `${SYMBOLS[s].name} 수련`, desc: `${SYMBOLS[s].name} ${TRAIN_TEXT[s]} (이번 판 내내)`, icon: s };
   }
   if (RELICS[id]) return { id, relic: true, relicId: id, ...RELICS[id] };
   return { id, relic: false, ...REWARDS[id] };
@@ -346,6 +357,13 @@ export function applyReward(run, id) {
   }
   if (RELICS[id]) {
     if (!run.relics.includes(id)) run.relics.push(id);
+    run.picks.push(id);
+    return;
+  }
+  if (id.startsWith('train:')) {
+    const s = id.slice(6);
+    run.symLv = run.symLv || {};
+    run.symLv[s] = Math.min(TRAIN_MAX, (run.symLv[s] || 0) + 1);
     run.picks.push(id);
     return;
   }

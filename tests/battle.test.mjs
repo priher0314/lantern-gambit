@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn,
-  nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen, canSnipe,
+  nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen, canSnipe, toggleHold, reactCost,
 } from '../src/core/battle.js';
 import { evaluateReels, evaluateLines } from '../src/core/slot.js';
-import { BATTLES, BASE_STRIP, RELIC_IDS, FRONT } from '../src/core/data.js';
+import { BATTLES, BASE_STRIP, RELIC_IDS, FRONT, STAMINA, shotStats } from '../src/core/data.js';
 import { judge } from '../src/core/timing.js';
 import { createRun, battleOptions, rollRewards, rollStartRelics, applyReward, recordBattle, advance, availableFusions } from '../src/core/run.js';
 import { rand, randInt } from '../src/core/rng.js';
@@ -630,7 +630,8 @@ test('조건: 보름달(체력), 성난 밤(공격력), 엽전 강화 시 대가
 test('상점: 코인으로 사고, 모자라면 못 사고, 효과는 바로 적용', () => {
   const run = createRun(11);
   const shop = rollShop(run);
-  assert.equal(shop.items.length, 4);
+  assert.equal(shop.items.length, 5);
+  assert.ok(shop.items.some((it) => it.id.startsWith('train:')), '수련 칸이 있다');
   assert.equal(cantBuy(run, shop.items[0]), '코인 부족');
   assert.equal(buyItem(run, shop, 0), false);
   run.coins = 100;
@@ -777,4 +778,93 @@ test('저격: 턴마다 한 번, 맨 앞이 아닌 적을 골라 맞힌다', () 
   setShots(st, [['blade', 1]]);
   fireShot(st, 0, 1, 2);
   assert.equal(st.snipes, 1);
+});
+
+test('기력: 막기 1, 회피 2(퍼펙트 회피 1). 모자라면 타이밍이 맞아도 맞는다', () => {
+  const st = mk([['kasa', 1, 5]]);
+  assert.equal(st.player.stamina, STAMINA.max);
+  assert.equal(reactCost('guard', 'perfect'), 1);
+  assert.equal(reactCost('dodge', 'perfect'), 1);
+  assert.equal(reactCost('guard', 'good'), 1);
+  assert.equal(reactCost('dodge', 'good'), 2);
+  assert.equal(reactCost('dodge', 'miss'), 0);
+  setShots(st, []);
+  endPlayerTurn(st);
+  nextEnemyStep(st);
+  resolveReaction(st, { action: 'dodge', grade: 'good' });
+  assert.equal(st.player.stamina, STAMINA.max - 2);
+  assert.equal(st.player.hp, 15);
+  // 기력이 바닥나면 회피가 통하지 않는다
+  const st2 = mk([['kasa', 1, 5]]);
+  st2.player.stamina = 1;
+  setShots(st2, []);
+  endPlayerTurn(st2);
+  nextEnemyStep(st2);
+  const res = resolveReaction(st2, { action: 'dodge', grade: 'good' });
+  assert.equal(res.events.find((e) => e.type === 'react').outcome, 'tired');
+  assert.ok(st2.player.hp < 15);
+  assert.equal(st2.player.stamina, 1, '실패하면 기력은 쓰지 않는다');
+  // 기력이 0이면 퍼펙트 막기도 통하지 않는다
+  const st3 = mk([['kasa', 1, 5]]);
+  st3.player.stamina = 0;
+  setShots(st3, []);
+  endPlayerTurn(st3);
+  nextEnemyStep(st3);
+  resolveReaction(st3, { action: 'guard', grade: 'perfect' });
+  assert.ok(st3.player.hp < 15);
+  // 등불은 기력도 채운다
+  const st4 = mk([['kasa', 1, 0]]);
+  st4.player.stamina = 1;
+  setShots(st4, [['lantern', 1]]);
+  fireShot(st4, 0, 1);
+  assert.equal(st4.player.stamina, 2);
+});
+
+test('조합: 젖음 → 전격 +2, 젖음 → 동결 +1턴, 중독 → 절단 중독 +2', () => {
+  let st = mk([['kasa', 1, 4]]);
+  setShots(st, [['wave', 1], ['spark', 1]]);
+  fireShot(st, 0, 1);
+  assert.equal(st.enemies[0].wet, 2);
+  let ev = fireShot(st, 1, 1);
+  assert.equal(ev.find((e) => e.type === 'hit').dmg, 4);
+  assert.ok(ev.find((e) => e.type === 'hit').tags.includes('surge'));
+  assert.equal(st.enemies[0].wet, 0);
+  st = mk([['kasa', 1, 4]]);
+  setShots(st, [['wave', 1], ['frost', 1]]);
+  fireShot(st, 0, 1);
+  fireShot(st, 1, 1);
+  assert.equal(st.enemies[0].frozen, 2);
+  st = mk([['kasa', 1, 4]]);
+  setShots(st, [['venom', 1], ['blade', 1]]);
+  fireShot(st, 0, 1);
+  const p0 = st.enemies[0].poison;
+  fireShot(st, 1, 1);
+  assert.equal(st.enemies[0].poison, p0 + 2);
+});
+
+test('릴 고정: 고정한 릴은 다시 돌려도 그대로, 두 개까지', () => {
+  const st = mk([['kasa', 1, 0]]);
+  spin(st);
+  const keep = st.reels.map((r) => r.stop);
+  assert.equal(toggleHold(st, 0), true);
+  assert.equal(toggleHold(st, 2), true);
+  assert.equal(toggleHold(st, 1), false, '세 개를 모두 고정할 수는 없다');
+  reroll(st);
+  assert.equal(st.reels[0].stop, keep[0]);
+  assert.equal(st.reels[2].stop, keep[2]);
+  // 공격을 시작하면 고정할 수 없다
+  fireShot(st, 0, 1);
+  assert.equal(toggleHold(st, 1), false);
+});
+
+test('수련: 상점에서 사면 그 기술이 강해진다', () => {
+  assert.equal(shotStats('blade', 1, 0, 2).dmg, shotStats('blade', 1).dmg + 2);
+  assert.equal(shotStats('venom', 1, 0, 1).poison, shotStats('venom', 1).poison + 1);
+  const run = createRun(5);
+  applyReward(run, 'train:blade');
+  assert.equal(run.symLv.blade, 1);
+  const st = createBattle(mkDef([['kasa', 1, 4]]), { ...battleOptions(run), affinity: false }).st;
+  setShots(st, [['blade', 1]]);
+  fireShot(st, 0, 1);
+  assert.equal(st.enemies[0].maxHp - st.enemies[0].hp, 4);
 });

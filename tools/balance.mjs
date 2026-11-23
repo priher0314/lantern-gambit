@@ -1,6 +1,6 @@
 // 밸런스 측정: 실력이 다른 봇들이 한 판(밤 생성·길 선택·상점 포함)을 끝까지 돈다.  node tools/balance.mjs
 import {
-  createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn, canSnipe,
+  createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn, canSnipe, reactCost, toggleHold,
   nextEnemyStep, resolveReaction, resolveCounter,
 } from '../src/core/battle.js';
 import { RUN_LENGTH } from '../src/core/data.js';
@@ -25,7 +25,16 @@ export function playBattle(st, P, r) {
   let attacks = 0;
   while (!st.result) {
     spin(st);
-    while (canReroll(st) && rand(r) < P.reroll) reroll(st);
+    while (canReroll(st) && rand(r) < P.reroll) {
+      // 잘하는 봇은 같은 문양 두 칸을 고정하고 돌린다
+      if (rand(r) < P.smart) {
+        const s = st.reels.map((x) => x.symbol);
+        st.holds = [false, false, false];
+        if (s[0] === s[1]) { toggleHold(st, 0); toggleHold(st, 1); }
+        else if (s[1] === s[2]) { toggleHold(st, 1); toggleHold(st, 2); }
+      }
+      reroll(st);
+    }
     for (let i = 0; i < st.shots.length && !st.result; i++) {
       let lane = randInt(r, 3);
       let depth = 0;
@@ -54,6 +63,10 @@ export function playBattle(st, P, r) {
         if (a.style === 'heavy') input = x < pp + gg + dd ? { action: 'dodge', grade: 'good' } : { action: 'guard', grade: 'good' };
         else input = x < pp ? { action: 'guard', grade: 'perfect' } : x < pp + gg ? { action: 'guard', grade: 'good' } : x < pp + gg + dd ? { action: 'dodge', grade: 'good' } : { action: null };
         attacks++;
+        // 기력이 모자라면 그 동작은 포기한다(막기로 바꾸거나 그냥 맞는다)
+        if (reactCost(input.action, input.grade) > st.player.stamina) {
+          input = st.player.stamina >= reactCost('guard', 'good') && a.style !== 'heavy' ? { action: 'guard', grade: 'good' } : { action: null };
+        }
         const res = resolveReaction(st, input);
         if (res.counter) resolveCounter(st, res.counter.defaultLane);
         a = res.attack;

@@ -399,3 +399,9 @@ body { display: flex; align-items: center; justify-content: center; }
 .pad-focus { outline: 3px solid #fff2b0 !important; outline-offset: 3px; box-shadow: 0 0 0 6px rgba(255, 216, 74, 0.25), 0 0 22px rgba(255, 210, 122, 0.55) !important; }
 .row:has(.pad-focus) { background: rgba(255, 216, 74, 0.08); border-radius: 8px; }
 .ge .aff { display: block; font-size: 0.86em; color: #ffd27a; margin-top: 2px; }
+
+/* 상점: 내 릴 구성(문양별 개수와 수련 단계) */
+.deck { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.dk { padding: 1px 7px; border-radius: 99px; border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); font-size: 0.72em; color: #e8dcc8; white-space: nowrap; }
+.dk b { font-weight: normal; color: var(--c); margin-right: 3px; }
+.dk em { font-style: normal; color: #ffd84a; margin-left: 3px; }

@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.17';
+export const GAME_VERSION = 'v0.18';
 
 export const ROWS = 7;
 export const LANES = 3;
@@ -49,8 +49,27 @@ export const ENEMY_EN = { kasa: 'Umbrella Imp', drum: 'Drum Imp', mask: 'Mask Be
 export const ELITE = { hp: 1.6, atk: 1 };
 export const STAGE_EN = { b1: 'Bridgehead', b2: 'Mask Dance', b3: 'Lantern Alley', b4: 'Drumbeat', b5: 'Great Lantern' };
 
-// 기술 수치. gild = 금빛 릴 수(피해 +1, 고유 능력 +1)
-export function shotStats(symbol, tier, gild = 0) {
+// 기력: 막기·회피에 드는 힘. 매 턴 조금씩 돌아온다. 퍼펙트여도 기력은 든다(퍼펙트 회피만 1로 줄어든다).
+export const STAMINA = { max: 4, regen: 2, guard: 1, dodge: 2, perfectDodge: 1 };
+// 수련: 상점에서 문양을 단련하면 그 기술이 강해진다(최대 단계)
+export const TRAIN_MAX = 3;
+export const TRAIN_TEXT = { blade: '피해 +1', wave: '피해 +1', frost: '피해 +1', spark: '피해 +1', venom: '중독 +1', lantern: '방어막 +1' };
+
+// 기술 수치. gild = 금빛 릴 수(피해 +1, 고유 능력 +1), lv = 수련 단계
+export function shotStats(symbol, tier, gild = 0, lv = 0) {
+  const s = baseShotStats(symbol, tier, gild);
+  if (lv > 0) {
+    if (symbol === 'venom') s.poison += lv;
+    else if (symbol === 'lantern') s.guard += lv;
+    else {
+      s.dmg += lv;
+      if (s.sideDmg != null) s.sideDmg += lv;
+    }
+  }
+  return s;
+}
+
+function baseShotStats(symbol, tier, gild = 0) {
   const g = gild;
   switch (symbol) {
     case 'blade':
@@ -81,8 +100,8 @@ export function shotStats(symbol, tier, gild = 0) {
   return {};
 }
 
-export function shotDesc(symbol, tier, gild = 0) {
-  const s = shotStats(symbol, tier, gild);
+export function shotDesc(symbol, tier, gild = 0, lv = 0) {
+  const s = shotStats(symbol, tier, gild, lv);
   switch (symbol) {
     case 'blade':
       if (tier === 1) return `관통 ${s.pierce} · 피해 ${s.dmg} · 얼어붙은 적 파쇄`;
@@ -105,9 +124,9 @@ export function shotDesc(symbol, tier, gild = 0) {
       if (tier === 2) return `레인 전체 ${s.dmg} · 중독 ${s.poison}`;
       return `모든 적 ${s.dmg} · 중독 ${s.poison}`;
     case 'lantern':
-      if (tier === 1) return `방어막 +${s.guard}`;
-      if (tier === 2) return `방어막 +${s.guard} · 체력 +${s.heal}`;
-      return `방어막 +${s.guard} · 체력 +${s.heal} · 모든 적 노출`;
+      if (tier === 1) return `방어막 +${s.guard} · 기력 +1`;
+      if (tier === 2) return `방어막 +${s.guard} · 체력 +${s.heal} · 기력 +2`;
+      return `방어막 +${s.guard} · 체력 +${s.heal} · 기력 가득 · 모든 적 노출`;
   }
   return '';
 }
@@ -272,7 +291,7 @@ export const MODS = {
 export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, thrift: 3, clearBase: 3, riskyMult: 2, elite: 3, comboFrom: 3 };
 export const COIN_LABEL = { kill: '처치', combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어', elite: '정예 처치' };
 export const START_PURSE = 15; // 유물 대신 고를 수 있는 시작 코인
-export const SHOP_PRICES = { relic: 18, up: 14, fuse: 22, heal: 7, maxhp: 12, charm: 9, trim: 9, reroll: 3 };
+export const SHOP_PRICES = { relic: 18, up: 14, fuse: 22, heal: 7, maxhp: 12, charm: 9, trim: 9, reroll: 3, train: 12, trainStep: 4 };
 
 export const BASE_STRIP = [
   'blade', 'wave', 'frost', 'spark', 'lantern', 'venom',

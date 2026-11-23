@@ -1,5 +1,5 @@
 // 화면 그리기: 배경(미리 렌더), 전장, 캐릭터, 슬롯 사당, HUD, 버튼
-import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS, RUN_LENGTH, AFFINITY } from '../core/data.js';
+import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS, RUN_LENGTH, AFFINITY, STAMINA } from '../core/data.js';
 import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL, REEL_PEEK, UI_H } from './layout.js';
 import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix, drawBomber, drawHealer, drawBoar, drawEliteRing, drawEliteCrown, TILT } from './art.js';
 // 적 머리 높이(예고 배지·말풍선 위치)
@@ -753,6 +753,7 @@ export class Renderer {
     if (g.mode === 'battle') {
       this.drawInfo(g);
       this.drawMachine(g);
+      this.drawHolds(g);
       this.drawButtons(g);
       if (coach && coach.rect.y >= L.info.y) this.drawCoach(g, coach);
       this.drawCard(g);
@@ -1151,6 +1152,7 @@ export class Renderer {
     // 상태 아이콘 줄
     const icons = [];
     if (v.frozen > 0) icons.push(['snow', '#9fdcff', v.frozen]);
+    if (v.wet > 0) icons.push(['drop', '#4ff0c4', '젖음']);
     if (v.exposed) icons.push(['eye', '#c58cff', '빈틈']);
     if (v.fury > 0) icons.push(['heavy', '#ff5a5a', '공+' + v.fury]);
     if (v.poison > 0) icons.push(['drop', '#a6f04a', '독 ' + v.poison]);
@@ -1237,6 +1239,36 @@ export class Renderer {
       ctx.beginPath();
       ctx.ellipse(P.x, L.playerY - 46, 46, 56, 0, 0, TAU);
       ctx.stroke();
+      ctx.restore();
+    }
+    if (g.st && g.mode === 'battle') {
+      const ctx = this.ctx;
+      const sta = g.st.player.stamina ?? STAMINA.max;
+      const n = STAMINA.max;
+      const warn = g.staminaWarn || 0;
+      const gap = 17;
+      const x0 = P.x - ((n - 1) * gap) / 2 + (warn > 0 ? Math.sin(g.rt * 60) * warn * 4 : 0);
+      const y = L.playerY + 15;
+      ctx.save();
+      for (let i = 0; i < n; i++) {
+        const on = i < sta;
+        ctx.beginPath();
+        ctx.moveTo(x0 + i * gap, y - 7);
+        ctx.lineTo(x0 + i * gap + 6.5, y);
+        ctx.lineTo(x0 + i * gap, y + 7);
+        ctx.lineTo(x0 + i * gap - 6.5, y);
+        ctx.closePath();
+        ctx.fillStyle = on ? (warn > 0 ? '#ff8a7a' : '#7fe8ff') : 'rgba(10,6,16,0.7)';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = on ? INK : warn > 0 ? '#ff8a7a' : 'rgba(127,232,255,0.45)';
+        ctx.stroke();
+      }
+      ctx.font = `11px ${FONTS.ui}`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(127,232,255,0.85)';
+      ctx.fillText('기력', x0 - 12, y + 1);
       ctx.restore();
     }
     for (const ai of g.afterimages) {
@@ -1461,6 +1493,45 @@ export class Renderer {
     ctx.restore();
   }
 
+  // 릴 위의 자물쇠: 고정한 릴은 다시 돌려도 남는다
+  drawHolds(g) {
+    const st = g.st;
+    if (!st || g.mode !== 'battle') return;
+    const holds = st.holds || [];
+    const can = g.ui.phase === 'aim' && !g.busy && st.rerollsLeft > 0 && st.shotsFired === 0;
+    if (!can && !holds.some(Boolean)) return;
+    const ctx = this.ctx;
+    for (let i = 0; i < 3; i++) {
+      const r = g.holdRect(i);
+      const on = !!holds[i];
+      if (!can && !on) continue;
+      ctx.save();
+      ctx.globalAlpha = can ? 1 : 0.55;
+      ctx.beginPath();
+      ctx.roundRect(r.x, r.y, r.w, r.h, 12);
+      ctx.fillStyle = on ? '#d9a0ff' : 'rgba(20,10,28,0.92)';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = on ? '#fff2b0' : 'rgba(217,160,255,0.7)';
+      ctx.stroke();
+      // 자물쇠 그림
+      const cx = r.x + 15, cy = r.y + r.h / 2 + 1;
+      ctx.strokeStyle = on ? '#2a1040' : '#d9a0ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (on) ctx.arc(cx, cy - 3, 4, Math.PI, 0);
+      else ctx.arc(cx + 3, cy - 4, 4, Math.PI * 1.1, Math.PI * 0.1);
+      ctx.stroke();
+      ctx.fillStyle = on ? '#2a1040' : '#d9a0ff';
+      ctx.fillRect(cx - 5.5, cy - 2, 11, 8);
+      ctx.font = `12px ${FONTS.ui}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('고정', cx + 9, cy + 1);
+      ctx.restore();
+    }
+  }
+
   // 가로형 오른쪽 칸의 장식: 격자 무늬, 위쪽 진행 지도, 아래쪽 조작 안내
   drawSidePane(g) {
     const ctx = this.ctx;
@@ -1534,7 +1605,7 @@ export class Renderer {
           : [['A', g.ui.phase === 'spin' ? '레버' : '쏘기'], ['LB RB', '릴 선택'], ['◀ ▶', '레인'], ['▲ ▼', '저격'], ['X', '다시 돌리기'], ['Y', '턴 종료']])
         : react
           ? [['Space', '막기'], ['Shift', '회피']]
-          : [['Space', '레버'], ['Q W E', '릴 선택'], ['1 2 3', '레인'], ['F', '저격'], ['R', '다시 돌리기'], ['Enter', '턴 종료']];
+          : [['Space', '레버'], ['Q W E', '릴 선택'], ['1 2 3', '레인'], ['F', '저격'], ['A S D', '고정'], ['R', '다시 돌리기'], ['Enter', '턴 종료']];
       const y = bot + (L.SH - bot) / 2 + 2;
       ctx.textBaseline = 'middle';
       const parts = keys.map(([k, label]) => {

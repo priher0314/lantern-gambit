@@ -5,7 +5,7 @@
 import { rand, randInt, pickDistinct } from './rng.js';
 import {
   LANES, FRONT, GUARD_CAP, EMBER_CAP, REROLLS_PER_TURN,
-  ENEMIES, shotStats, EVOLVE_AT, FUSIONS, COIN, ELITE, AFFINITY, WEAK_BONUS, RESIST_CUT, SNIPES_PER_TURN } from './data.js';
+  ENEMIES, shotStats, EVOLVE_AT, FUSIONS, COIN, ELITE, AFFINITY, WEAK_BONUS, RESIST_CUT, SNIPES_PER_TURN, STAMINA } from './data.js';
 import { evaluateReels, evaluateLines } from './slot.js';
 import { WINDUP } from './timing.js';
 
@@ -86,9 +86,12 @@ export function createBattle(def, opt) {
     player: {
       hp: opt.hp, maxHp: opt.maxHp,
       guard: Math.min(GUARD_CAP, opt.guard || 0),
+      stamina: STAMINA.max,
       embers: Math.min(EMBER_CAP, (opt.embers || 0) + ((opt.relics || []).includes('emberWick') ? (opt.relicLv || {}).emberWick || 1 : 0)),
     },
     strips: opt.strips.map((s) => s.slice()),
+    symLv: { ...(opt.symLv || {}) }, // 수련 단계
+    holds: [false, false, false], // 다시 돌릴 때 그대로 둘 릴
     reels: [],
     shots: [],
     shotsFired: 0,
@@ -223,6 +226,8 @@ function startTurn(st, events) {
   st.phase = 'spin';
   st.rerollsLeft = REROLLS_PER_TURN + lv(st, 'gamblerCoin');
   st.turnKills = 0;
+  st.holds = [false, false, false];
+  if (st.turn > 1) st.player.stamina = Math.min(STAMINA.max, (st.player.stamina ?? STAMINA.max) + STAMINA.regen);
   st.snipes = SNIPES_PER_TURN;
   st.rerollCount = 0;
   st.turnGild = 0;
@@ -282,8 +287,9 @@ function applyOmen(st, omen, events) {
 
 // ───────────────────────── 슬롯 ─────────────────────────
 
-function rollReels(st, gildCount, events) {
-  const idx = st.strips.map((s) => randInt(st, s.length));
+function rollReels(st, gildCount, events, holds = null) {
+  // 고정한 릴은 그대로 두고 나머지만 다시 돌린다
+  const idx = st.strips.map((s, k) => (holds && holds[k] && st.reels[k] ? st.reels[k].stop : randInt(st, s.length)));
   const gilded = pickDistinct(st, 3, Math.min(3, gildCount));
   st.reels = idx.map((i, k) => ({ symbol: st.strips[k][i], stop: i, gilded: gilded.includes(k) }));
   // 3×3 판: 각 릴의 위·가운데·아래 칸. 가운데 줄이 이번 턴의 공격, 나머지 줄의 빙고는 보너스 기술.
@@ -306,7 +312,7 @@ function rollReels(st, gildCount, events) {
   }
   if (level >= 3) for (const s of st.shots) if (s.tier === 3) s.gild = 3;
   st.score += 150 * level * level;
-  events.push({ type: 'spin', reels: clone(st.reels), shots: clone(st.shots), grid: clone(st.grid), bingos: clone(st.bingos), level, jackpot: top === 3 });
+  events.push({ type: 'spin', reels: clone(st.reels), shots: clone(st.shots), grid: clone(st.grid), bingos: clone(st.bingos), level, jackpot: top === 3, holds: holds ? holds.slice() : null });
   if (level >= 1) addCoins(st, COIN.bingo * level, 'bingo', events);
   if (level >= 1 && has(st, 'bingoBell')) {
     st.player.embers = Math.min(EMBER_CAP, st.player.embers + 1);
@@ -339,8 +345,18 @@ export function reroll(st) {
   st.rerollsLeft--;
   st.stats.rerolls++;
   if (has(st, 'gamblerCoin')) addGuard(st, lv(st, 'gamblerCoin'), events, 'gamblerCoin');
-  rollReels(st, st.turnGild + st.rerollCount, events);
+  rollReels(st, st.turnGild + st.rerollCount, events, st.holds && st.holds.some(Boolean) ? st.holds : null);
   return events;
+}
+
+// 릴 고정/해제: 다시 돌리기를 쓸 수 있을 때만(공격을 시작하기 전)
+export function toggleHold(st, i) {
+  if (!canReroll(st) || !(i >= 0 && i < 3)) return false;
+  if (!st.holds) st.holds = [false, false, false];
+  // 세 릴을 모두 고정하면 다시 돌릴 것이 없다
+  if (!st.holds[i] && st.holds.filter(Boolean).length >= 2) return false;
+  st.holds[i] = !st.holds[i];
+  return true;
 }
 
 // ───────────────────────── 피해 처리 ─────────────────────────
@@ -383,6 +399,12 @@ function hit(st, e, dmg, o, events, depth = 0) {
     bonus += detonate + 2 * lv(st, 'stormRune');
     e.poison = 0;
     tags.push('detonate');
+  }
+  // 반응 [감전]: 젖은 적에게 전격 → 피해 +2
+  if (o.el === 'spark' && e.wet > 0) {
+    bonus += 2;
+    e.wet = 0;
+    tags.push('surge');
   }
   // 반응 [초전도]: 얼어붙은 적에게 전격
   if (o.el === 'spark' && e.frozen > 0) {
@@ -479,7 +501,23 @@ function hit(st, e, dmg, o, events, depth = 0) {
       e.step = 0;
       events.push({ type: 'bossPhase', id: e.id });
     }
-    if (o.freeze) applyFreeze(st, e, o.freeze, events);
+    // 반응 [꽁꽁]: 젖은 적을 얼리면 한 턴 더 언다
+    if (o.freeze && e.wet > 0) {
+      e.wet = 0;
+      events.push({ type: 'reaction', name: 'deepFreeze', lane: e.lane, row: e.row, cells: [], id: e.id });
+      applyFreeze(st, e, o.freeze + 1, events);
+    } else if (o.freeze) applyFreeze(st, e, o.freeze, events);
+    // 파동에 맞으면 젖는다(다음 내 턴까지)
+    if (o.el === 'wave' && e.frozen === 0) {
+      e.wet = 2;
+      events.push({ type: 'wet', id: e.id });
+    }
+    // 반응 [독 깊어짐]: 중독된 적을 절단으로 베면 중독 +2
+    if (o.el === 'blade' && !o.src && e.poison > 0) {
+      e.poison = Math.min(9, e.poison + 2);
+      events.push({ type: 'reaction', name: 'fester', lane: e.lane, row: e.row, cells: [], id: e.id });
+      events.push({ type: 'poison', id: e.id, stacks: e.poison });
+    }
     if (o.poison) {
       e.poison = Math.min(9, e.poison + o.poison + 2 * lv(st, 'venomFang'));
       events.push({ type: 'poison', id: e.id, stacks: e.poison });
@@ -510,7 +548,7 @@ function hit(st, e, dmg, o, events, depth = 0) {
 // ───────────────────────── 공격 기술 ─────────────────────────
 
 function resolveShot(st, shot, lane, events) {
-  const S = shotStats(shot.symbol, shot.tier, shot.gild);
+  const S = shotStats(shot.symbol, shot.tier, shot.gild, (st.symLv && st.symLv[shot.symbol]) || 0);
   if (shot.gild > 0 && has(st, 'emberWick')) for (const k of ['dmg', 'sideDmg']) if (S[k] != null) S[k] += lv(st, 'emberWick');
   if (shot.symbol === 'blade' && has(st, 'whetstone') && S.pierce < 99) S.pierce += lv(st, 'whetstone');
   if (shot.symbol === 'wave' && has(st, 'tideBell') && S.splash != null) S.splash += lv(st, 'tideBell');
@@ -526,6 +564,9 @@ function resolveShot(st, shot, lane, events) {
     const before = p.guard;
     p.guard = Math.min(guardCap(st), p.guard + S.guard);
     events.push({ type: 'ward', amount: p.guard - before, guard: p.guard });
+    const s0 = p.stamina ?? STAMINA.max;
+    p.stamina = Math.min(STAMINA.max, shot.tier >= 3 ? STAMINA.max : s0 + shot.tier);
+    if (p.stamina > s0) events.push({ type: 'stamina', amount: p.stamina - s0, stamina: p.stamina });
     const healAmt = S.heal + lv(st, 'oilFlask');
     if (healAmt) {
       if (has(st, 'oilFlask')) relicEvent(st, events, 'oilFlask');
@@ -735,6 +776,7 @@ export function summarize(events) {
     if (ev.type === 'freeze') get(ev.id).frozen = ev.turns;
     if (ev.type === 'expose') get(ev.id).exposed = true;
     if (ev.type === 'push') get(ev.id).pushed = ev.from - ev.to;
+    if (ev.type === 'reaction' && ev.id != null && !get(ev.id).tags.includes(ev.name)) get(ev.id).tags.push(ev.name);
     if (ev.type === 'ward') guard += ev.amount;
     if (ev.type === 'heal') heal += ev.amount;
     if (ev.type === 'burst') cells.push(...ev.cells, [ev.lane, ev.row]);
@@ -860,6 +902,7 @@ export function endPlayerTurn(st) {
     hit(st, e, e.poison, { el: 'venom', frontal: false, src: 'poison' }, events);
     if (e.alive && !has(st, 'plague')) e.poison--;
   }
+  for (const e of alive(st)) if (e.wet > 0) e.wet--;
   checkObjective(st, events);
   if (st.result) return events;
   st.queue = alive(st).sort((a, b) => b.row - a.row || a.lane - b.lane).map((e) => e.id);
@@ -991,6 +1034,14 @@ function finishAttacker(st, a, e) {
   }
 }
 
+// 이 반응에 드는 기력(타이밍이 빗나가면 0)
+export function reactCost(action, grade) {
+  if (grade !== 'perfect' && grade !== 'good') return 0;
+  if (action === 'guard') return STAMINA.guard;
+  if (action === 'dodge') return grade === 'perfect' ? STAMINA.perfectDodge : STAMINA.dodge;
+  return 0;
+}
+
 // input: { action: 'guard'|'dodge'|null, grade: 'perfect'|'good'|'miss' }
 export function resolveReaction(st, input) {
   const a = st.pending;
@@ -1004,8 +1055,14 @@ export function resolveReaction(st, input) {
   let outcome = 'none';
   let needCounter = false;
   let mirrorGuard = false;
+  const cost = reactCost(action, grade);
+  const sta = st.player.stamina ?? STAMINA.max;
 
-  if (action === 'guard' && grade === 'perfect') {
+  if (cost > sta) {
+    // 기력이 모자라면 타이밍이 맞아도 막거나 피하지 못한다
+    outcome = 'tired';
+    st.stats.fail++;
+  } else if (action === 'guard' && grade === 'perfect') {
     st.stats.perfect++;
     if (heavy) {
       dmg = Math.ceil(dmg / 2);
@@ -1039,7 +1096,8 @@ export function resolveReaction(st, input) {
     st.stats.fail++;
   }
 
-  events.push({ type: 'react', outcome, action, grade, style: a.style, attackerId: a.attackerId, lane: a.lane, hitIndex: a.hitIndex, ember: outcome === 'perfectGuard' || outcome === 'perfectDodge' || outcome === 'deflect' });
+  if (outcome !== 'tired' && cost > 0) st.player.stamina = sta - cost;
+  events.push({ type: 'react', outcome, action, grade, style: a.style, attackerId: a.attackerId, lane: a.lane, hitIndex: a.hitIndex, stamina: st.player.stamina, spent: outcome !== 'tired' ? cost : 0, ember: outcome === 'perfectGuard' || outcome === 'perfectDodge' || outcome === 'deflect' });
   applyPlayerDamage(st, dmg, events);
   if (['perfectGuard', 'deflect', 'perfectDodge', 'guardHeavy'].includes(outcome)) addCoins(st, COIN.perfect, 'perfect', events);
   if (mirrorGuard) addGuard(st, lv(st, 'counterMirror'), events, 'counterMirror');
