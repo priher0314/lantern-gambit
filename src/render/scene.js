@@ -1490,9 +1490,13 @@ export class Renderer {
     // 아래: 조작 안내(지금 쓸 수 있는 키)
     if (g.mode === 'battle' && L.SH - bot >= 54) {
       const react = g.ui.phase === 'react';
-      const keys = react
-        ? [['Space', '막기'], ['Shift', '회피']]
-        : [['Space', '레버'], ['Q W E', '릴 선택'], ['1 2 3', '레인'], ['R', '다시 돌리기'], ['Enter', '턴 종료']];
+      const keys = g.padActive
+        ? (react
+          ? [['A', '막기'], ['B', '회피']]
+          : [['A', g.ui.phase === 'spin' ? '레버' : '쏘기'], ['LB RB', '릴 선택'], ['◀ ▶', '레인'], ['X', '다시 돌리기'], ['Y', '턴 종료']])
+        : react
+          ? [['Space', '막기'], ['Shift', '회피']]
+          : [['Space', '레버'], ['Q W E', '릴 선택'], ['1 2 3', '레인'], ['R', '다시 돌리기'], ['Enter', '턴 종료']];
       const y = bot + (L.SH - bot) / 2 + 2;
       ctx.textBaseline = 'middle';
       const parts = keys.map(([k, label]) => {

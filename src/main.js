@@ -149,8 +149,160 @@ document.addEventListener('visibilitychange', () => {
   else if (audio.ctx) audio.ctx.resume();
 });
 
+// ───── 게임패드 ─────
+// 표준 배치(엑스박스 기준). 플레이스테이션·스위치 패드도 브라우저가 같은 번호로 맞춰 준다.
+const PAD_BTN = { 0: 'a', 1: 'b', 2: 'x', 3: 'y', 4: 'lb', 5: 'rb', 8: 'select', 9: 'start', 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
+const PAD_REPEAT = new Set(['up', 'down', 'left', 'right']);
+const padHeld = new Map(); // 버튼 이름 → 다음에 다시 입력될 시각
+let padEl = null; // 선택 화면에서 지금 가리키는 항목
+
+function padFocusables(layer) {
+  return [...layer.querySelectorAll('button, .rw-card, select, input, .heir')].filter((el) => !el.disabled && !el.classList.contains('cant') && el.offsetParent !== null);
+}
+function padFocus(el) {
+  if (padEl && padEl !== el) padEl.classList.remove('pad-focus');
+  padEl = el;
+  if (!el) return;
+  el.classList.add('pad-focus');
+  try { el.focus({ preventScroll: true }); } catch { /* 초점을 받을 수 없는 요소 */ }
+  el.scrollIntoView({ block: 'nearest' });
+}
+function padDefault(layer) {
+  const list = padFocusables(layer);
+  return layer.querySelector('.rw-card.sel') || list.find((el) => el.classList.contains('rw-card')) || list.find((el) => el.classList.contains('btn-primary')) || list[0] || null;
+}
+// 누른 방향에 있는 가장 가까운 항목으로 옮긴다
+function padMove(layer, dir) {
+  const list = padFocusables(layer);
+  if (!padEl || !padEl.isConnected || !list.includes(padEl)) return padFocus(padDefault(layer));
+  // 설정 화면의 한 줄(글자 + 칸)은 줄 전체를 기준으로 삼아야 위아래 이동이 줄을 건너뛰지 않는다
+  const rectOf = (el) => (el.closest('label.row') || el).getBoundingClientRect();
+  const a = rectOf(padEl);
+  const ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+  let best = null, bestScore = Infinity;
+  for (const el of list) {
+    if (el === padEl) continue;
+    const r = rectOf(el);
+    const dx = r.left + r.width / 2 - ax, dy = r.top + r.height / 2 - ay;
+    const main = dir === 'up' ? -dy : dir === 'down' ? dy : dir === 'left' ? -dx : dx;
+    const side = dir === 'up' || dir === 'down' ? Math.abs(dx) : Math.abs(dy);
+    if (main < 6) continue;
+    const score = main + side * 2.5;
+    if (score < bestScore) { bestScore = score; best = el; }
+  }
+  if (best) {
+    overlayHooksSound();
+    padFocus(best);
+  }
+}
+function overlayHooksSound() {
+  audio.unlock();
+  audio.play('select');
+}
+function padOverlay(layer, btn) {
+  if (padEl && !padEl.isConnected) padEl = null;
+  if (btn === 'b' || btn === 'start') {
+    const back = layer.querySelector('[data-a="close"]') || layer.querySelector('[data-a="back"]');
+    if (back) back.click();
+    return;
+  }
+  if (btn === 'up' || btn === 'down' || btn === 'left' || btn === 'right') {
+    // 슬라이더·선택 칸 위에서는 좌우로 값을 바꾼다
+    if (padEl && padEl.isConnected && (btn === 'left' || btn === 'right')) {
+      const d = btn === 'left' ? -1 : 1;
+      if (padEl.tagName === 'INPUT' && padEl.type === 'range') {
+        const v = clampNum(Number(padEl.value) + d * Number(padEl.step || 1), Number(padEl.min), Number(padEl.max));
+        padEl.value = String(Math.round(v * 100) / 100);
+        padEl.dispatchEvent(new Event('input', { bubbles: true }));
+        return;
+      }
+      if (padEl.tagName === 'SELECT') {
+        const n = padEl.options.length;
+        const k = padEl.dataset.k;
+        padEl.selectedIndex = (padEl.selectedIndex + d + n) % n;
+        padEl.dispatchEvent(new Event('input', { bubbles: true }));
+        // 화면이 다시 그려졌으면 같은 칸을 다시 가리킨다
+        const again = k && document.querySelector(`.ov-layer.on [data-k="${k}"]`);
+        if (again) padFocus(again);
+        return;
+      }
+    }
+    padMove(layer, btn);
+    return;
+  }
+  if (btn === 'a') {
+    if (!padEl || !padEl.isConnected) return padFocus(padDefault(layer));
+    const el = padEl;
+    const k = el.dataset.k;
+    const wasCard = el.classList.contains('rw-card') && !el.classList.contains('shop-item');
+    el.click();
+    const now = document.querySelector('.ov-layer.on');
+    if (!now) return;
+    if (wasCard && el.isConnected) {
+      // 카드를 골랐으면 바로 확인 버튼으로
+      const go = now.querySelector('.rw-go:not([disabled])');
+      if (go) padFocus(go);
+    } else if (k && !el.isConnected) {
+      const again = now.querySelector(`[data-k="${k}"]`);
+      if (again) padFocus(again);
+    }
+  }
+}
+function clampNum(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+function padInput(btn) {
+  game.padActive = true;
+  audio.unlock();
+  const layer = document.querySelector('.ov-layer.on');
+  if (layer) padOverlay(layer, btn);
+  else if (!paused) game.onPad(btn);
+}
+window.__pad = padInput; // 자동 테스트용: 패드 버튼을 누른 것처럼
+function pollPad(now) {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  const down = new Set();
+  for (const p of pads) {
+    if (!p || !p.connected) continue;
+    p.buttons.forEach((b, i) => {
+      if (PAD_BTN[i] && (b.pressed || b.value > 0.5)) down.add(PAD_BTN[i]);
+    });
+    const [ax = 0, ay = 0] = p.axes;
+    if (ax < -0.55) down.add('left');
+    if (ax > 0.55) down.add('right');
+    if (ay < -0.55) down.add('up');
+    if (ay > 0.55) down.add('down');
+  }
+  for (const name of [...padHeld.keys()]) if (!down.has(name)) padHeld.delete(name);
+  for (const name of down) {
+    const next = padHeld.get(name);
+    if (next === undefined) {
+      padHeld.set(name, PAD_REPEAT.has(name) ? now + 360 : Infinity);
+      padInput(name);
+    } else if (now >= next) {
+      padHeld.set(name, now + 140);
+      padInput(name);
+    }
+  }
+  // 선택 화면이 새로 열렸으면 첫 항목을 가리켜 둔다
+  if (game.padActive) {
+    const layer = document.querySelector('.ov-layer.on');
+    if (layer && (!padEl || !padEl.isConnected)) padFocus(padDefault(layer));
+  }
+}
+// 마우스·키보드를 쓰면 패드 표시를 거둔다
+for (const t of ['pointerdown', 'keydown']) {
+  window.addEventListener(t, () => {
+    if (!game || !game.padActive) return;
+    game.padActive = false;
+    if (padEl) padEl.classList.remove('pad-focus');
+    padEl = null;
+  }, true);
+}
+
 let last = performance.now();
 function frame(now) {
+  pollPad(now);
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   if (game.virtualClock == null && (!paused || game.mode !== 'battle')) game.update(dt);

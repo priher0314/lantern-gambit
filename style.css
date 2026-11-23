@@ -394,3 +394,7 @@ body { display: flex; align-items: center; justify-content: center; }
 
 .keyhint { margin-left: 8px; padding: 1px 7px; border-radius: 6px; border: 1px solid rgba(216, 165, 72, 0.5); color: var(--gold); font-size: 0.72em; opacity: 0.85; }
 .settings select:disabled { opacity: 0.45; }
+
+/* 게임패드로 가리키는 항목 */
+.pad-focus { outline: 3px solid #fff2b0 !important; outline-offset: 3px; box-shadow: 0 0 0 6px rgba(255, 216, 74, 0.25), 0 0 22px rgba(255, 210, 122, 0.55) !important; }
+.row:has(.pad-focus) { background: rgba(255, 216, 74, 0.08); border-radius: 8px; }

@@ -812,6 +812,70 @@ export class Game {
     if (['1', '2', '3'].includes(k)) this.tapLane(Number(k) - 1, true);
   }
 
+  // 게임패드 입력(버튼 이름: a b x y lb rb up down left right start select)
+  onPad(btn) {
+    if (this.mode !== 'battle') return;
+    const ui = this.ui;
+    const st = this.st;
+    if (btn === 'start') {
+      if (!ui.react && !ui.counter) this.overlay.openSettings();
+      return;
+    }
+    if (ui.phase === 'react') {
+      if (btn === 'a') this.press('guard');
+      if (btn === 'b' || btn === 'x') this.press('dodge');
+      return;
+    }
+    if (ui.counter) {
+      const c = ui.counter;
+      if (btn === 'left' || btn === 'right') this.setCounterHover(clamp((c.hover ?? c.def ?? 1) + (btn === 'left' ? -1 : 1), 0, 2));
+      if (btn === 'a') this.pickCounter(c.hover ?? c.def ?? 1);
+      return;
+    }
+    if (this.card) {
+      if (btn === 'a' || btn === 'b') this.closeCard();
+      return;
+    }
+    if (btn === 'select') return this.openGuide();
+    if (btn === 'x') return this.press('reroll');
+    if (btn === 'y') return this.press('end');
+    if (ui.phase === 'spin') {
+      if (btn === 'a') this.pullLever();
+      return;
+    }
+    if (ui.phase !== 'aim' || this.busy || !st) return;
+    if (btn === 'lb' || btn === 'rb' || btn === 'up' || btn === 'down') {
+      // 아직 안 쓴 공격 패 사이를 오간다
+      const open = st.shots.map((s, i) => (s.used ? -1 : i)).filter((i) => i >= 0);
+      if (!open.length) return;
+      const at = open.indexOf(ui.sel);
+      const dir = btn === 'lb' || btn === 'up' ? -1 : 1;
+      this.selectShot(open[at < 0 ? 0 : (at + dir + open.length) % open.length], false);
+      return;
+    }
+    if (btn === 'left' || btn === 'right') {
+      const lane = ui.hoverLane < 0 ? 1 : clamp(ui.hoverLane + (btn === 'left' ? -1 : 1), 0, 2);
+      if (lane !== ui.hoverLane) {
+        ui.hoverLane = lane;
+        ui.armedLane = -1;
+        this.audio.play('aim');
+        this.updatePreview();
+      }
+      return;
+    }
+    if (btn === 'a' && ui.sel != null) {
+      if (st.shots[ui.sel] && st.shots[ui.sel].symbol === 'lantern') return this.fire(1);
+      if (ui.hoverLane < 0) {
+        // 처음에는 가운데 레인을 가리키기만 한다(무엇을 맞힐지 먼저 보이게)
+        ui.hoverLane = 1;
+        this.audio.play('aim');
+        this.updatePreview();
+        return;
+      }
+      this.fire(ui.hoverLane);
+    }
+  }
+
   press(id) {
     const ui = this.ui;
     if (id === 'spin') return this.pullLever();

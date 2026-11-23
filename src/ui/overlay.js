@@ -167,6 +167,7 @@ export class Overlay {
         <div class="ht"><b>Relics</b><span>Upgrade to <em>II</em>; a II relic that triggers 6 times <em>evolves to III</em>. Matching pairs can be <em>fused</em>.</span></div>
         <div class="ht"><b>Enemy info</b><span><em>Right-click</em> an enemy (or press and hold).</span></div>
         <div class="ht"><b>Keys</b><span>Space lever·block / R reroll / Q W E reels / 1 2 3 lanes / K dodge / Enter end turn / H help / Esc settings<br>Choice screens: 1-4 pick / Enter confirm</span></div>
+        <div class="ht"><b>Gamepad</b><span>A lever·fire·block / B dodge / X reroll / Y end turn / LB RB reels / D-pad or stick: lanes / Start settings / Back help</span></div>
       </div>`;
     }
     return `
@@ -183,6 +184,7 @@ export class Overlay {
         <div class="ht"><b>유물</b><span>강화하면 <em>II</em>, II가 6번 발동하면 <em>III 진화</em>. 짝이 맞는 두 유물은 <em>융합</em>.</span></div>
         <div class="ht"><b>적 정보</b><span>적을 <em>우클릭</em> (터치는 길게 누르기).</span></div>
         <div class="ht"><b>조작키</b><span>Space 레버·막기 / R 다시 돌리기 / Q W E 릴 / 1 2 3 레인 / K 회피 / Enter 턴 종료 / H 도움말 / Esc 설정<br>선택 화면: 1~4 고르기 / Enter 확인</span></div>
+        <div class="ht"><b>게임패드</b><span>A 레버·쏘기·막기 / B 회피 / X 다시 돌리기 / Y 턴 종료 / LB RB 릴 / 십자키·스틱 레인 / Start 설정 / Back 도움말</span></div>
       </div>`;
   }
 

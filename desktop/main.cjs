@@ -9,6 +9,9 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
+// 게임패드 입력은 브라우저가 "사용자 동작"으로 치지 않아 소리가 막힐 수 있다 → PC판에서는 풀어 둔다
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 let win = null;
 
 function createWindow() {

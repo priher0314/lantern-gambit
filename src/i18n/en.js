@@ -229,6 +229,7 @@ export const EN = {
   '마무리!': 'Finisher!',
   '새벽이 올 때까지, 돌려라': 'Keep spinning until dawn',
   '레버': 'Lever',
+  '쏘기': 'Fire',
   '레인': 'Lane',
   '릴 선택': 'Pick reel',
   '일격!': 'One shot!',
