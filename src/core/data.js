@@ -1,7 +1,7 @@
 // 게임 데이터 — 규칙 엔진과 연출이 함께 참조한다.
 
 // 게임 제목(한 곳에서만 바꾸면 된다)
-export const GAME_TITLE = 'LANTERN GAMBIT';
+export const GAME_TITLE = 'SPIN TILL DAWN';
 
 export const ROWS = 6;
 export const LANES = 3;
