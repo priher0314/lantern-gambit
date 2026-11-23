@@ -24,6 +24,7 @@ const EL_COLORS = {
   spark: ['#ffffff', '#ffe45c', '#b77cff'],
   counter: ['#ffffff', '#ffe08a', '#ff9f1a'],
   venom: ['#e6ff9a', '#a6f04a', '#6a2fb0'],
+  bomb: ['#fff2c8', '#ff8a3d', '#d8342c'],
   ice: ['#ffffff', '#d6f3ff', '#9fdcff'],
 };
 
@@ -129,6 +130,8 @@ export class Game {
     this.cardQueue = [];
     this.relicPulse = {};
     this.stamps = [];
+    this.comboBadges = []; // "동결 + 절단" 처럼 무엇과 무엇이 만나 터졌는지
+    this.relicLinks = []; // 발동한 유물에서 효과가 난 곳으로 이어지는 빛줄기(화면 좌표)
     this.cutin = null;
     this.hold = null;
     this.battleCount = RUN_LENGTH;
@@ -232,14 +235,20 @@ export class Game {
   }
 
   // ─────────────── 런/전투 시작 ───────────────
-  startRun(seed) {
+  startRun(seed, charId) {
     this.audio.unlock();
     this.audio.startBgm();
     const s = seed ?? hashSeed(String(Date.now()));
     const meta0 = this.store.meta;
     const first = !meta0.tutorialDone;
+    // 따라 하기를 마친 뒤부터는 캐릭터를 고른다
+    if (!first && charId === undefined) {
+      this.overlay.showCharacters(meta0.lastChar || 'blade', (id) => this.startRun(seed, id));
+      return;
+    }
+    if (charId) meta0.lastChar = charId;
     // 단계와 가져온 유물(첫 판 따라 하기에서는 쓰지 않는다)
-    this.run = createRun(s, first ? {} : { tier: meta0.tier || 0, heirloom: meta0.heirloom || null });
+    this.run = createRun(s, first ? {} : { tier: meta0.tier || 0, heirloom: meta0.heirloom || null, char: charId || 'blade' });
     // 개발용: ?stage=2 로 특정 전투부터 시작
     const devStage = Number(new URLSearchParams(location.search).get('stage'));
     if (devStage > 0 && devStage < RUN_LENGTH) {
@@ -469,11 +478,13 @@ export class Game {
 
   enemyAtPoint(p) {
     let best = null;
+    let bestD = Infinity;
     for (const v of this.views.values()) {
       if (v.dying > 0) continue;
       const q = this.renderer.viewPos(v);
-      if (Math.abs(p.x - q.x) < 40 * q.s + 6 && p.y < q.y + 12 && p.y > q.y - 105 * q.k) {
-        if (!best || v.row > best.row) best = v;
+      if (Math.abs(p.x - q.x) < 44 * q.s + 6 && p.y < q.y + 18 && p.y > q.y - 78 * q.k) {
+        const d = Math.abs(p.y - (q.y - 26 * q.k)) + Math.abs(p.x - q.x) * 0.3;
+        if (d < bestD) { bestD = d; best = v; }
       }
     }
     return best;
@@ -999,6 +1010,12 @@ export class Game {
     this.audio.play('select');
     if (touch) this.ui.hoverLane = -1;
     this.updatePreview();
+  }
+
+  // 조합이 터진 자리에 원인을 띄운다: [문양 a] + [문양 b]
+  comboBadge(x, y, a, b) {
+    if (this.comboBadges.some((c) => Math.abs(c.x - x) < 30 && Math.abs(c.y0 - y) < 30 && c.a === a && c.b === b && c.life > c.max - 0.2)) return;
+    this.comboBadges.push({ x, y, y0: y, a, b, life: 1.5, max: 1.5 });
   }
 
   // 릴 위 자물쇠의 위치(다시 돌리기가 가능할 때만 누를 수 있다)
@@ -1668,7 +1685,7 @@ export class Game {
   impactPoint(v) {
     const p = this.renderer.viewPos(v);
     const h = { kasa: 42, mask: 46, archer: 48, elder: 48, bomber: 40, healer: 40, boar: 34 }[v.type] || 40;
-    return { x: p.x, y: p.y - h * p.k * 0.86, k: p.k };
+    return { x: p.x, y: p.y - h * p.k * 0.72, k: p.k };
   }
 
   playerMuzzle() {
@@ -1789,6 +1806,7 @@ export class Game {
           this.audio.play('burst');
           this.audio.play('spark');
           fx.text(p.x, cy2 - 60, '감전 폭발!', { color: '#d6ff5a', size: 34, font: 'num', life: 1.2 });
+          this.comboBadge(p.x, cy2 - 96, 'venom', 'spark');
           fx.ring(p.x, cy2, { r0: 10, r1: 150, color: '#a6f04a', w: 9, life: 0.5 });
           fx.ring(p.x, cy2, { r0: 6, r1: 100, color: '#ffe45c', w: 5, life: 0.4 });
           fx.impact(p.x, cy2, 110, '#d6ff5a');
@@ -1802,16 +1820,19 @@ export class Game {
         } else if (ev.name === 'deepFreeze') {
           this.audio.play('freeze');
           fx.text(p.x, cy2 - 60, '꽁꽁! 동결 +1턴', { color: '#bfe6ff', size: 26, font: 'num', life: 1.1 });
+          this.comboBadge(p.x, cy2 - 94, 'wave', 'frost');
           fx.ring(p.x, cy2, { r0: 10, r1: 110, color: '#bfe6ff', w: 7, life: 0.5 });
           const dv = this.views.get(ev.id);
           if (dv) dv.wet = 0;
         } else if (ev.name === 'fester') {
           this.audio.play('venom');
           fx.text(p.x, cy2 - 60, '독이 깊어진다! 중독 +2', { color: '#b8ff5a', size: 24, font: 'num', life: 1.1 });
+          this.comboBadge(p.x, cy2 - 94, 'venom', 'blade');
           fx.ring(p.x, cy2, { r0: 10, r1: 90, color: '#a6f04a', w: 6, life: 0.45 });
         } else if (ev.name === 'spread') {
           this.audio.play('venom');
           fx.text(p.x, cy2 - 60, '독 확산!', { color: '#b8ff5a', size: 28, font: 'num', life: 1.1 });
+          this.comboBadge(p.x, cy2 - 94, 'venom', 'wave');
           fx.ring(p.x, cy2, { r0: 10, r1: 130, color: '#a6f04a', w: 7, life: 0.6, sy: 0.6 });
         }
         await this.wait(160);
@@ -1851,6 +1872,7 @@ export class Game {
         if (!R) break;
         this.relicPulse[ev.relic] = 1;
         if (ev.quiet) break; // 늘 켜져 있는 효과는 배지만 반짝
+        this.relicPulse[ev.relic] = 1.6;
         this.audio.play('relic');
         let x = this.player.x;
         let y = L.playerY - 168;
@@ -1866,6 +1888,19 @@ export class Game {
           y = ip.y - 92;
         }
         fx.text(x, y, `◆ ${R.name}${R.proc ? ' : ' + R.proc : ''}`, { color: R.color, size: 18, font: 'num', life: 1.5, vy: -22 });
+        {
+          // 유물 배지에서 효과가 난 곳까지 빛줄기
+          const shown = this.shownRelics;
+          let ri = shown.indexOf(ev.relic);
+          if (ri < 0) ri = shown.findIndex((id) => FUSIONS[id] && (FUSIONS[id].a === ev.relic || FUSIONS[id].b === ev.relic));
+          if (ri >= 0) {
+            const rr = this.relicRect(ri);
+            const a = toScreen(L, rr.x + rr.w / 2, rr.y + rr.h / 2);
+            const b = toScreen(L, x, y + 30);
+            this.relicLinks.push({ sx: a.x, sy: a.y, tx: b.x, ty: b.y, color: R.color, life: 0.55, max: 0.55 });
+            this.relicPulse[shown[ri]] = 1.6;
+          }
+        }
         await this.wait(90);
         break;
       }
@@ -2092,6 +2127,27 @@ export class Game {
         const y = p.y - 34 * p.k;
         if (this.cur && this.cur.proj) await this.flyTo(this.cur.proj, p.x, y);
         this.killProj();
+        if (ev.bomb) {
+          // 폭탄: 불기둥과 파편, 바닥에 그을음
+          this.audio.play('bomb');
+          fx.dim(0.35);
+          fx.flash('#ffb347', 0.2);
+          fx.impact(p.x, y, ev.tier === 2 ? 130 : 96, '#ffd84a');
+          fx.ring(p.x, y, { r0: 10, r1: ev.tier === 2 ? 170 : 120, color: '#ff8a3d', w: 10, life: 0.45, sy: 0.6 });
+          fx.ring(p.x, y, { r0: 6, r1: 70, color: '#ffffff', w: 5, life: 0.25 });
+          fx.burst(p.x, y, { n: 34, speed: 420, color: ['#ffd84a', '#ff8a3d', '#ffffff', '#d8342c'], kind: 'streak', size: 5, life: 0.5, g: 500 });
+          fx.burst(p.x, y, { n: 12, speed: 90, color: ['#4a3a4a', '#2a2030'], kind: 'dot', size: 9, life: 0.9, vy: -70, add: false });
+          fx.decal(p.x, p.y, { kind: 'scorch', r: 46 * p.s, color: 'rgba(12,6,16,0.9)', life: 5 });
+          for (const [l, r] of ev.cells) {
+            const q = cellPos(L, l, r);
+            fx.burst(q.x, q.y - 26 * q.k, { n: 6, speed: 160, color: ['#ffd84a', '#ff8a3d'], kind: 'glow', size: 5, life: 0.35 });
+          }
+          fx.shake(3);
+          fx.punchIn(0.03);
+          this.hitstop = Math.max(this.hitstop, 0.1);
+          await this.wait(70);
+          break;
+        }
         this.audio.play('burst');
         fx.ring(p.x, y, { r0: 10, r1: ev.tier === 2 ? 190 : 130, color: '#4ff0c4', w: 9, life: 0.5, sy: 0.55 });
         fx.ring(p.x, y, { r0: 6, r1: 80, color: '#ffffff', w: 4, life: 0.3 });
@@ -2385,7 +2441,8 @@ export class Game {
       this.cur = { proj: sp, sym: 'spark', sx: m.x, sy: m.y, first: true };
       return;
     }
-    const speed = { blade: 1500, frost: 1000, wave: 880, venom: 920, counter: 2300 }[sym] || 1600;
+    const speed = { blade: 1500, frost: 1000, wave: 880, venom: 920, counter: 2300, bomb: 760 }[sym] || 1600;
+    if (sym === 'bomb') this.audio.play('bombThrow');
     const size = { blade: 17, frost: 15, wave: 17, venom: 15, counter: ev.small ? 13 : 22 }[sym] || 13;
     if (sym === 'blade') this.audio.play('blade', { strong: ev.tier > 1 });
     else if (sym === 'wave') this.audio.play('wave');
@@ -2492,9 +2549,13 @@ export class Game {
       }
     }
     if (ev.tags.includes('detonate')) fx.text(ip.x - 50, ip.y - 30, `폭발 +`, { color: '#d6ff5a', size: 20, font: 'num' });
-    if (ev.tags.includes('conduct')) fx.text(ip.x, ip.y - 96, '초전도! 연쇄 +1', { color: '#bfe6ff', size: 22, font: 'num' });
+    if (ev.tags.includes('conduct')) {
+      fx.text(ip.x, ip.y - 96, '초전도! 연쇄 +1', { color: '#bfe6ff', size: 22, font: 'num' });
+      this.comboBadge(ip.x, ip.y - 128, 'frost', 'spark');
+    }
     if (ev.tags.includes('surge')) {
       fx.text(ip.x, ip.y - 96, '감전! +2', { color: '#ffe45c', size: 28, font: 'num', life: 1.1 });
+      this.comboBadge(ip.x, ip.y - 130, 'wave', 'spark');
       fx.ring(ip.x, ip.y, { r0: 10, r1: 110, color: '#ffe45c', w: 7, life: 0.4 });
       fx.bolt(ip.x - 40, ip.y - 60, ip.x + 30, ip.y + 30, { color: '#ffffff', color2: '#4ff0c4', w: 4, life: 0.3 });
       this.hitstop = Math.max(this.hitstop, 0.12);
@@ -2522,6 +2583,7 @@ export class Game {
       fx.burst(ip.x, ip.y, { n: 34, speed: 460, color: ['#ffffff', '#d6f3ff', '#7cc8ff'], kind: 'shard', size: 7, life: 0.75, g: 300, add: false });
       fx.ring(ip.x, ip.y, { r0: 10, r1: 130, color: '#bfe6ff', w: 8, life: 0.5 });
       fx.text(ip.x, ip.y - 84, '파쇄!', { color: '#bfe6ff', size: 38, font: 'num' });
+      this.comboBadge(ip.x, ip.y - 124, 'frost', SYMBOLS[el] && el !== 'counter' ? el : 'blade');
       fx.flash('#bfe6ff', 0.18);
       v.frozen = 0;
     }
@@ -2623,6 +2685,14 @@ export class Game {
     let dt = realDt * this.timeScale * (this.slowT > 0 ? 0.3 : 1);
     if (this.slowT > 0) this.slowT -= realDt;
     for (const s of this.stamps) s.life -= realDt;
+    if (this.comboBadges.length) {
+      for (const c of this.comboBadges) { c.life -= realDt; c.y -= realDt * 14; }
+      this.comboBadges = this.comboBadges.filter((c) => c.life > 0);
+    }
+    if (this.relicLinks.length) {
+      for (const l of this.relicLinks) l.life -= realDt;
+      this.relicLinks = this.relicLinks.filter((l) => l.life > 0);
+    }
     if (this.stamps.length) this.stamps = this.stamps.filter((s) => s.life > 0);
     if (this.hitstop > 0) {
       this.hitstop -= realDt;

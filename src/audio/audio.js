@@ -399,6 +399,18 @@ export class Audio {
     this.noise({ dur: 0.05, vol: 0.4, type: 'highpass', f: 2400 });
     this.noise({ t: 0.01, dur: 0.2, vol: 0.3, type: 'lowpass', f: 700 });
   }
+  s_bombThrow() {
+    // 던지는 소리 + 타들어 가는 심지
+    this.noise({ dur: 0.18, vol: 0.2, type: 'bandpass', f: 500, f2: 1600, q: 1.2 });
+    this.noise({ t: 0.05, dur: 0.45, vol: 0.07, type: 'highpass', f: 5000 });
+  }
+  s_bomb() {
+    // 폭발: 깊은 "쾅" + 흩어지는 파편
+    this.tone({ type: 'sine', f: 120, f2: 30, dur: 0.6, vol: 0.7 });
+    this.noise({ dur: 0.08, vol: 0.6, type: 'highpass', f: 1800 });
+    this.noise({ dur: 0.55, vol: 0.45, type: 'lowpass', f: 1800, f2: 150 });
+    for (let i = 0; i < 5; i++) this.noise({ t: 0.12 + i * 0.05 + Math.random() * 0.03, dur: 0.03, vol: 0.12, type: 'highpass', f: 3000 + Math.random() * 3000 });
+  }
   s_finish() {
     // 마무리 일격: 깊은 "쿵" 뒤에 맑게 퍼지는 울림
     this.tone({ type: 'sine', f: 90, f2: 28, dur: 0.7, vol: 0.6 });

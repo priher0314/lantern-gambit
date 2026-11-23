@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.18';
+export const GAME_VERSION = 'v0.19';
 
 export const ROWS = 7;
 export const LANES = 3;
@@ -23,7 +23,25 @@ export const SYMBOLS = {
   venom: { name: '중독', ink: '#4a8a1a', tint: '#e2f6c4', fx: '#a6f04a', fx2: '#6a2fb0' },
   lantern: { name: '등불', ink: '#d0532a', tint: '#ffe2c0', fx: '#ffc266', fx2: '#ff7a3d' },
   counter: { name: '되치기', ink: '#b8860b', tint: '#fff0b0', fx: '#ffd84a', fx2: '#ff9f1a' },
+  bomb: { name: '폭탄', ink: '#8a3210', tint: '#ffe0c8', fx: '#ff8a3d', fx2: '#ffd84a' },
 };
+
+// 캐릭터: 문양 다섯 가지는 함께 쓰고, 한 자리(고유 기술)만 다르다
+export const CHARACTERS = {
+  blade: {
+    id: 'blade', sig: 'blade', name: '칼잡이', en: 'Swordhand', color: '#cfd8ff', scarf: '#33c79a',
+    desc: '고유 기술 절단 · 맨 앞부터 꿰뚫는다 · 얼린 적을 파쇄',
+    enDesc: 'Signature: Slash · Pierces from the front · Shatters frozen enemies',
+  },
+  bomb: {
+    id: 'bomb', sig: 'bomb', name: '폭탄꾼', en: 'Bombardier', color: '#ff8a3d', scarf: '#ff8a3d',
+    desc: '고유 기술 폭탄 · 맨 뒤 적에게 떨어져 주변까지 터진다 · 방패 무시',
+    enDesc: 'Signature: Bomb · Lands on the rearmost enemy and bursts around it · Ignores shields',
+  },
+};
+export const CHARACTER_IDS = Object.keys(CHARACTERS);
+// 그 캐릭터가 쓰는 문양 목록(절단 자리가 고유 기술로 바뀐다)
+export const symbolsOf = (charId) => SYMBOL_IDS.map((s) => (s === 'blade' ? (CHARACTERS[charId] || CHARACTERS.blade).sig : s));
 
 export const SHOT_NAMES = {
   blade: ['', '절단', '관통 베기', '반달 베기'],
@@ -32,6 +50,7 @@ export const SHOT_NAMES = {
   spark: ['', '전격', '연쇄 전격', '벼락'],
   venom: ['', '중독', '독 줄기', '독안개'],
   lantern: ['', '방어막', '큰 방어막', '등불'],
+  bomb: ['', '폭탄', '큰 폭탄', '불꽃놀이'],
 };
 
 // 영어 이름(스팀 출시 대비). 화면 전환 기능은 아직 없고 데이터만 준비해 둔다.
@@ -42,8 +61,9 @@ export const SHOT_NAMES_EN = {
   spark: ['', 'Spark', 'Chain Spark', 'Thunderbolt'],
   venom: ['', 'Poison', 'Poison Line', 'Miasma'],
   lantern: ['', 'Guard', 'Big Guard', 'Lantern'],
+  bomb: ['', 'Bomb', 'Big Bomb', 'Fireworks'],
 };
-export const SYMBOL_EN = { blade: 'Slash', wave: 'Wave', frost: 'Frost', spark: 'Spark', venom: 'Poison', lantern: 'Guard' };
+export const SYMBOL_EN = { bomb: 'Bomb', blade: 'Slash', wave: 'Wave', frost: 'Frost', spark: 'Spark', venom: 'Poison', lantern: 'Guard' };
 export const ENEMY_EN = { kasa: 'Umbrella Imp', drum: 'Drum Imp', mask: 'Mask Bearer', archer: 'Lantern Wisp', elder: 'Great Lantern', bomber: 'Firecracker Imp', healer: 'Brew Imp', boar: 'Boar' };
 // 정예: 체력 1.6배, 공격 +1, 처치하면 코인
 export const ELITE = { hp: 1.6, atk: 1 };
@@ -53,7 +73,7 @@ export const STAGE_EN = { b1: 'Bridgehead', b2: 'Mask Dance', b3: 'Lantern Alley
 export const STAMINA = { max: 4, regen: 2, guard: 1, dodge: 2, perfectDodge: 1 };
 // 수련: 상점에서 문양을 단련하면 그 기술이 강해진다(최대 단계)
 export const TRAIN_MAX = 3;
-export const TRAIN_TEXT = { blade: '피해 +1', wave: '피해 +1', frost: '피해 +1', spark: '피해 +1', venom: '중독 +1', lantern: '방어막 +1' };
+export const TRAIN_TEXT = { bomb: '피해 +1', blade: '피해 +1', wave: '피해 +1', frost: '피해 +1', spark: '피해 +1', venom: '중독 +1', lantern: '방어막 +1' };
 
 // 기술 수치. gild = 금빛 릴 수(피해 +1, 고유 능력 +1), lv = 수련 단계
 export function shotStats(symbol, tier, gild = 0, lv = 0) {
@@ -92,6 +112,10 @@ function baseShotStats(symbol, tier, gild = 0) {
       if (tier === 1) return { dmg: 1 + g, poison: 3 + g };
       if (tier === 2) return { dmg: 1 + g, poison: 3 + g, wholeLane: true };
       return { dmg: 1 + g, poison: 4 + g };
+    case 'bomb':
+      if (tier === 1) return { dmg: 3 + g, splash: 2 + g, area: 'cross' };
+      if (tier === 2) return { dmg: 4 + g, splash: 3 + g, area: 'square' };
+      return { dmg: 5 + g };
     case 'lantern':
       if (tier === 1) return { guard: 2 + g, heal: 0 };
       if (tier === 2) return { guard: 3 + g, heal: 2 };
@@ -123,6 +147,10 @@ export function shotDesc(symbol, tier, gild = 0, lv = 0) {
       if (tier === 1) return `첫 적 ${s.dmg} · 중독 ${s.poison} (매 턴 피해, 방패 무시)`;
       if (tier === 2) return `레인 전체 ${s.dmg} · 중독 ${s.poison}`;
       return `모든 적 ${s.dmg} · 중독 ${s.poison}`;
+    case 'bomb':
+      if (tier === 1) return `맨 뒤 적 ${s.dmg} · 앞뒤·양옆 ${s.splash} · 방패 무시`;
+      if (tier === 2) return `맨 뒤 적 ${s.dmg} · 주변 8칸 ${s.splash} · 방패 무시`;
+      return `모든 적 ${s.dmg} · 방패 무시 · 파쇄`;
     case 'lantern':
       if (tier === 1) return `방어막 +${s.guard} · 기력 +1`;
       if (tier === 2) return `방어막 +${s.guard} · 체력 +${s.heal} · 기력 +2`;
@@ -308,6 +336,7 @@ export const REWARDS = {
   stripFrost: { name: '동결 부적', en: 'Frost Charm', desc: '동결 문양이 더 자주 나옴', icon: 'frost', sym: 'frost' },
   stripSpark: { name: '전격 부적', en: 'Spark Charm', desc: '전격 문양이 더 자주 나옴', icon: 'spark', sym: 'spark' },
   stripVenom: { name: '중독 부적', en: 'Poison Charm', desc: '중독 문양이 더 자주 나옴', icon: 'venom', sym: 'venom' },
+  stripBomb: { name: '폭탄 부적', en: 'Bomb Charm', desc: '폭탄 문양이 더 자주 나옴', icon: 'bomb', sym: 'bomb' },
 };
 
 // 유물: 한 판의 싸움 방식을 정한다. 규칙은 battle.js의 has/lv 지점에서 적용.
@@ -320,7 +349,8 @@ export const RELICS = {
   gamblerCoin: { name: '엽전', en: 'Lucky Coin', color: '#c58cff', tag: '슬롯', proc: '다시 돌림 → 방어막', desc: '다시 돌리기 +1회 · 돌릴 때 방어막 +1', enDesc: '+1 Reroll per turn · Reroll: +1 Guard', up: '+2회 · 방어막 +2' },
   emberWick: { name: '심지', en: 'Wick', color: '#ffb347', tag: '금빛', proc: '', desc: '금빛 릴 1개로 시작 · 금빛 피해 +1', enDesc: 'Start each battle with 1 Gilded reel · Gilded damage +1', up: '금빛 릴 2개 · 피해 +2' },
   tideBell: { name: '파도 종', en: 'Tide Bell', color: '#4ff0c4', tag: '파동', proc: '직격 → 더 밀어냄', desc: '파동 옆 피해 +1 · 직격한 적을 1칸 더 밀어냄', enDesc: 'Wave splash +1 · Direct hit pushes the enemy 1 more cell', up: '옆 피해 +2' },
-  whetstone: { name: '숫돌', en: 'Whetstone', color: '#cfd8ff', tag: '절단', proc: '절단 처치 → 방어막', desc: '절단 관통 +1 · 절단 처치 시 방어막 +1', enDesc: 'Slash pierce +1 · Slash kill: +1 Guard', up: '관통 +2 · 방어막 +2' },
+  powderKeg: { name: '화약통', en: 'Powder Keg', color: '#ff8a3d', tag: '폭탄', sym: 'bomb', proc: '폭탄 처치 → 기력', desc: '폭탄 주변 피해 +1 · 폭탄 직격으로 처치 시 기력 +1', enDesc: 'Bomb splash +1 · Kill with a direct Bomb hit: +1 Stamina', up: '주변 피해 +2 · 기력 +2' },
+  whetstone: { name: '숫돌', en: 'Whetstone', color: '#cfd8ff', tag: '절단', sym: 'blade', proc: '절단 처치 → 방어막', desc: '절단 관통 +1 · 절단 처치 시 방어막 +1', enDesc: 'Slash pierce +1 · Slash kill: +1 Guard', up: '관통 +2 · 방어막 +2' },
   shadowShoes: { name: '짚신', en: 'Straw Shoes', color: '#8fe8ff', tag: '회피', proc: '회피 → 반격', desc: '회피가 쉬워짐 · 회피 시 적에게 2 피해', enDesc: 'Wider dodge window · Dodge: 2 damage to the attacker', up: '회피 반격 4' },
   oilFlask: { name: '기름병', en: 'Oil Flask', color: '#ff9a5a', tag: '방어막', proc: '방어막 → 회복', desc: '방어막 사용 시 체력 +1 · 최대 방어막 +2', enDesc: 'Guard skill: heal 1 · Max Guard +2', up: '체력 +2 · 최대 방어막 +4' },
   venomFang: { name: '독니', en: 'Fang', color: '#a6f04a', tag: '중독', proc: '처치 → 전염', desc: '중독 +2 · 중독된 적 처치 시 주변 중독 2', enDesc: 'Poison +2 · Killing a poisoned enemy spreads 2 Poison', up: '중독 +4 · 전염 4' },

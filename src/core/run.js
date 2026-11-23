@@ -2,7 +2,7 @@
 import { randInt, shuffle } from './rng.js';
 import {
   BATTLES, BASE_STRIP, REWARDS, RELICS, RELIC_IDS, FUSIONS, FUSION_IDS,
-  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE, TIER, MAX_TIER, SYMBOL_IDS, TRAIN_MAX, TRAIN_TEXT } from './data.js';
+  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE, TIER, MAX_TIER, SYMBOL_IDS, TRAIN_MAX, TRAIN_TEXT, CHARACTERS, symbolsOf } from './data.js';
 
 export function createRun(seed, opt = {}) {
   const run = {
@@ -10,6 +10,8 @@ export function createRun(seed, opt = {}) {
     rng: seed >>> 0 || 1,
     tier: Math.max(0, Math.min(MAX_TIER, opt.tier || 0)), // 단계(높을수록 어렵다)
     heirloom: null, // 지난 판에서 가져온 유물
+    char: CHARACTERS[opt.char] ? opt.char : 'blade', // 캐릭터(고유 기술이 다르다)
+    symLv: {},
     stage: 0,
     hp: 15,
     maxHp: 15,
@@ -22,8 +24,10 @@ export function createRun(seed, opt = {}) {
     def: null, // 지금 치르는 밤
     totals: { kills: 0, perfect: 0, counters: 0, jackpots: 0, bingos: 0, shatters: 0, dmgDealt: 0, turns: 0, score: 0, coins: 0 },
   };
-  run.strips = [0, 1, 2].map(() => makeStrip(run));
-  if (opt.heirloom && RELICS[opt.heirloom] && !FUSIONS[opt.heirloom]) {
+  // 릴의 절단 자리는 캐릭터의 고유 기술로 채운다
+  const sig = CHARACTERS[run.char].sig;
+  run.strips = [0, 1, 2].map(() => makeStrip(run).map((s) => (s === 'blade' ? sig : s)));
+  if (opt.heirloom && RELICS[opt.heirloom] && !FUSIONS[opt.heirloom] && relicFits(run, opt.heirloom)) {
     run.relics.push(opt.heirloom);
     run.heirloom = opt.heirloom;
   }
@@ -191,21 +195,21 @@ export function bankBattle(run, st) {
 export function rollShop(run, keepRerolls = 0) {
   const P = SHOP_PRICES;
   // 진열대는 단출하게: 유물 2칸(융합·강화가 가능하면 둘째 칸에), 소모품 1칸, 회복
-  const fresh = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id)), 2).map((id) => ({ id, price: P.relic }));
+  const fresh = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id) && relicFits(run, id)), 2).map((id) => ({ id, price: P.relic }));
   const fuse = availableFusions(run);
   const upg = run.relics.filter((id) => !FUSIONS[id] && (run.relicLv[id] || 1) < 2);
   const items = [fresh[0]].filter(Boolean);
   if (fuse.length) items.push({ id: 'fuse:' + fuse[0], price: P.fuse });
   else if (upg.length && randInt(run, 2)) items.push({ id: 'up:' + upg[randInt(run, upg.length)], price: P.up });
   else if (fresh[1]) items.push(fresh[1]);
-  const charms = Object.keys(REWARDS).filter((k) => REWARDS[k].sym);
+  const charms = Object.keys(REWARDS).filter((k) => REWARDS[k].sym && run.strips[0].includes(REWARDS[k].sym));
   const trimmable = Object.keys(SYMBOLS).filter((s) => s !== 'counter' && run.strips.every((st) => st.filter((x) => x === s).length >= 2));
   const extras = [{ id: 'maxhp', price: P.maxhp }, { id: charms[randInt(run, charms.length)], price: P.charm }];
   if (trimmable.length) extras.push({ id: 'trim:' + trimmable[randInt(run, trimmable.length)], price: P.trim });
   items.push(extras[randInt(run, extras.length)]);
   // 수련: 문양 하나를 단련(단계가 오를수록 비싸다)
   const lvOf = (s) => (run.symLv && run.symLv[s]) || 0;
-  const trainable = SYMBOL_IDS.filter((s) => lvOf(s) < TRAIN_MAX);
+  const trainable = symbolsOf(run.char).filter((s) => lvOf(s) < TRAIN_MAX);
   if (trainable.length) {
     const s = trainable[randInt(run, trainable.length)];
     items.push({ id: 'train:' + s, price: P.train + P.trainStep * lvOf(s) });
@@ -245,6 +249,12 @@ export function rerollShop(run, shop) {
 // 같은 문양이 위아래로 붙지 않는 릴 띠
 function noRepeat(s) {
   return s.every((v, i) => v !== s[(i + 1) % s.length]);
+}
+
+// 이 판의 캐릭터가 쓸 수 있는 유물인가(특정 문양 전용 유물은 그 문양이 릴에 있어야 한다)
+export function relicFits(run, id) {
+  const need = RELICS[id] && RELICS[id].sym;
+  return !need || run.strips.some((s) => s.includes(need));
 }
 
 function makeStrip(run) {
@@ -319,7 +329,7 @@ export function rewardInfo(id) {
 
 // 런 시작: 유물 3개 중 하나를 고른다 → 빌드의 출발점
 export function rollStartRelics(run) {
-  return pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id)), 3);
+  return pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id) && relicFits(run, id)), 3);
 }
 // 시작 선택지: 유물 3개 + 유물 없이 코인으로 시작
 export function rollStartChoices(run) {
@@ -332,7 +342,7 @@ export function availableFusions(run) {
 
 // 전투 보상: 새 유물 2개 + 일반 보상 1개
 export function rollRewards(run) {
-  const relics = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id)), 2);
+  const relics = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id) && relicFits(run, id)), 2);
   const utils = Object.keys(REWARDS).filter((k) => !(k === 'heal' && run.hp >= run.maxHp));
   const out = [...relics, ...pickSome(run, utils, 3 - relics.length)];
   // 가진 유물이 있으면 60% 확률로 마지막 칸이 "유물 강화(II)"가 된다

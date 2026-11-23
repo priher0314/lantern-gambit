@@ -1,5 +1,5 @@
 // HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
-import { SYMBOL_IDS, AFFINITY, RUN_LENGTH, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf, MODS, OBJ_INFO, COIN_LABEL, NIGHT_NAMES } from '../core/data.js';
+import { CHARACTERS, CHARACTER_IDS, symbolsOf, SYMBOL_IDS, AFFINITY, RUN_LENGTH, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf, MODS, OBJ_INFO, COIN_LABEL, NIGHT_NAMES } from '../core/data.js';
 import { rewardInfo, cantBuy, buyItem, rerollShop, shopRerollCost } from '../core/run.js';
 import { drawSymbol, drawIcon, drawRelicIcon, drawMerchant } from '../render/art.js';
 import { drawCoin } from '../render/scene.js';
@@ -168,6 +168,7 @@ export class Overlay {
         <div class="ht"><b>Hold</b><span>Before rerolling, click the <em>lock</em> above a reel to keep it. Up to two. (A S D keys)</span></div>
         <div class="ht"><b>Stamina</b><span>Block costs 1, Dodge 2. <em class="r">Without enough, you get hit.</em> A perfect dodge costs 1. +2 each turn; Guard symbols restore more.</span></div>
         <div class="ht"><b>Training</b><span>Train a symbol in the shop to strengthen that skill for the whole run.</span></div>
+        <div class="ht"><b>Characters</b><span>The <em>Swordhand</em> has Slash (pierces from the front); the <em>Bombardier</em> has Bomb (lands on the rearmost enemy, bursts around it, ignores shields). The other symbols are shared.</span></div>
         <div class="ht"><b>Parry</b><span><em class="g">Gold or orange ring</em> → Block (precise = counter)<br><em class="r">Red ring</em> → Dodge (enemy exposed, double damage)</span></div>
         <div class="ht"><b>Coins</b><span>Earned from <em>combos</em> (3rd kill in a turn onward), <em>perfects</em> and <em>bingos</em>. Clear a night without rerolling for a <em>thrift</em> bonus. A plain kill pays 0.</span></div>
         <div class="ht"><b>Roads</b><span>Each night, choose a <em>Safe Road</em> or a <em class="r">Rough Road</em> (extra condition, double coins).</span></div>
@@ -192,6 +193,7 @@ export class Overlay {
         <div class="ht"><b>릴 고정</b><span>다시 돌리기 전에 릴 위 <em>자물쇠</em>를 누르면 그 릴은 그대로 남는다. 두 개까지. (A S D 키)</span></div>
         <div class="ht"><b>기력</b><span>막기 1, 회피 2. <em class="r">모자라면 맞는다.</em> 퍼펙트 회피는 1. 매 턴 +2, 등불을 쓰면 더 찬다.</span></div>
         <div class="ht"><b>수련</b><span>상점에서 문양을 단련하면 그 기술이 이번 판 내내 강해진다.</span></div>
+        <div class="ht"><b>캐릭터</b><span><em>칼잡이</em>는 절단(앞부터 관통), <em>폭탄꾼</em>은 폭탄(맨 뒤 적에게 떨어져 주변까지, 방패 무시). 나머지 문양은 같다.</span></div>
         <div class="ht"><b>받아치기</b><span><em class="g">금빛·주황 고리</em> → 막기 (정확하면 되치기)<br><em class="r">붉은 고리</em> → 회피 (적에게 빈틈, 피해 2배)</span></div>
         <div class="ht"><b>코인</b><span><em>연속 처치</em>(한 턴 3마리째부터), <em>퍼펙트</em>, <em>빙고</em>로 번다. 밤 내내 다시 돌리기를 안 쓰면 <em>절약</em> 보너스. 그냥 처치하면 0.</span></div>
         <div class="ht"><b>길</b><span>밤마다 <em>순한 길</em>과 <em class="r">험한 길</em>(조건 추가, 코인 2배) 중 고른다.</span></div>
@@ -251,6 +253,45 @@ export class Overlay {
   }
 
   // 유물/보상 고르기(필수 선택). o: { title, req, ids, go, run, used }
+  // 캐릭터 고르기: 문양 다섯 가지는 같고 고유 기술 하나가 다르다
+  showCharacters(cur, onPick) {
+    let picked = CHARACTERS[cur] ? cur : 'blade';
+    const cards = CHARACTER_IDS.map((id) => {
+      const c = CHARACTERS[id];
+      return `<button class="rw-card ${id === picked ? 'sel' : ''}" data-id="${id}" style="--c:${c.color}">
+        <span class="rw-ic"></span>
+        <span class="rw-top"><span class="rw-name">${c.name}</span><span class="rw-tag">${SYMBOLS[c.sig].name}</span></span>
+        <span class="rw-desc">${c.desc.split(' · ').map((t) => `<span>${t}</span>`).join('')}</span>
+      </button>`;
+    }).join('');
+    const p = this.panel(`
+      <div class="rw-head">
+        <h2>누구로 떠날까요?</h2>
+        <div class="rw-req">문양 다섯 가지는 같고, 고유 기술 하나가 다르다</div>
+      </div>
+      <div class="rw-cards">${cards}</div>
+      <button class="btn btn-primary rw-go">이 캐릭터로</button>
+      <button class="btn" data-a="back">뒤로</button>
+    `, 'reward');
+    p.querySelectorAll('.rw-card').forEach((el) => $('.rw-ic', el).appendChild(iconCanvas(CHARACTERS[el.dataset.id].sig, 52)));
+    p.addEventListener('click', (e) => {
+      const card = e.target.closest('.rw-card');
+      if (card) {
+        picked = card.dataset.id;
+        p.querySelectorAll('.rw-card').forEach((c) => c.classList.toggle('sel', c === card));
+        this.hooks.sound('select');
+      }
+      if (e.target.closest('.rw-go')) {
+        this.clear();
+        onPick(picked);
+      }
+      if (e.target.closest('[data-a="back"]')) {
+        this.hooks.sound('ui');
+        this.hooks.title();
+      }
+    });
+  }
+
   showPick(o, onPick) {
     let picked = null;
     const run = o.run;
@@ -339,7 +380,7 @@ export class Overlay {
             <div class="shop-title">보따리 상점</div>
             <div class="bubble">${say}</div>
             <div class="shop-wallet"><i class="coin"></i><b>${run.coins}</b><span>체력 ${run.hp}/${run.maxHp}</span></div>
-            <div class="deck">${SYMBOL_IDS.map((s) => `<span class="dk" style="--c:${SYMBOLS[s].fx}"><b>${SYMBOLS[s].name}</b>×${run.strips[0].filter((x) => x === s).length}${run.symLv && run.symLv[s] ? `<em>+${run.symLv[s]}</em>` : ''}</span>`).join('')}</div>
+            <div class="deck">${symbolsOf(run.char).map((s) => `<span class="dk" style="--c:${SYMBOLS[s].fx}"><b>${SYMBOLS[s].name}</b>×${run.strips[0].filter((x) => x === s).length}${run.symLv && run.symLv[s] ? `<em>+${run.symLv[s]}</em>` : ''}</span>`).join('')}</div>
           </div>
         </div>
         ${bank ? `<div class="shop-earn">이번 밤에 번 코인 <b>+${bank.gained}</b>${bank.mult > 1 ? ` (험한 길 ×${bank.mult})` : ''}<small>${by || ''}</small></div>` : ''}

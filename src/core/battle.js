@@ -591,6 +591,7 @@ function resolveShot(st, shot, lane, events) {
       if (sym === 'frost') hit(st, e, S.dmg, { el: 'frost', frontal: false, freeze: S.freeze }, events);
       if (sym === 'spark') hit(st, e, S.dmg, { el: 'spark', frontal: false }, events);
       if (sym === 'venom') hit(st, e, S.dmg, { el: 'venom', frontal: false, poison: S.poison }, events);
+      if (sym === 'bomb') hit(st, e, S.dmg, { el: 'bomb', frontal: false, shatter: true }, events);
     }
     if (sym === 'wave') {
       for (const e of alive(st).sort((a, b) => a.row - b.row)) {
@@ -672,6 +673,34 @@ function resolveShot(st, shot, lane, events) {
         events.push({ type: 'poison', id: t.id, stacks: t.poison });
       }
     }
+    events.push({ type: 'fireEnd', lane, row });
+    return;
+  }
+
+  if (sym === 'bomb') {
+    // 폭탄: 포물선으로 날아가 레인의 맨 뒤 적에게 떨어진다(저격하면 고른 적). 위에서 떨어지므로 방패가 막지 못한다.
+    events.push({ ...base, lob: true });
+    const list = shotTargets(st, lane);
+    const first = aimFrom > 0 ? list[0] : list[list.length - 1];
+    const row = first ? first.row : 0;
+    const cells = S.area === 'square'
+      ? [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
+      : [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    const splash = cells.map(([dl, dr]) => [lane + dl, row + dr]).filter(([l, r]) => l >= 0 && l < LANES && r >= 0 && r <= FRONT);
+    events.push({ type: 'burst', lane, row, cells: splash, tier: shot.tier, bomb: true });
+    const splashTargets = splash.map(([l, r]) => enemyAt(st, l, r)).filter(Boolean);
+    const keg = lv(st, 'powderKeg');
+    if (first) {
+      const r = hit(st, first, S.dmg, { el: 'bomb', frontal: false, shatter: true }, events);
+      if (r.killed && keg) {
+        const p = st.player;
+        const s0 = p.stamina ?? STAMINA.max;
+        p.stamina = Math.min(STAMINA.max, s0 + keg);
+        relicEvent(st, events, 'powderKeg');
+        if (p.stamina > s0) events.push({ type: 'stamina', amount: p.stamina - s0, stamina: p.stamina });
+      }
+    }
+    for (const t of splashTargets) hit(st, t, S.splash + keg, { el: 'bomb', frontal: false, src: 'splash' }, events);
     events.push({ type: 'fireEnd', lane, row });
     return;
   }

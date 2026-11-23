@@ -89,7 +89,7 @@ function shopBot(run) {
 }
 
 export function playRun(seed, P, opt = {}) {
-  const run = createRun(seed, opt);
+  const run = createRun(seed, { ...opt, char: process.env.CHAR || 'blade' });
   applyReward(run, rollStartRelics(run)[0]);
   const r = { rng: seed * 101 + 7 };
   const reached = [];

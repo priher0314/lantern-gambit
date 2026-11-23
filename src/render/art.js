@@ -5,7 +5,7 @@ import { drawGlow } from './fx.js';
 
 export const INK = '#170d22';
 // 위에서 내려다보는 정도. 캐릭터의 키를 줄이고(y) 옆으로 살짝 넓힌다(x). 발 위치는 그대로다.
-export const TILT = { x: 1.07, y: 0.8 };
+export const TILT = { x: 1.1, y: 0.66 };
 const TAU = Math.PI * 2;
 
 // ───── 색 도우미 ─────
@@ -698,7 +698,7 @@ export function drawPlayer(ctx, x, y, k, a) {
   if (pose === 'dodge') lean += (a.dodgeDir || 1) * 0.3 * Math.sin(pt * Math.PI);
   ctx.translate(0, bob);
   ctx.rotate(lean);
-  ctx.scale(TILT.x, TILT.y + 0.04);
+  ctx.scale(TILT.x, TILT.y + 0.12);
   // 목도리 꼬리(바람에 펄럭)
   const wv = Math.sin(t * 4) * 6 * k;
   ctx.beginPath();
@@ -707,7 +707,7 @@ export function drawPlayer(ctx, x, y, k, a) {
   ctx.lineTo(36 * k, -30 * k + wv);
   ctx.bezierCurveTo(26 * k, -30 * k + wv * 0.6, 18 * k, -38 * k, 4 * k, -44 * k);
   ctx.closePath();
-  fillInk(ctx, T('#33c79a'), 2.4 * k);
+  fillInk(ctx, T(a.scarf || '#33c79a'), 2.4 * k);
   // 다리
   ctx.fillStyle = INK;
   ctx.beginPath();
@@ -733,7 +733,7 @@ export function drawPlayer(ctx, x, y, k, a) {
   // 목도리 둘레
   ctx.beginPath();
   ctx.roundRect(-14 * k, -56 * k, 28 * k, 9 * k, 4 * k);
-  fillInk(ctx, T('#33c79a'), 2.4 * k);
+  fillInk(ctx, T(a.scarf || '#33c79a'), 2.4 * k);
   // 머리 뒤
   ellipse(ctx, 0, -62 * k, 10 * k, 9 * k);
   fillInk(ctx, T('#2a1a1a'), 2.4 * k);
@@ -963,6 +963,41 @@ export function drawSymbol(ctx, sym, x, y, r, opt = {}) {
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
       ctx.beginPath();
       ctx.ellipse(-r * 0.3, -r * 0.05, r * 0.1, r * 0.2, 0.5, 0, TAU);
+      ctx.fill();
+      break;
+    }
+    case 'bomb': {
+      // 둥근 폭탄 + 불붙은 심지
+      ctx.beginPath();
+      ctx.arc(-r * 0.08, r * 0.18, r * 0.72, 0, TAU);
+      const bg = ctx.createRadialGradient(-r * 0.3, -r * 0.05, r * 0.1, -r * 0.08, r * 0.18, r * 0.75);
+      bg.addColorStop(0, '#6a5a78');
+      bg.addColorStop(1, '#241a30');
+      ctx.fillStyle = bg;
+      ctx.fill();
+      ink(ctx, r * 0.11);
+      ctx.beginPath();
+      ctx.roundRect(r * 0.12, -r * 0.72, r * 0.36, r * 0.3, r * 0.06);
+      ctx.fillStyle = '#d8a548';
+      ctx.fill();
+      ink(ctx, r * 0.09);
+      ctx.beginPath();
+      ctx.moveTo(r * 0.3, -r * 0.72);
+      ctx.quadraticCurveTo(r * 0.5, -r * 1.05, r * 0.82, -r * 0.86);
+      ctx.lineWidth = r * 0.12;
+      ctx.strokeStyle = INK;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(r * 0.86, -r * 0.84, r * 0.2, 0, TAU);
+      ctx.fillStyle = '#ffd84a';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(r * 0.86, -r * 0.84, r * 0.1, 0, TAU);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(-r * 0.34, -r * 0.06, r * 0.16, 0, TAU);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
       ctx.fill();
       break;
     }
@@ -1322,6 +1357,27 @@ export function drawRelicIcon(ctx, id, x, y, r) {
       ctx.quadraticCurveTo(-r * 0.2, -r * 0.3, 0, -r * 0.05);
       ctx.quadraticCurveTo(r * 0.2, r * 0.2, r * 0.4, -r * 0.05);
       ctx.stroke();
+      break;
+    }
+    case 'powderKeg': { // 화약통
+      ctx.beginPath();
+      ctx.roundRect(-r * 0.55, -r * 0.5, r * 1.1, r * 1.15, r * 0.2);
+      ctx.fillStyle = '#9a5a2a';
+      ctx.fill();
+      ink2(r * 0.12);
+      ctx.fillStyle = '#3a2418';
+      ctx.fillRect(-r * 0.55, -r * 0.2, r * 1.1, r * 0.14);
+      ctx.fillRect(-r * 0.55, r * 0.3, r * 1.1, r * 0.14);
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.5);
+      ctx.quadraticCurveTo(r * 0.2, -r * 0.95, r * 0.55, -r * 0.8);
+      ctx.lineWidth = r * 0.1;
+      ctx.strokeStyle = INK;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(r * 0.6, -r * 0.8, r * 0.18, 0, TAU);
+      ctx.fillStyle = '#ffd84a';
+      ctx.fill();
       break;
     }
     case 'whetstone': { // 숫돌 위 칼날

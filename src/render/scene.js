@@ -1,5 +1,5 @@
 // 화면 그리기: 배경(미리 렌더), 전장, 캐릭터, 슬롯 사당, HUD, 버튼
-import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS, RUN_LENGTH, AFFINITY, STAMINA } from '../core/data.js';
+import { ROWS, LANES, SYMBOLS, SHOT_NAMES, RELICS, MODS, RUN_LENGTH, AFFINITY, STAMINA, CHARACTERS } from '../core/data.js';
 import { W, cellPos, laneEdges, reelRect, rowScale, LANE_SPACING, cabinetRect, leverRect, slotCell, trayRect, REEL_CELL, REEL_PEEK, UI_H } from './layout.js';
 import { drawKasa, drawMask, drawArcher, drawElder, drawDrum, drawPlayer, drawSymbol, drawIcon, drawRelicIcon, INK, mix, drawBomber, drawHealer, drawBoar, drawEliteRing, drawEliteCrown, TILT } from './art.js';
 // 적 머리 높이(예고 배지·말풍선 위치)
@@ -363,7 +363,20 @@ export class Renderer {
     const relics = g.shownRelics;
     for (let i = 0; i < relics.length; i++) {
       const rr = g.relicRect(i);
-      drawRelicBadge(this.ctx, relics[i], rr.x + rr.w / 2, rr.y + rr.h / 2, 13, g.relicPulse[relics[i]] || 0, st.relicLv[relics[i]] || 1);
+      const pulse = g.relicPulse[relics[i]] || 0;
+      const bx = rr.x + rr.w / 2, by2 = rr.y + rr.h / 2;
+      if (pulse > 1) {
+        // 발동한 유물은 커지며 흔들리고 빛난다
+        const k = Math.min(1, pulse - 1) / 0.6;
+        const ctx = this.ctx;
+        ctx.save();
+        drawGlow(ctx, bx, by2, 34, RELICS[relics[i]]?.color || '#ffe08a', 0.8 * Math.min(1, k));
+        ctx.translate(bx + Math.sin(g.rt * 55) * 3 * k, by2 - 4 * k);
+        ctx.rotate(Math.sin(g.rt * 38) * 0.28 * k);
+        ctx.scale(1 + 0.55 * k, 1 + 0.55 * k);
+        drawRelicBadge(ctx, relics[i], 0, 0, 13, 1, st.relicLv[relics[i]] || 1);
+        ctx.restore();
+      } else drawRelicBadge(this.ctx, relics[i], bx, by2, 13, pulse, st.relicLv[relics[i]] || 1);
     }
     if (!relics.length) return;
     if (relics.length <= 4) {
@@ -711,6 +724,7 @@ export class Renderer {
     this.drawProjectiles(g);
     this.drawStamps(g);
     fx.drawWorld(ctx);
+    this.drawComboBadges(g);
     if (g.mode === 'battle') {
       for (const v of list) this.drawStatus(g, v);
       this.drawPreviewMarks(g);
@@ -766,6 +780,7 @@ export class Renderer {
     ctx.save();
     ctx.setTransform(this.sc, 0, 0, this.sc, 0, 0);
     if (g.mode === 'battle') this.drawCoinFlies(g);
+    if (g.mode === 'battle') this.drawRelicLinks(g);
     fx.drawScreen(ctx, L.SW, L.SH);
     ctx.restore();
   }
@@ -1228,6 +1243,7 @@ export class Renderer {
     const P = g.player;
     if (!P) return;
     const L = this.L;
+    P.scarf = g.run && CHARACTERS[g.run.char] ? CHARACTERS[g.run.char].scarf : null;
     drawPlayer(this.ctx, P.x + (P.ox || 0), L.playerY + (P.oy || 0), 1.08, P);
     // 방어막 표시
     if (g.st && g.st.player.guard > 0 && g.mode === 'battle') {
@@ -1292,7 +1308,11 @@ export class Renderer {
       ctx.translate(p.x, p.y);
       ctx.globalAlpha = p.alpha;
       const s = p.size;
-      if (p.sym === 'blade') {
+      if (p.sym === 'bomb') {
+        drawGlow(ctx, 0, 0, s * 2.6, '#ff8a3d', 0.6);
+        ctx.rotate(g.time * 9);
+        drawSymbol(ctx, 'bomb', 0, 0, s * 1.05);
+      } else if (p.sym === 'blade') {
         // 회전하며 날아가는 칼: 칼 모양이 또렷이 보이고, 회전 궤적이 원형 잔상으로 남는다
         const spin = g.time * 26;
         drawGlow(ctx, 0, 0, s * 3.4, '#8fa8ff', 0.75);
@@ -1640,6 +1660,65 @@ export class Renderer {
       }
     }
     ctx.restore();
+  }
+
+  // 조합 원인 배지: [문양] + [문양]
+  drawComboBadges(g) {
+    const ctx = this.ctx;
+    for (const c of g.comboBadges) {
+      const k = c.life / c.max;
+      const pop = Math.min(1, (1 - k) * 9);
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, k * 4);
+      ctx.translate(Math.max(52, Math.min(W - 52, c.x)), c.y);
+      ctx.scale(0.7 + 0.3 * pop, 0.7 + 0.3 * pop);
+      ctx.beginPath();
+      ctx.roundRect(-44, -15, 88, 30, 15);
+      ctx.fillStyle = 'rgba(16,8,24,0.9)';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ffe08a';
+      ctx.stroke();
+      drawSymbol(ctx, c.a, -24, 0, 10);
+      drawSymbol(ctx, c.b, 24, 0, 10);
+      ctx.font = `16px ${FONTS.num}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffe08a';
+      ctx.fillText('+', 0, 1);
+      ctx.restore();
+    }
+  }
+
+  // 발동한 유물에서 효과가 난 곳으로 이어지는 빛줄기(화면 좌표)
+  drawRelicLinks(g) {
+    const ctx = this.ctx;
+    for (const l of g.relicLinks) {
+      const k = 1 - l.life / l.max; // 0 → 1
+      const head = Math.min(1, k * 2.2);
+      const tail = Math.max(0, k * 2.2 - 1.2);
+      const mx = (l.sx + l.tx) / 2, my = Math.min(l.sy, l.ty) - 50;
+      const pt = (t) => {
+        const m = 1 - t;
+        return [m * m * l.sx + 2 * m * t * mx + t * t * l.tx, m * m * l.sy + 2 * m * t * my + t * t * l.ty];
+      };
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = l.color;
+      ctx.lineWidth = 3.5;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      for (let i = 0; i <= 14; i++) {
+        const [x, y] = pt(tail + ((head - tail) * i) / 14);
+        if (i) ctx.lineTo(x, y);
+        else ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+      const [hx, hy] = pt(head);
+      drawGlow(ctx, hx, hy, 16, l.color, 0.9);
+      ctx.restore();
+    }
   }
 
   drawStamps(g) {

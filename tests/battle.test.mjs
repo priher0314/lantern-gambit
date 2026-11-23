@@ -868,3 +868,20 @@ test('수련: 상점에서 사면 그 기술이 강해진다', () => {
   fireShot(st, 0, 1);
   assert.equal(st.enemies[0].maxHp - st.enemies[0].hp, 4);
 });
+
+test('캐릭터: 폭탄꾼의 릴에는 절단 대신 폭탄이 있고, 폭탄은 맨 뒤 적에게 떨어져 방패를 무시한다', () => {
+  const run = createRun(9, { char: 'bomb' });
+  assert.ok(run.strips.every((s) => s.includes('bomb') && !s.includes('blade')));
+  assert.ok(createRun(9).strips.every((s) => s.includes('blade') && !s.includes('bomb')));
+  // 맨 뒤 적 직격 3, 앞뒤·양옆 2
+  let st = mk([['kasa', 1, 5], ['kasa', 1, 2], ['kasa', 0, 2], ['kasa', 1, 1]]);
+  setShots(st, [['bomb', 1]]);
+  fireShot(st, 0, 1);
+  assert.deepEqual(st.enemies.map((e) => e.maxHp - e.hp), [0, 2, 0, 3]);
+  // 탈 방패를 무시한다
+  st = mk([['mask', 1, 3]]);
+  setShots(st, [['bomb', 1]]);
+  const ev = fireShot(st, 0, 1);
+  assert.ok(!ev.some((e) => e.type === 'block'));
+  assert.equal(st.enemies[0].maxHp - st.enemies[0].hp, 3);
+});
