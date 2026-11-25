@@ -1,7 +1,7 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
 import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT, MAX_TIER, AFFINITY, WEAK_BONUS, RESIST_CUT, STAMINA } from './core/data.js';
-import { createRun, battleOptions, recordBattle, rollStartChoices, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop, tutorialNight } from './core/run.js';
+import { createRun, battleOptions, recordBattle, rollStartChoices, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop, tutorialNight, rollStops, rollRest, rollShrine, shrineCost } from './core/run.js';
 import { SAVE_VERSION } from './save.js';
 import { setLang } from './i18n.js';
 import { judge, lateLimit } from './core/timing.js';
@@ -283,7 +283,7 @@ export class Game {
   }
 
   // ───── 자동 저장 ─────
-  // at: 'battle'(밤 시작) | 'shop'(상점) | 'path'(길 선택). 이어하면 그 지점부터 다시 시작한다.
+  // at: 'battle'(밤 시작) | 'stop'(갈림길) | 'room'(쉼터·사당) | 'shop'(상점) | 'path'(길 선택). 이어하면 그 지점부터 다시 시작한다.
   checkpoint(at, extra = {}) {
     this.store.run = { v: SAVE_VERSION, at, run: structuredClone(this.run), ...structuredClone(extra) };
     this.store.save();
@@ -304,13 +304,51 @@ export class Game {
     this.views.clear();
     this.card = null;
     this.cardQueue = [];
-    if (s.at === 'shop') {
+    if (s.at === 'stop') {
+      this.mode = 'reward';
+      this.chooseStop(s.bank);
+    } else if (s.at === 'room') {
+      this.mode = 'reward';
+      this.openRoom(s.kind, s.ids);
+    } else if (s.at === 'shop') {
       this.mode = 'reward';
       this.openShop(structuredClone(s.shop), s.bank);
     } else if (s.at === 'path') {
       this.mode = 'reward';
       this.choosePath();
     } else this.startBattle();
+  }
+
+  // 갈림길: 열린 두 곳 중 한 곳만 들른다
+  chooseStop(bank) {
+    this.checkpoint('stop', { bank });
+    this.overlay.showStops(this.run, rollStops(this.run), bank, (kind) => {
+      if (kind === 'shop') this.openShop(rollShop(this.run), null);
+      else this.openRoom(kind, kind === 'rest' ? rollRest(this.run) : rollShrine(this.run));
+    });
+  }
+
+  // 쉼터·사당: 하나를 고르고 떠난다
+  openRoom(kind, ids) {
+    this.checkpoint('room', { kind, ids });
+    const run = this.run;
+    const shrine = kind === 'shrine';
+    const cost = shrineCost(run);
+    this.overlay.showPick({
+      title: shrine ? '도깨비 사당' : '쉼터',
+      req: shrine ? `유물 하나를 받는다 · 체력 ${run.hp} → ${run.hp - cost}` : `하나를 고르세요 · 체력 ${run.hp}/${run.maxHp}`,
+      ids,
+      go: shrine ? '체력을 바치고 받는다' : '이걸로',
+      skip: shrine ? '그냥 지나간다' : null,
+      run,
+      used: this.store.meta.relicsUsed || [],
+    }, (id) => {
+      if (id) {
+        if (shrine) run.hp -= cost;
+        this.takeReward(id);
+      }
+      this.choosePath();
+    });
   }
 
   openShop(shop, bank) {
@@ -1595,8 +1633,8 @@ export class Game {
       }
       this.store.save();
       this.mode = 'reward';
-      // 밤을 넘기면 바로 상점으로(무료 보상은 없다: 유물은 코인으로 산다)
-      this.openShop(rollShop(this.run), bank);
+      // 밤을 넘기면 갈림길: 상점·쉼터·사당 중 한 곳만 들른다
+      this.chooseStop(bank);
     } else {
       const timeUp = st.loseReason === 'time';
       this.audio.play('lose');

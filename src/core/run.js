@@ -2,7 +2,7 @@
 import { randInt, shuffle } from './rng.js';
 import {
   BATTLES, BASE_STRIP, REWARDS, RELICS, RELIC_IDS, FUSIONS, FUSION_IDS,
-  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE, TIER, MAX_TIER, SYMBOL_IDS, TRAIN_MAX, TRAIN_TEXT, CHARACTERS, symbolsOf } from './data.js';
+  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE, TIER, MAX_TIER, SYMBOL_IDS, TRAIN_MAX, TRAIN_TEXT, CHARACTERS, symbolsOf, SHRINE_COST, REST_HEAL } from './data.js';
 
 export function createRun(seed, opt = {}) {
   const run = {
@@ -41,7 +41,7 @@ export function createRun(seed, opt = {}) {
 const UNIT_COST = { kasa: 2, drum: 2, archer: 2, mask: 3, bomber: 2, healer: 3, boar: 3 };
 const ELITE_COST = 2;
 const BUDGET = [14, 20, 25, 29, 33]; // 밤이 깊어질수록 적이 많아지고
-const HP_SCALE = [1, 1.15, 1.3, 1.42, 1.55, 1.5]; // 단단해진다(마지막은 보스의 부하들)
+const HP_SCALE = [1, 1.15, 1.33, 1.46, 1.6, 1.55]; // 단단해진다(마지막은 보스의 부하들)
 
 function pickWeighted(r, table) {
   const total = table.reduce((a, [, w]) => a + w, 0);
@@ -179,6 +179,51 @@ export function rollPaths(run) {
   const next = run.stage + 1;
   if (next >= RUN_LENGTH - 1) return [bossNight(run)];
   return [generateNight(run, next, false), generateNight(run, next, true)];
+}
+
+// ───────────────────────── 갈림길 ─────────────────────────
+// 밤을 넘기면 세 곳(상점·쉼터·사당) 중 두 곳이 열리고, 그중 한 곳만 들른다.
+// 같은 판·같은 밤이면 항상 같은 두 곳이 나온다.
+const STOP_KINDS = ['shop', 'rest', 'shrine'];
+// 닫히는 곳의 순서: 한 판 안에서 세 곳이 고루 닫히고, 첫 갈림길에는 상점이 있으며, 상점이 연달아 닫히지 않는다
+function closedStops(run) {
+  let h = (run.seed ^ 0x9e3779b1) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 2246822519) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 3266489917) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  const first = h & 1 ? 'rest' : 'shrine';
+  const other = first === 'rest' ? 'shrine' : 'rest';
+  if (h & 2) return [first, other, 'shop', h & 4 ? first : other];
+  return [first, 'shop', other, h & 4 ? first : 'shop'];
+}
+export function rollStops(run) {
+  const stage = run.stage; // 방금 넘긴 밤
+  if (stage + 1 >= RUN_LENGTH - 1) return ['shop', 'rest']; // 보스 앞: 채비를 갖출 수 있게
+  const seq = closedStops(run);
+  const closed = seq[stage % seq.length];
+  return STOP_KINDS.filter((k) => k !== closed);
+}
+
+// 쉼터: 쉬기(체력이 가득이면 최대 체력) 또는 문양 수련 둘 중 하나
+export function rollRest(run) {
+  const lvOf = (s) => (run.symLv && run.symLv[s]) || 0;
+  const train = pickSome(run, symbolsOf(run.char).filter((s) => lvOf(s) < TRAIN_MAX), 2).map((s) => 'train:' + s);
+  return [run.hp >= run.maxHp ? 'maxhp' : 'rest', ...train];
+}
+
+// 사당: 유물 둘 중 하나(융합 재료가 모였으면 융합도 나온다)
+export function rollShrine(run) {
+  const out = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id) && relicFits(run, id)), 2);
+  const fuse = availableFusions(run);
+  if (fuse.length) out[out.length ? out.length - 1 : 0] = 'fuse:' + fuse[0];
+  return out;
+}
+
+// 사당에 바치는 체력(1 아래로는 내려가지 않는다)
+export const shrineCost = (run) => Math.min(SHRINE_COST, Math.max(0, run.hp - 1));
+export function takeShrine(run, id) {
+  run.hp -= shrineCost(run);
+  applyReward(run, id);
 }
 
 // ───────────────────────── 코인·상점 ─────────────────────────
@@ -343,7 +388,7 @@ export function availableFusions(run) {
 // 전투 보상: 새 유물 2개 + 일반 보상 1개
 export function rollRewards(run) {
   const relics = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id) && relicFits(run, id)), 2);
-  const utils = Object.keys(REWARDS).filter((k) => !(k === 'heal' && run.hp >= run.maxHp));
+  const utils = Object.keys(REWARDS).filter((k) => k !== 'rest' && !(k === 'heal' && run.hp >= run.maxHp));
   const out = [...relics, ...pickSome(run, utils, 3 - relics.length)];
   // 가진 유물이 있으면 60% 확률로 마지막 칸이 "유물 강화(II)"가 된다
   const upgradable = run.relics.filter((id) => (run.relicLv[id] || 1) < 2);
@@ -397,6 +442,7 @@ export function applyReward(run, id) {
   if (!r) throw new Error('unknown reward ' + id);
   if (id === 'purse') run.coins += START_PURSE;
   if (id === 'heal') run.hp = Math.min(run.maxHp, run.hp + 7);
+  if (id === 'rest') run.hp = Math.min(run.maxHp, run.hp + REST_HEAL);
   if (id === 'maxhp') {
     run.maxHp += 3;
     run.hp = Math.min(run.maxHp, run.hp + 3);

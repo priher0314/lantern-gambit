@@ -1,5 +1,5 @@
 // HTML 오버레이 화면: 타이틀, 플레이 방법, 유물·보상 선택, 길잡이, 결과, 설정
-import { CHARACTERS, CHARACTER_IDS, symbolsOf, SYMBOL_IDS, AFFINITY, RUN_LENGTH, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf, MODS, OBJ_INFO, COIN_LABEL, NIGHT_NAMES } from '../core/data.js';
+import { CHARACTERS, CHARACTER_IDS, symbolsOf, SYMBOL_IDS, AFFINITY, RUN_LENGTH, SYMBOLS, ENEMIES, RELICS, RELIC_IDS, REACTIONS, GAME_TITLE, GAME_VERSION, FUSIONS, fusionOf, MODS, OBJ_INFO, COIN_LABEL, NIGHT_NAMES, STOPS, SHRINE_COST } from '../core/data.js';
 import { rewardInfo, cantBuy, buyItem, rerollShop, shopRerollCost } from '../core/run.js';
 import { drawSymbol, drawIcon, drawRelicIcon, drawMerchant } from '../render/art.js';
 import { drawCoin } from '../render/scene.js';
@@ -170,6 +170,7 @@ export class Overlay {
         <div class="ht"><b>Characters</b><span>The <em>Swordhand</em> has Slash (pierces from the front); the <em>Bombardier</em> has Bomb (lands on the rearmost enemy, bursts around it, ignores shields). The other symbols are shared.</span></div>
         <div class="ht"><b>Parry</b><span><em class="g">Gold or orange ring</em> → Block (precise = counter)<br><em class="r">Red ring</em> → Dodge (enemy exposed, double damage)</span></div>
         <div class="ht"><b>Coins</b><span>Earned from <em>combos</em> (3rd kill in a turn onward), <em>perfects</em> and <em>bingos</em>. Clear a night without rerolling for a <em>thrift</em> bonus. A plain kill pays 0.</span></div>
+        <div class="ht"><b>Crossroads</b><span>After each night, two of <em>Shop</em>, <em>Rest</em> and <em>Shrine</em> are open and you visit <em>only one</em>. The shrine trades HP for a relic.</span></div>
         <div class="ht"><b>Roads</b><span>Each night, choose a <em>Safe Road</em> or a <em class="r">Rough Road</em> (extra condition, double coins).</span></div>
         <div class="ht"><b>Relics</b><span>Upgrade to <em>II</em>; a II relic that triggers 6 times <em>evolves to III</em>. Matching pairs can be <em>fused</em>.</span></div>
         <div class="ht"><b>Enemy info</b><span><em>Right-click</em> an enemy (or press and hold).</span></div>
@@ -194,6 +195,7 @@ export class Overlay {
         <div class="ht"><b>캐릭터</b><span><em>칼잡이</em>는 절단(앞부터 관통), <em>폭탄꾼</em>은 폭탄(맨 뒤 적에게 떨어져 주변까지, 방패 무시). 나머지 문양은 같다.</span></div>
         <div class="ht"><b>받아치기</b><span><em class="g">금빛·주황 고리</em> → 막기 (정확하면 되치기)<br><em class="r">붉은 고리</em> → 회피 (적에게 빈틈, 피해 2배)</span></div>
         <div class="ht"><b>코인</b><span><em>연속 처치</em>(한 턴 3마리째부터), <em>퍼펙트</em>, <em>빙고</em>로 번다. 밤 내내 다시 돌리기를 안 쓰면 <em>절약</em> 보너스. 그냥 처치하면 0.</span></div>
+        <div class="ht"><b>갈림길</b><span>밤을 넘기면 <em>상점</em>·<em>쉼터</em>·<em>사당</em> 중 열린 두 곳에서 <em>한 곳만</em> 들른다. 사당은 체력을 바치고 유물을 받는다.</span></div>
         <div class="ht"><b>길</b><span>밤마다 <em>순한 길</em>과 <em class="r">험한 길</em>(조건 추가, 코인 2배) 중 고른다.</span></div>
         <div class="ht"><b>유물</b><span>강화하면 <em>II</em>, II가 6번 발동하면 <em>III 진화</em>. 짝이 맞는 두 유물은 <em>융합</em>.</span></div>
         <div class="ht"><b>적 정보</b><span>적을 <em>우클릭</em> (터치는 길게 누르기).</span></div>
@@ -322,6 +324,7 @@ export class Overlay {
       ${run.relics.length ? `<div class="rw-build"><span>보유</span>${run.relics.map((id) => relicChip(id)).join('')}</div>` : ''}
       <div class="rw-cards">${cards}</div>
       <button class="btn btn-primary rw-go" disabled>${o.go}</button>
+      ${o.skip ? `<button class="btn" data-a="skip">${o.skip}</button>` : ''}
     `, 'reward');
     p.querySelectorAll('.rw-card:not(.is-relic)').forEach((el) => {
       $('.rw-ic', el).appendChild(iconCanvas(rewardInfo(el.dataset.id).icon, 52));
@@ -332,6 +335,57 @@ export class Overlay {
       if (card) {
         picked = card.dataset.id;
         p.querySelectorAll('.rw-card').forEach((c) => c.classList.toggle('sel', c === card));
+        go.disabled = false;
+        this.hooks.sound('select');
+      }
+      if (e.target.closest('.rw-go') && picked) {
+        go.disabled = true;
+        this.clear();
+        onPick(picked);
+      }
+      if (e.target.closest('[data-a="skip"]')) {
+        this.hooks.sound('ui');
+        this.clear();
+        onPick(null);
+      }
+    });
+  }
+
+  // 갈림길: 열린 곳 중 한 곳만 들른다
+  showStops(run, kinds, bank, onPick) {
+    let picked = null;
+    const strong = (s) => s.replace(/([+\-]?\d+(?:회|턴|칸|개)?)/g, '<b>$1</b>');
+    const now = {
+      shop: `<span class="pay">가진 코인 ${run.coins}</span>`,
+      rest: `<span class="pay">체력 ${run.hp}/${run.maxHp}</span>`,
+      shrine: `<span class="pay hot">체력 ${run.hp} → ${run.hp - Math.min(SHRINE_COST, Math.max(0, run.hp - 1))}</span>`,
+    };
+    const cards = kinds.map((k) => {
+      const s = STOPS[k];
+      const lines = s.desc.split(' · ').map((t) => `<span>${strong(t)}</span>`).join('');
+      return `<button class="rw-card path stop" data-k="${k}" style="--c:${s.color}">
+        <span class="rw-ic"><i data-ic="${s.icon}" data-sz="48"></i></span>
+        <span class="rw-top"><span class="rw-name">${s.name}</span><span class="rw-tag">${s.tag}</span></span>
+        <span class="rw-desc">${lines}${now[k]}</span>
+      </button>`;
+    }).join('');
+    const by = bank ? Object.entries(bank.by).filter(([, n]) => n > 0).map(([k, n]) => `${COIN_LABEL[k] || k} ${n}`).join(' · ') : '';
+    const p = this.panel(`
+      ${bank ? `<div class="shop-earn">이번 밤에 번 코인 <b>+${bank.gained}</b>${bank.mult > 1 ? ` (험한 길 ×${bank.mult})` : ''}<small>${by || ''}</small></div>` : ''}
+      <div class="rw-head">
+        <h2>어디에 들를까요?</h2>
+        <div class="rw-req">한 곳만 들를 수 있다</div>
+      </div>
+      <div class="rw-cards">${cards}</div>
+      <button class="btn btn-primary rw-go" disabled>들어간다</button>
+    `, 'reward paths');
+    p.querySelectorAll('i[data-ic]').forEach((el) => el.replaceWith(iconCanvas(el.dataset.ic, Number(el.dataset.sz))));
+    const go = $('.rw-go', p);
+    p.addEventListener('click', (e) => {
+      const c = e.target.closest('.stop');
+      if (c) {
+        picked = c.dataset.k;
+        p.querySelectorAll('.stop').forEach((x) => x.classList.toggle('sel', x === c));
         go.disabled = false;
         this.hooks.sound('select');
       }

@@ -15,6 +15,15 @@ export async function play(iters = 300, opt = {}) {
       log.push('shop');
       continue;
     }
+    // 갈림길(상점·쉼터·사당): opt.stop 으로 고를 곳을 정한다. opt.until === 'stop' 이면 여기서 멈춘다
+    const stops = document.querySelectorAll('.rw-card.stop');
+    if (stops.length) {
+      if (opt.until === 'stop') break;
+      (document.querySelector(`.rw-card.stop[data-k="${opt.stop || ''}"]`) || stops[0]).click();
+      document.querySelector('.rw-go').click();
+      log.push('stop:' + document.querySelectorAll('.rw-card.stop').length);
+      continue;
+    }
     const paths = document.querySelectorAll('.rw-card.path');
     if (paths.length) {
       paths[risky && paths.length > 1 ? 1 : 0].click();

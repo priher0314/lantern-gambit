@@ -871,3 +871,59 @@ test('캐릭터: 폭탄꾼의 릴에는 절단 대신 폭탄이 있고, 폭탄�
   assert.ok(!ev.some((e) => e.type === 'block'));
   assert.equal(st.enemies[0].maxHp - st.enemies[0].hp, 3);
 });
+
+// ───────── 갈림길(분기 방) ─────────
+import { rollStops, rollRest, rollShrine, takeShrine, shrineCost } from '../src/core/run.js';
+import { SHRINE_COST } from '../src/core/data.js';
+
+test('갈림길: 두 곳이 열리고, 같은 판이면 같은 결과, 첫 갈림길과 보스 앞에는 상점이 있다', () => {
+  let shopless = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const run = createRun(seed);
+    let prevNoShop = false;
+    for (let stage = 0; stage < RUN_LENGTH - 1; stage++) {
+      run.stage = stage;
+      const a = rollStops(run);
+      assert.equal(a.length, 2);
+      assert.deepEqual(a, rollStops(run));
+      assert.ok(a.every((k) => ['shop', 'rest', 'shrine'].includes(k)));
+      const noShop = !a.includes('shop');
+      if (stage === 0) assert.ok(!noShop);
+      if (stage === RUN_LENGTH - 2) assert.deepEqual(a, ['shop', 'rest']);
+      assert.ok(!(noShop && prevNoShop), '상점이 두 번 연달아 빠지면 안 된다');
+      prevNoShop = noShop;
+      if (noShop) shopless++;
+    }
+  }
+  assert.ok(shopless > 0, '상점이 없는 갈림길도 나온다');
+});
+
+test('쉼터: 쉬면 체력 +8, 체력이 가득이면 최대 체력으로 바뀐다. 수련은 거저', () => {
+  const run = createRun(5);
+  run.hp = 3;
+  const ids = rollRest(run);
+  assert.equal(ids[0], 'rest');
+  assert.ok(ids.slice(1).every((id) => id.startsWith('train:')));
+  applyReward(run, 'rest');
+  assert.equal(run.hp, 11);
+  const coins = run.coins;
+  applyReward(run, ids[1]);
+  assert.equal(run.symLv[ids[1].slice(6)], 1);
+  assert.equal(run.coins, coins);
+  run.hp = run.maxHp;
+  assert.equal(rollRest(run)[0], 'maxhp');
+});
+
+test('사당: 유물을 받고 체력을 바친다(1 아래로는 내려가지 않는다)', () => {
+  const run = createRun(9);
+  const ids = rollShrine(run);
+  assert.equal(ids.length, 2);
+  const hp = run.hp;
+  takeShrine(run, ids[0]);
+  assert.equal(run.hp, hp - SHRINE_COST);
+  assert.ok(run.relics.includes(ids[0]));
+  run.hp = 2;
+  assert.equal(shrineCost(run), 1);
+  takeShrine(run, rollShrine(run)[0]);
+  assert.equal(run.hp, 1);
+});

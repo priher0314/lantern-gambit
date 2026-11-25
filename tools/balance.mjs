@@ -6,7 +6,7 @@ import {
 import { RUN_LENGTH } from '../src/core/data.js';
 import {
   createRun, battleOptions, rollRewards, rollStartRelics, applyReward, recordBattle, advance,
-  rollPaths, bankBattle, rollShop, buyItem, cantBuy,
+  rollPaths, bankBattle, rollShop, buyItem, cantBuy, rollStops, rollRest, rollShrine, takeShrine,
 } from '../src/core/run.js';
 import { rand, randInt } from '../src/core/rng.js';
 
@@ -79,6 +79,25 @@ function shopBot(run) {
   }
 }
 
+// 갈림길: 다쳤으면 쉼터, 코인이 넉넉하면 상점, 아니면 사당
+function stopBot(run) {
+  const stops = rollStops(run);
+  const has = (k) => stops.includes(k);
+  let k;
+  if (run.hp < run.maxHp * 0.55 && has('rest')) k = 'rest';
+  else if (has('shop') && run.coins >= 18) k = 'shop';
+  else if (has('shrine') && run.hp > 6) k = 'shrine';
+  else if (has('rest')) k = 'rest';
+  else k = 'shop';
+  if (k === 'shop') return shopBot(run);
+  if (k === 'rest') {
+    const ids = rollRest(run);
+    return applyReward(run, run.hp < run.maxHp * 0.7 || ids.length < 2 ? ids[0] : ids[1]);
+  }
+  const ids = rollShrine(run);
+  if (ids.length) takeShrine(run, ids[ids.length - 1].startsWith('fuse:') ? ids[ids.length - 1] : ids[0]);
+}
+
 export function playRun(seed, P, opt = {}) {
   const run = createRun(seed, { ...opt, char: process.env.CHAR || 'blade' });
   applyReward(run, rollStartRelics(run)[0]);
@@ -92,7 +111,7 @@ export function playRun(seed, P, opt = {}) {
     if (st.result === 'lose') return { win: false, reached, run };
     bankBattle(run, st);
     if (stage === RUN_LENGTH - 1) break;
-    shopBot(run);
+    stopBot(run);
     const paths = rollPaths(run);
     advance(run, paths.length > 1 && rand(r) < P.risk ? paths[1] : paths[0]);
   }

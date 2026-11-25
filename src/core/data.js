@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.23';
+export const GAME_VERSION = 'v0.24';
 
 export const ROWS = 7;
 export const LANES = 3;
@@ -327,7 +327,17 @@ export const BASE_STRIP = [
   'blade', 'wave', 'frost', 'spark', 'lantern', 'venom',
 ];
 
+// 갈림길: 밤과 밤 사이에 한 곳만 들른다
+export const STOPS = {
+  shop: { name: '보따리 상점', tag: '상점', desc: '코인으로 유물·강화·회복을 산다', color: '#d8a548', icon: 'coin' },
+  rest: { name: '쉼터', tag: '휴식', desc: '푹 쉬어 체력을 채우거나 · 문양 하나를 거저 수련한다', color: '#7dffa0', icon: 'heal' },
+  shrine: { name: '도깨비 사당', tag: '제물', desc: '유물 하나를 거저 얻는다 · 대신 체력을 바친다', color: '#c9a0ff', icon: 'maxhp' },
+};
+export const SHRINE_COST = 4; // 사당에서 유물을 받을 때 바치는 체력
+export const REST_HEAL = 8;
+
 export const REWARDS = {
+  rest: { name: '푹 쉬기', en: 'Rest', desc: '체력 +8', icon: 'heal' },
   heal: { name: '기름 한 병', en: 'Oil', desc: '체력 +7', icon: 'heal' },
   maxhp: { name: '굵은 심지', en: 'Thick Wick', desc: '최대 체력 +3 · 체력 +3', icon: 'maxhp' },
   purse: { name: '엽전 꾸러미', en: 'Coin Purse', desc: '유물 없이 시작 · 코인 +15', icon: 'coin' },
