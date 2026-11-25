@@ -486,8 +486,8 @@ export class Game {
     for (const v of this.views.values()) {
       if (v.dying > 0) continue;
       const q = this.renderer.viewPos(v);
-      if (Math.abs(p.x - q.x) < 44 * q.s + 6 && p.y < q.y + 18 && p.y > q.y - 78 * q.k) {
-        const d = Math.abs(p.y - (q.y - 26 * q.k)) + Math.abs(p.x - q.x) * 0.3;
+      if (Math.abs(p.x - q.x) < 40 * q.s + 6 && p.y < q.y + 18 && p.y > q.y - 92 * q.k) {
+        const d = Math.abs(p.y - (q.y - 34 * q.k)) + Math.abs(p.x - q.x) * 0.3;
         if (d < bestD) { bestD = d; best = v; }
       }
     }
@@ -1652,7 +1652,7 @@ export class Game {
   impactPoint(v) {
     const p = this.renderer.viewPos(v);
     const h = { kasa: 42, mask: 46, archer: 48, elder: 48, bomber: 40, healer: 40, boar: 34 }[v.type] || 40;
-    return { x: p.x, y: p.y - h * p.k * 0.72, k: p.k };
+    return { x: p.x, y: p.y - h * p.k * 0.86, k: p.k };
   }
 
   playerMuzzle() {

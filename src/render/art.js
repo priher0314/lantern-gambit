@@ -5,7 +5,7 @@ import { drawGlow } from './fx.js';
 
 export const INK = '#170d22';
 // 위에서 내려다보는 정도. 캐릭터의 키를 줄이고(y) 옆으로 살짝 넓힌다(x). 발 위치는 그대로다.
-export const TILT = { x: 1.1, y: 0.66 };
+export const TILT = { x: 0.88, y: 0.82 }; // 좌우로 늘어나 보이지 않게, 전체를 조금 작게 그린다
 const TAU = Math.PI * 2;
 
 // ───── 색 도우미 ─────
@@ -698,7 +698,7 @@ export function drawPlayer(ctx, x, y, k, a) {
   if (pose === 'dodge') lean += (a.dodgeDir || 1) * 0.3 * Math.sin(pt * Math.PI);
   ctx.translate(0, bob);
   ctx.rotate(lean);
-  ctx.scale(TILT.x, TILT.y + 0.12);
+  ctx.scale(0.96, 0.9);
   // 목도리 꼬리(바람에 펄럭)
   const wv = Math.sin(t * 4) * 6 * k;
   ctx.beginPath();
