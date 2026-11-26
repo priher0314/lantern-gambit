@@ -22,6 +22,7 @@ var hint_panel: PanelContainer
 var hint_label: Label
 var hint_sub: Label
 var saved_label: Label
+var place_btns: HBoxContainer
 var perk_btn: Button
 var banner_host: Control
 var panel: GamePanel            # 메인 창 (하나만)
@@ -119,6 +120,11 @@ func _build_top() -> void:
 		sb.add_child(b)
 		speed_btns.append(b)
 	h.add_child(sb)
+	for z in [["-", -1, "축소"], ["+", 1, "확대"]]:
+		var zb := UIKit.button(z[0], func(): game.set_zoom(game.zoom_level + int(z[1])))
+		zb.tooltip_text = z[2]
+		zb.custom_minimum_size = Vector2(22, 0)
+		h.add_child(zb)
 	var mb := UIKit.button("", func(): open_panel("menu"), "menu")
 	mb.tooltip_text = "메뉴: 특전, 경영 기록, 지역 정보, 설정, 저장"
 	h.add_child(mb)
@@ -233,6 +239,11 @@ func _build_misc() -> void:
 	hint_sub = UIKit.label("", 12, Color("ffe08a"), true)
 	hint_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hv.add_child(hint_sub)
+	place_btns = UIKit.hbox(4)
+	place_btns.visible = false
+	place_btns.add_child(UIKit.button("돌리기", func(): game.rotate_ghost()))
+	place_btns.add_child(UIKit.colored_button("끝내기", UIKit.C_RED, func(): game.cancel_mode()))
+	add_child(place_btns)
 	saved_label = UIKit.label("저장됨", 10, Color("fffaf0"))
 	saved_label.add_theme_color_override("font_outline_color", UIKit.C_DARK)
 	saved_label.add_theme_constant_override("outline_size", 4)
@@ -268,6 +279,11 @@ func layout_panel(p: GamePanel) -> void:
 		return
 	var vs := App.view_size()
 	p.fit_height(vs.y - 46.0 - 40.0 - 36.0)
+	# 화면이 낮으면(휴대폰 가로 화면 등) 창 안의 스크롤 영역을 줄여 화면 안에 들어오게 한다
+	var max_scroll := vs.y - 170.0
+	for sc in p.find_children("*", "ScrollContainer", true, false):
+		if sc != p.body_scroll and (sc as Control).custom_minimum_size.y > max_scroll:
+			(sc as Control).custom_minimum_size.y = maxf(90.0, max_scroll)
 	p.reset_size()
 	match p.dock:
 		"bottom":
@@ -430,6 +446,7 @@ func close_top() -> bool:
 	return false
 
 func on_mode_changed() -> void:
+	place_btns.visible = game.mode != Game.Mode.NORMAL
 	if game.mode == Game.Mode.NORMAL:
 		hint_panel.visible = false
 	else:
@@ -478,6 +495,8 @@ func set_place_hint(reason: String, syn: Array) -> void:
 	if panel != null and panel.dock == "bottom":
 		py = panel.position.y - hint_panel.size.y - 4
 	hint_panel.position = Vector2((vs.x - hint_panel.size.x) * 0.5, py).round()
+	place_btns.reset_size()
+	place_btns.position = Vector2((vs.x - place_btns.size.x) * 0.5, py - place_btns.size.y - 4).round()
 
 func ask_plot(i: int) -> void:
 	queue_modal({"kind": "plot", "plot": i})

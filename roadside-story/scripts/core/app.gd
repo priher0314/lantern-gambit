@@ -35,6 +35,9 @@ func apply_settings() -> void:
 ## 픽셀이 뭉개지지 않도록 화면 배율은 항상 정수.
 func auto_scale() -> int:
 	var sz := get_window().size
+	# 휴대폰 브라우저에서는 글자가 너무 작아지지 않게 더 크게 잡는다
+	if OS.has_feature("web") and DisplayServer.is_touchscreen_available():
+		return maxi(1, mini(int(sz.x / 640.0), int(sz.y / 350.0)))
 	return maxi(1, mini(int(sz.x / 854.0), int(sz.y / 470.0)))
 
 func apply_scale() -> void:
