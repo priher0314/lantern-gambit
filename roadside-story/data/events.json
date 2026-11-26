@@ -1,0 +1,13 @@
+[
+  {"id": "tour_bus", "name": "관광버스 방문", "text": "관광버스 한 대가 단체 손님을 내려놓았습니다!", "min_rank": 2, "weight": 3, "cooldown": 8, "fx": {"bus": {"type": "tourist", "n": 8, "fallback": "traveler"}}},
+  {"id": "school_trip", "name": "수학여행 버스", "text": "수학여행 버스가 들렀습니다. 간식 가게가 바빠지겠어요!", "min_rank": 2, "weight": 2, "cooldown": 12, "fx": {"bus": {"type": "student", "n": 9}}},
+  {"id": "festival", "name": "지역 축제", "text": "근처에서 지역 축제가 열려 이틀 동안 길이 붐빕니다.", "min_rank": 2, "weight": 2, "cooldown": 20, "fx": {"traffic": 0.5, "days": 2}},
+  {"id": "car_club", "name": "오토바이 동호회", "text": "오토바이 동호회가 단체로 쉬어 갑니다.", "min_rank": 2, "weight": 2, "cooldown": 14, "fx": {"burst": {"type": "biker", "n": 6}}},
+  {"id": "tv_crew", "name": "방송국 촬영", "text": "방송국에서 「{product}」을(를) 촬영해 갔습니다. 입소문이 크게 퍼집니다!", "min_rank": 3, "weight": 2, "cooldown": 25, "need_fame_stage": 1, "fx": {"fame_top": 220, "rep": 80}},
+  {"id": "famous_chef", "name": "실력파 지원자", "text": "소문을 듣고 실력 좋은 요리사가 일하고 싶다고 찾아왔습니다. 직원 메뉴를 확인해 보세요.", "min_rank": 3, "weight": 2, "cooldown": 30, "need_cat": "food", "fx": {"candidate": {"job": "cook", "bonus": 18}}},
+  {"id": "new_road", "name": "새 도로 개통", "text": "근처에 새 도로가 뚫려 지나는 차가 조금 늘었습니다.", "min_rank": 4, "weight": 1, "cooldown": 9999, "once": true, "fx": {"traffic_perm": 0.12}},
+  {"id": "local_pick", "name": "지역 명물 선정", "text": "「{product}」이(가) 군청의 추천 먹거리로 뽑혔습니다!", "min_rank": 3, "weight": 2, "cooldown": 30, "need_fame_stage": 1, "fx": {"fame_top": 150, "money": 100000}},
+  {"id": "sunny_weekend", "name": "화창한 주말", "text": "날씨가 좋아 나들이 나온 가족이 많습니다.", "min_rank": 1, "weight": 3, "cooldown": 10, "fx": {"traffic": 0.25, "days": 1, "attract": {"family": 0.6}}},
+  {"id": "food_contest", "name": "전국 먹거리 대회", "text": "전국 먹거리 대회에서 초청장이 왔습니다. 참가비는 {cost}입니다.", "min_rank": 4, "weight": 2, "cooldown": 40, "need_cat": "food", "choice": true,
+   "options": [{"label": "참가한다", "cost": 150000, "fx": {"contest": true}}, {"label": "이번엔 쉰다", "fx": {}}]}
+]

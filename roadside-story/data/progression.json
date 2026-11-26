@@ -1,0 +1,48 @@
+{
+  "tutorial_goals": [
+    {"id": "g_first_sale", "text": "첫 손님 맞이하기", "hint": "차가 들어와 손님이 매점을 찾을 때까지 잠깐 지켜보세요.", "cond": {"sales": 1}, "reward": 20000},
+    {"id": "g_build_snack", "text": "분식점 짓기", "hint": "아래 [건설] → 음식 → 분식점을 골라 빈 땅에 놓아 보세요.", "cond": {"fac": "snack"}, "reward": 30000},
+    {"id": "g_upgrade", "text": "시설 하나 업그레이드하기", "hint": "시설을 누르고 [업그레이드]를 눌러 보세요.", "cond": {"upgrades": 1}, "reward": 30000},
+    {"id": "g_restroom", "text": "화장실 짓기", "hint": "화장실이 없으면 손님이 실망한 채 떠납니다.", "cond": {"fac": "restroom"}, "reward": 30000},
+    {"id": "g_research", "text": "신상품 연구하기", "hint": "아래 [연구]에서 재료 두 가지를 골라 보세요.", "cond": {"researched": 1}, "reward": 40000},
+    {"id": "g_hire", "text": "직원 한 명 채용하기", "hint": "아래 [직원]에서 마음에 드는 지원자를 채용하세요.", "cond": {"staff": 1}, "reward": 30000},
+    {"id": "g_parking2", "text": "주차장 늘리기", "hint": "주차 자리가 모자라면 차가 그냥 지나갑니다. 도로 옆에 하나 더 짓거나 업그레이드하세요.", "cond": {"parking_cap": 8}, "reward": 40000}
+  ],
+  "unlocks": [
+    {"id": "region_coast", "name": "새 지역: 해안도로", "desc": "관광객이 많은 좁고 긴 부지에서 새 휴게소를 시작할 수 있습니다.", "cost": 3, "type": "region", "target": "coast"},
+    {"id": "perk_pack_premium", "name": "특전 묶음: 프리미엄", "desc": "「프리미엄 브랜드」「VIP의 선택」 특전이 후보에 등장합니다.", "cost": 2, "type": "perks", "target": ["premium_brand", "vip_choice"]},
+    {"id": "perk_pack_mix", "name": "특전 묶음: 복합 경영", "desc": "「백화점 효과」「전문점의 시대」「밤의 도시」 특전이 후보에 등장합니다.", "cost": 2, "type": "perks", "target": ["department", "specialist", "night_city"]},
+    {"id": "fac_fountain", "name": "새 장식: 분수", "desc": "넓은 범위의 분위기를 살리는 분수를 지을 수 있습니다.", "cost": 1, "type": "facility", "target": "fountain"},
+    {"id": "challenge_small", "name": "도전: 작은 거인", "desc": "부지를 넓히지 않고 「인기 휴게소」에 도전합니다.", "cost": 2, "type": "challenge", "target": "small_giant"},
+    {"id": "challenge_poor", "name": "도전: 무일푼 사장", "desc": "아주 적은 자금으로 시작해 「인기 휴게소」에 도전합니다.", "cost": 2, "type": "challenge", "target": "penniless"}
+  ],
+  "locked_by_default": {"perks": ["premium_brand", "vip_choice", "department", "specialist", "night_city"], "facilities": ["fountain"], "regions": ["coast"]},
+  "challenges": [
+    {"id": "small_giant", "name": "작은 거인", "desc": "처음 주어진 부지만으로 「인기 휴게소」(4등급)를 달성하세요.", "rules": ["부지 확장 불가"], "goal_rank": 4, "mods": {"no_expand": true}},
+    {"id": "penniless", "name": "무일푼 사장", "desc": "시작 자금 6만 원으로 「인기 휴게소」(4등급)를 달성하세요.", "rules": ["시작 자금 60,000원", "등급 보너스 자금 없음"], "goal_rank": 4, "mods": {"start_money": 60000, "no_rank_bonus": true}}
+  ],
+  "fame_awards": [
+    {"id": "rank3", "text": "지역 휴게소 달성", "cond": {"rank": 3}, "fame": 1},
+    {"id": "rank4", "text": "인기 휴게소 달성", "cond": {"rank": 4}, "fame": 1},
+    {"id": "rank5", "text": "유명 휴게소 달성", "cond": {"rank": 5}, "fame": 2},
+    {"id": "rank6", "text": "전국적인 명소 달성", "cond": {"rank": 6}, "fame": 2},
+    {"id": "rank7", "text": "랜드마크 휴게소 달성", "cond": {"rank": 7}, "fame": 3},
+    {"id": "legend_product", "text": "전국 명물 상품 탄생", "cond": {"fame_stage": 3}, "fame": 2},
+    {"id": "eval_top3", "text": "전국 평가 종합 3위 이내", "cond": {"eval_rank": 3}, "fame": 2},
+    {"id": "eval_first", "text": "전국 평가 종합 1위", "cond": {"eval_rank": 1}, "fame": 3},
+    {"id": "cat_first", "text": "전국 평가 분야별 1위", "cond": {"cat_first": 1}, "fame": 2},
+    {"id": "challenge", "text": "도전 과제 성공", "cond": {"challenge": true}, "fame": 3}
+  ],
+  "trophies": [
+    {"id": "t_first_synergy", "name": "첫 궁합", "desc": "시설 궁합을 처음 발견했다.", "cond": {"synergies": 1}},
+    {"id": "t_synergy5", "name": "배치의 달인", "desc": "한 휴게소에서 궁합 5개를 발견했다.", "cond": {"synergies": 5}},
+    {"id": "t_hit", "name": "지역 명물", "desc": "상품 하나를 지역 명물로 키웠다.", "cond": {"fame_stage": 2}},
+    {"id": "t_legend", "name": "전설의 맛", "desc": "상품 하나를 전설적인 상품으로 키웠다.", "cond": {"fame_stage": 4}},
+    {"id": "t_staff10", "name": "믿음직한 동료", "desc": "직원 한 명을 레벨 10까지 키웠다.", "cond": {"staff_level": 10}},
+    {"id": "t_combo", "name": "특전의 조화", "desc": "특전 조합을 완성했다.", "cond": {"combos": 1}},
+    {"id": "t_visitors", "name": "만 번째 손님", "desc": "누적 손님 10,000명을 맞이했다.", "cond": {"visitors": 10000}},
+    {"id": "t_landmark", "name": "랜드마크", "desc": "랜드마크 휴게소가 되었다.", "cond": {"rank": 7}},
+    {"id": "t_rare", "name": "귀한 손님", "desc": "희귀 방문객을 만족시켜 돌려보냈다.", "cond": {"rare": 1}},
+    {"id": "t_first_place", "name": "전국 1위", "desc": "전국 평가에서 한 분야 1위를 차지했다.", "cond": {"cat_first": 1}}
+  ]
+}

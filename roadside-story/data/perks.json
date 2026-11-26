@@ -1,0 +1,43 @@
+{
+  "perks": [
+    {"id": "famous_eatery", "name": "소문난 맛집", "group": "food", "desc": "음식점 인기가 오릅니다. 음식점 앞에 줄이 길수록 지나가던 차가 더 들어옵니다.", "p": {"appeal": 0.22, "queue_draw": 0.012, "queue_cap": 0.25}},
+    {"id": "artisan_touch", "name": "장인의 손길", "group": "food", "desc": "요리사와 바리스타가 상품 품질을 두 배로 끌어올립니다.", "p": {"mult": 2.0}},
+    {"id": "gourmet_trip", "name": "식도락 여행", "group": "food", "desc": "별 3개 이상인 음식점마다 미식가가 더 찾아옵니다.", "p": {"per": 0.35, "cap": 2.1}},
+    {"id": "signature_menu", "name": "대표 메뉴", "group": "food", "desc": "가장 많이 팔린 상품이 더 빨리 유명해지고, 조금 더 비싸게 팔립니다.", "p": {"fame": 2.0, "price": 0.15}},
+
+    {"id": "small_but_solid", "name": "작지만 알찬", "group": "value", "desc": "한두 칸짜리 작은 시설이 더 빠르게 손님을 받고 인기도 오릅니다.", "p": {"speed": 0.3, "appeal": 0.18}},
+    {"id": "thin_margin", "name": "박리다매", "group": "value", "desc": "3,000원 이하 상품은 손님이 자주 두 개씩 사 갑니다.", "p": {"max_price": 3000, "chance": 0.5}},
+    {"id": "elite_few", "name": "소수정예", "group": "value", "desc": "직원이 4명 이하면 모두의 능력이 크게 오릅니다. 6명까지는 조금 오릅니다.", "p": {"n1": 4, "v1": 0.45, "n2": 6, "v2": 0.2}},
+    {"id": "quick_turn", "name": "빠른 회전", "group": "value", "desc": "모든 시설이 손님을 더 빨리 받습니다.", "p": {"speed": 0.2}},
+
+    {"id": "destination", "name": "여행의 목적지", "group": "tour", "desc": "관광 시설 하나하나가 관광객을 더 불러옵니다.", "p": {"per": 0.22, "cap": 2.2}},
+    {"id": "green_stop", "name": "녹색 휴게소", "group": "tour", "desc": "나무·꽃밭·정원의 분위기 효과가 두 배가 되고, 더 넓게 퍼집니다.", "p": {"mult": 2.0, "cap": 0.2, "radius": 1}},
+    {"id": "photo_fame", "name": "사진 명소", "group": "tour", "desc": "관광 시설을 즐긴 손님이 휴게소를 널리 알려 명성이 빨리 오릅니다.", "p": {"rep": 0.6}},
+    {"id": "slow_travel", "name": "느긋한 여행", "group": "tour", "desc": "손님이 더 오래 머물며 시설을 한 곳 더 들릅니다.", "p": {"visits": 1}},
+
+    {"id": "family_weekend", "name": "가족의 주말", "group": "family", "desc": "가족 여행객이 훨씬 많이 찾아옵니다.", "p": {"attract": 0.8}},
+    {"id": "kids_heaven", "name": "아이들의 천국", "group": "family", "desc": "놀이시설에서 논 손님은 만족도가 오르고, 꼭 간식을 찾습니다.", "p": {"sat": 8, "need": 0.8}},
+    {"id": "sweet_snack", "name": "행복한 간식", "group": "family", "desc": "가족 손님의 씀씀이가 커지고, 디저트를 파는 가게의 인기가 오릅니다.", "p": {"budget": 0.35, "appeal": 0.15}},
+
+    {"id": "premium_brand", "name": "프리미엄 브랜드", "group": "premium", "desc": "별 4개 이상인 시설은 값을 더 받아도 손님이 줄지 않습니다.", "p": {"price": 0.22, "star": 4}},
+    {"id": "vip_choice", "name": "VIP의 선택", "group": "premium", "desc": "별 4개 이상인 시설이 있으면 고소득 여행객이 찾아옵니다.", "p": {"per": 0.3, "cap": 1.8, "star": 4}},
+
+    {"id": "department", "name": "백화점 효과", "group": "mixed", "desc": "서로 다른 종류의 시설이 많을수록 모든 시설의 인기가 오릅니다.", "p": {"per": 0.016, "cap": 0.3}},
+    {"id": "specialist", "name": "전문점의 시대", "group": "mixed", "desc": "가장 많이 지은 분야의 시설은, 같은 분야 시설이 많을수록 인기가 오릅니다.", "p": {"per": 0.05, "cap": 0.4}},
+    {"id": "architect", "name": "건축가", "group": "mixed", "desc": "시설 궁합의 효과가 훨씬 커집니다.", "p": {"mult": 1.6}},
+    {"id": "research_mania", "name": "연구광", "group": "mixed", "desc": "상품 연구가 훨씬 빠르고 싸집니다. 새로 만든 상품은 처음부터 인기가 좋습니다.", "p": {"time": 0.5, "cost": 0.6, "fame_start": 60}},
+    {"id": "word_of_mouth", "name": "입소문", "group": "mixed", "desc": "크게 만족한 손님이 주변에 소문을 내 명성이 빨리 오릅니다.", "p": {"rep": 0.4, "sat": 75}},
+    {"id": "night_city", "name": "밤의 도시", "group": "mixed", "desc": "밤에도 손님이 줄지 않고, 밤에는 값을 조금 더 받습니다.", "p": {"floor": 0.8, "price": 0.12}},
+    {"id": "local_pride", "name": "지역의 자랑", "group": "mixed", "desc": "특산물·기념품·호두과자처럼 지역색 있는 가게의 인기가 오르고 값도 더 받습니다.", "p": {"appeal": 0.25, "price": 0.1}}
+  ],
+  "combos": [
+    {"id": "national_eatery", "name": "전국적인 맛집", "need": ["famous_eatery", "artisan_touch", "word_of_mouth"], "desc": "음식 상품이 훨씬 빨리 유명해지고, 미식가가 몰려옵니다.", "p": {"fame": 0.6, "attract": 0.8}},
+    {"id": "scenic_route", "name": "관광 명소", "need": ["destination", "green_stop", "slow_travel"], "desc": "관광 시설을 즐긴 손님은 카페와 가게에서 지갑이 넉넉해집니다.", "p": {"budget": 0.4}},
+    {"id": "small_giant", "name": "작은 거인", "need": ["small_but_solid", "elite_few", "quick_turn"], "desc": "모든 가게가 손님을 한 명씩 더 받습니다.", "p": {"cap": 1}},
+    {"id": "family_park", "name": "가족 테마파크", "need": ["family_weekend", "kids_heaven", "sweet_snack"], "desc": "가족 손님이 시설을 한 곳 더 들르고, 놀이시설이 가족을 더 불러옵니다.", "p": {"visits": 1, "attract": 0.5}},
+    {"id": "frugal_king", "name": "국민 휴게소", "need": ["thin_margin", "quick_turn"], "desc": "저렴한 가게의 인기가 크게 오릅니다.", "p": {"appeal": 0.25}},
+    {"id": "night_market", "name": "불야성", "need": ["night_city", "famous_eatery"], "desc": "밤에는 음식점 인기가 더 오릅니다.", "p": {"appeal": 0.3}},
+    {"id": "luxury_line", "name": "명품 휴게소", "need": ["premium_brand", "vip_choice"], "desc": "고소득 여행객이 시설을 한 곳 더 들릅니다.", "p": {"visits": 1}},
+    {"id": "master_plan", "name": "마스터플랜", "need": ["architect", "department"], "desc": "발견한 궁합 하나마다 모든 시설의 인기가 조금씩 오릅니다.", "p": {"per": 0.02, "cap": 0.2}}
+  ]
+}

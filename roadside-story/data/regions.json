@@ -1,0 +1,42 @@
+[
+  {"id": "rural", "name": "시골 국도", "desc": "넓고 땅값이 쌉니다. 손님은 적게 시작하지만 지역 특산품이 잘 팔려요.", "tips": ["넓은 부지", "저렴한 건설비", "특산물·호두과자 인기"],
+   "size": [30, 20], "traffic": 0.62, "cost_mult": 0.9, "plot_cost_mult": 0.8, "scenery": "field", "fame_cost": 0,
+   "types": {"traveler": 1.0, "worker": 0.5, "trucker": 0.7, "student": 0.45, "family": 0.6, "senior": 0.9, "biker": 0.4, "tourist": 0.4, "gourmet": 0.4, "ev_driver": 0.35, "vip": 0.25},
+   "tags": {"local": 1.3, "green": 1.1},
+   "season": {"spring": 1.05, "summer": 1.0, "fall": 1.2, "winter": 0.85},
+   "start": [10, 10, 10, 8],
+   "plots": [
+     {"rect": [20, 10, 8, 8], "cost": 150000},
+     {"rect": [2, 10, 8, 8], "cost": 250000},
+     {"rect": [10, 3, 10, 7], "cost": 450000},
+     {"rect": [20, 3, 8, 7], "cost": 800000},
+     {"rect": [2, 3, 8, 7], "cost": 1200000}
+   ],
+   "prebuilt": [
+     {"id": "parking", "pos": [13, 16]},
+     {"id": "kiosk", "pos": [14, 13]},
+     {"id": "tree", "pos": [10, 10]},
+     {"id": "tree", "pos": [19, 11]}
+   ],
+   "paths": [[13, 15], [14, 15], [14, 14]]},
+  {"id": "coast", "name": "해안도로", "desc": "경치를 보러 오는 관광객이 많습니다. 부지가 좁고 길며, 여름에 붐비고 겨울엔 한산해요.", "tips": ["관광객이 많음", "카페·전망대에 유리", "좁고 긴 부지, 비싼 건설비"],
+   "size": [34, 15], "traffic": 0.78, "cost_mult": 1.15, "plot_cost_mult": 1.3, "scenery": "sea", "fame_cost": 3,
+   "types": {"traveler": 0.9, "worker": 0.3, "trucker": 0.25, "student": 0.8, "family": 0.9, "senior": 0.6, "biker": 0.8, "tourist": 1.3, "gourmet": 0.5, "ev_driver": 0.5, "vip": 0.5},
+   "tags": {"view": 1.4, "cafe": 1.25, "photo": 1.3, "meal": 0.85},
+   "season": {"spring": 1.0, "summer": 1.45, "fall": 0.95, "winter": 0.7},
+   "start": [12, 6, 10, 7],
+   "plots": [
+     {"rect": [22, 6, 8, 7], "cost": 200000},
+     {"rect": [4, 6, 8, 7], "cost": 320000},
+     {"rect": [12, 3, 10, 3], "cost": 500000},
+     {"rect": [22, 3, 8, 3], "cost": 750000},
+     {"rect": [4, 3, 8, 3], "cost": 1000000}
+   ],
+   "prebuilt": [
+     {"id": "parking", "pos": [15, 11]},
+     {"id": "kiosk", "pos": [16, 8]},
+     {"id": "tree", "pos": [12, 6]},
+     {"id": "bench", "pos": [18, 8]}
+   ],
+   "paths": [[15, 10], [16, 10], [16, 9]]}
+]
