@@ -9,6 +9,8 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=")
 		args[kv[0]] = kv[1] if kv.size() > 1 else ""
+	if args.has("fresh"):
+		Save.profile = Save.default_profile()
 	if args.has("newgame"):
 		App.start_new(args["newgame"] if args["newgame"] != "" else "rural", "행복 휴게소", "", int(args.get("seed", "777")))
 	elif args.has("load"):

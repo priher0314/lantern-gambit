@@ -86,6 +86,7 @@ func place(def_id: String, x: int, y: int, rot: int, free: bool = false) -> Faci
 		if not free and not sim.spend(cost, "build"):
 			return null
 		sim.grid.set_path(x, y, true)
+		sim.layout_changed()
 		sim.emit("path_changed", {"x": x, "y": y})
 		return null
 	if not free and not sim.spend(cost, "build"):
@@ -101,6 +102,7 @@ func place(def_id: String, x: int, y: int, rot: int, free: bool = false) -> Faci
 	sim.facilities[f.uid] = f
 	sim.grid.set_occ(f.rect(), f.uid)
 	sim.products.assign_auto(f)
+	sim.layout_changed()
 	sim.recalc()
 	sim.prog.on_built(f)
 	if not free:
@@ -156,6 +158,7 @@ func demolish(uid: int) -> bool:
 	sim.grid.set_occ(f.rect(), 0)
 	sim.facilities.erase(uid)
 	sim.earn(refund)
+	sim.layout_changed()
 	sim.recalc()
 	sim.last_action = "%s 철거" % f.def()["name"]
 	sim.emit("fac_removed", {"uid": uid, "refund": refund})
@@ -217,6 +220,7 @@ func buy_plot(i: int) -> bool:
 	if not sim.spend(plot_cost(i), "plot"):
 		return false
 	sim.grid.own_plot(i, sim.region)
+	sim.layout_changed()
 	sim.last_action = "부지 확장"
 	sim.emit("plot_bought", {"plot": i})
 	return true

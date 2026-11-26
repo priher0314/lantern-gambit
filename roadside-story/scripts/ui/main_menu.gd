@@ -79,8 +79,9 @@ func _rebuild() -> void:
 func _backdrop(vs: Vector2) -> void:
 	# 타이틀 뒤에 놓는 작은 휴게소 풍경
 	var holder := Node2D.new()
-	holder.position = Vector2(vs.x * 0.72, vs.y * 0.34)
-	holder.scale = Vector2(2, 2) if vs.y >= 500 and vs.x >= 900 else Vector2(1, 1)
+	var big := vs.x >= 1500.0
+	holder.position = Vector2(vs.x * 0.72, vs.y * (0.26 if big else 0.34)).round()
+	holder.scale = Vector2(2, 2) if big else Vector2(1, 1)
 	root.add_child(holder)
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/sprites/buildings/meta.json"))
 	for y in range(-3, 7):

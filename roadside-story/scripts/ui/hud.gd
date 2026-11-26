@@ -249,12 +249,11 @@ func _build_misc() -> void:
 
 func _relayout() -> void:
 	var vs := App.view_size()
-	size = vs
 	top.position = Vector2(4, 4)
 	top.size = Vector2(vs.x - 8, 0)
 	bottom.reset_size()
 	bottom.position = Vector2((vs.x - bottom.size.x) * 0.5, vs.y - bottom.size.y - 5).round()
-	toasts.position = Vector2(vs.x - 250, 46)
+	toasts.position = Vector2(vs.x - 250 - (236 if fac_panel != null else 0), 46)
 	toasts.custom_minimum_size.x = 244
 	saved_label.position = Vector2(vs.x - 50, vs.y - 16)
 	hint_panel.reset_size()
@@ -267,8 +266,9 @@ func _relayout() -> void:
 func layout_panel(p: GamePanel) -> void:
 	if not is_instance_valid(p):
 		return
-	p.reset_size()
 	var vs := App.view_size()
+	p.fit_height(vs.y - 46.0 - 40.0 - 36.0)
+	p.reset_size()
 	match p.dock:
 		"bottom":
 			p.position = Vector2((vs.x - p.size.x) * 0.5, vs.y - 40 - p.size.y).round()
@@ -408,11 +408,13 @@ func open_facility(uid: int) -> void:
 	fac_panel = p
 	layout_panel(p)
 	call_deferred("layout_panel", p)
+	_relayout()
 
 func close_facility() -> void:
 	if fac_panel != null:
 		fac_panel.queue_free()
 		fac_panel = null
+		_relayout()
 	game.deselect()
 
 ## ESC: 열려 있는 창을 하나 닫는다. 닫은 게 있으면 true

@@ -34,8 +34,6 @@ func build() -> void:
 		["경영자 명성 +5", func():
 			Save.profile["fame"] = int(Save.profile["fame"]) + 5
 			Save.save_profile()],
-		["궁합 범위 표시", func():
-			game.world.show_ranges = not game.world.show_ranges],
 	]
 	for a in acts:
 		g.add_child(UIKit.button(a[0], a[1]))

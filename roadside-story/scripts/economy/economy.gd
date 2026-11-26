@@ -47,7 +47,8 @@ func record_sale(f: Facility, pid: String, price: float, cost: float, qty: int, 
 	period["profit"] += price - cost
 	if cat == "food":
 		period["food_rev"] += price
-	if qty > 0 and price / qty <= 3000.0:
+	# 실속 분야: 기본 가격이 3,000원 이하인 상품의 판매량
+	if float(Data.products[pid]["price"]) <= 3000.0:
 		period["cheap_sales"] += qty
 
 func note_spend(amount: float, _why: String) -> void:

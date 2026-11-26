@@ -179,6 +179,11 @@ func _on_new_day() -> void:
 func mark_dirty() -> void:
 	dirty = true
 
+## 배치가 바뀌면 '길이 막힌 시설' 표시를 풀어 손님이 다시 시도하게 한다.
+func layout_changed() -> void:
+	for f in facilities.values():
+		f.reachable = true
+
 ## 시설 배치·레벨·직원·특전이 바뀌면 파생 수치를 한꺼번에 다시 계산한다.
 func recalc() -> void:
 	dirty = false

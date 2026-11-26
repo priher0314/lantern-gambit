@@ -317,7 +317,8 @@ func my_scores() -> Dictionary:
 	var tour := _sat(float(pr["tour_uses"]), float(k.get("tour", 4500)))
 	var value := _sat(float(pr["cheap_sales"]), float(k.get("value", 9000)))
 	var vis_s := _sat(float(pr["visitors"]), float(k.get("visitors", 5000)))
-	var service := clampf((sat_mean - 45.0) / 40.0, 0.0, 1.0) * 100.0 * (0.45 + 0.55 * vis_s / 100.0)
+	# 서비스는 만족도가 높아도 손님이 적으면 높은 점수를 받지 못한다
+	var service := clampf((sat_mean - 50.0) / 40.0, 0.0, 1.0) * 100.0 * (0.25 + 0.75 * vis_s / 100.0)
 	var overall := 0.3 * (float(rank) / Data.max_rank() * 100.0) + 0.4 * vis_s + 0.3 * maxf(maxf(food, tour), maxf(service, value))
 	return {"overall": overall, "food": food, "tour": tour, "service": service, "value": value}
 

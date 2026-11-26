@@ -8,7 +8,7 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=")
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
-	var strategies: Array = AIPlayer.STRATEGIES.keys() if args["strategy"] == "all" else [args["strategy"]]
+	var strategies: Array = AIPlayer.STRATEGIES.keys() if args["strategy"] == "all" else Array(String(args["strategy"]).split(","))
 	var rows: Array = []
 	for st in strategies:
 		rows.append(run_one(st, args["region"], int(args["years"]), int(args["seed"]), args.has("noperks"), args.has("verbose")))

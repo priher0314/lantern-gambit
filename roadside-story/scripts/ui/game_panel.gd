@@ -9,6 +9,7 @@ var body: VBoxContainer
 var head: HBoxContainer
 var title_label: Label
 var dock := "center"
+var body_scroll: ScrollContainer
 var panel_id := ""
 
 func init_panel(g: Game, title: String, p_dock: String, min_size: Vector2) -> void:
@@ -28,7 +29,22 @@ func init_panel(g: Game, title: String, p_dock: String, min_size: Vector2) -> vo
 	v.add_child(head)
 	body = UIKit.vbox(5)
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	v.add_child(body)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if p_dock == "right":
+		# 오른쪽 창은 내용이 길어지면 화면 높이에 맞춰 스크롤한다
+		body_scroll = ScrollContainer.new()
+		body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		body_scroll.add_child(body)
+		v.add_child(body_scroll)
+	else:
+		v.add_child(body)
+
+## 스크롤 영역 높이를 내용과 화면에 맞춘다
+func fit_height(max_h: float) -> void:
+	if body_scroll == null:
+		return
+	var want := body.get_combined_minimum_size().y
+	body_scroll.custom_minimum_size = Vector2(body.get_combined_minimum_size().x + (8 if want > max_h else 0), minf(want, max_h))
 
 ## 내용 전체를 다시 만든다
 func refresh() -> void:

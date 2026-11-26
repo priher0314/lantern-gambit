@@ -4,6 +4,8 @@ extends Node2D
 
 const SMOKE := {"snack": Vector3(0.41, 0.46, 50), "udon": Vector3(0.41, 0.46, 52), "bakery": Vector3(0.41, 0.46, 50), "sauna": Vector3(0.41, 0.46, 54)}
 const NIGHT_TINT := Color(0.52, 0.56, 0.84)
+## 계절마다 바닥 색을 살짝 바꾼다 (봄 기본, 여름 짙은 초록, 가을 누런빛, 겨울 희끄무레)
+const SEASON_TINT := {"spring": Color(1, 1, 1), "summer": Color(0.95, 1.02, 0.93), "fall": Color(1.08, 0.98, 0.84), "winter": Color(0.97, 1.0, 1.08)}
 
 var sim: Sim
 var ground: GroundView
@@ -32,7 +34,7 @@ var ghost: Sprite2D
 var ghost_info: Dictionary = {}
 var selected_uid := 0
 var hover_plot := -1
-var show_ranges := false
+var _season := Color(1, 1, 1)
 
 func setup(s: Sim) -> void:
 	sim = s
@@ -325,8 +327,10 @@ func _process(delta: float) -> void:
 	# 밤낮
 	var nf := sim.night_factor()
 	var tint := Color.WHITE.lerp(NIGHT_TINT, nf * 0.8)
-	ground.modulate = tint
-	flats.modulate = tint
+	var st: Color = SEASON_TINT[sim.season()]
+	_season = _season.lerp(st, minf(1.0, delta * 0.5))
+	ground.modulate = tint * _season
+	flats.modulate = tint * _season
 	objects.modulate = tint
 	lights.modulate = Color(1, 1, 1, nf * 0.85)
 	lights.visible = nf > 0.02

@@ -28,7 +28,7 @@
   "level_price": 0.025,
   "level_upkeep": 0.09,
   "upgrade_cost_base": 0.42,
-  "upgrade_cost_growth": 1.44,
+  "upgrade_cost_growth": 1.52,
   "tier_levels": [1, 4, 8],
   "no_staff_time_mult": 1.3,
   "no_staff_quality": -8.0,
@@ -78,7 +78,7 @@
   "rank_bonus_money": [0, 50000, 120000, 300000, 700000, 1500000, 3000000],
 
   "eval_period_days": 60,
-  "eval_k": {"food": 30000000, "tour": 4500, "value": 9000, "visitors": 5000},
+  "eval_k": {"food": 22000000, "tour": 3200, "value": 7000, "visitors": 8000},
   "rival_start": 0.8,
   "rivals": [
     {"name": "금강마루 휴게소", "base": 78, "focus": "food"},
