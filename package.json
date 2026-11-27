@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test tests/",
-    "dist": "electron-packager . \"SPIN TILL DAWN\" --platform=win32 --arch=x64 --out=dist --overwrite --ignore=\"^/(dist|tests|tools|docs|\\.claude|\\.git)($|/)\" --ignore=\"^/(sw\\.js|README\\.md|\\.gitignore|\\.gitattributes|\\.nojekyll)$\""
+    "dist": "electron-packager . \"SPIN TILL DAWN\" --platform=win32 --arch=x64 --out=dist --overwrite --ignore=\"^/(dist|tests|tools|docs|roadside|\\.claude|\\.git)($|/)\" --ignore=\"^/(sw\\.js|README\\.md|\\.gitignore|\\.gitattributes|\\.nojekyll)$\""
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
