@@ -120,7 +120,7 @@ export class Overlay {
         <div class="title-meta">${meta.runs ? `플레이 ${meta.runs}회 · 클리어 ${meta.wins || 0}회 · 최고 기록 ${meta.best || 0}/${RUN_LENGTH}` : '첫 플레이'}</div>
         <div class="title-meta">유물 ${used}/${RELIC_IDS.length}</div>
       </div>
-      ${meta.tier ? `<div class="title-tier"><b>${meta.tier + 1}단계</b>${meta.heirloom && RELICS[meta.heirloom] ? `<span>가져갈 유물</span>${relicChip(meta.heirloom)}` : ''}</div>` : ''}
+      ${meta.tier || (meta.guideDone && meta.heirloom && RELICS[meta.heirloom]) ? `<div class="title-tier">${meta.tier ? `<b>${meta.tier + 1}단계</b>` : ''}${meta.guideDone && meta.heirloom && RELICS[meta.heirloom] ? `<span>물려받은 유물</span>${relicChip(meta.heirloom)}` : ''}</div>` : ''}
       <div class="title-foot">${GAME_VERSION}</div>
     `, 'title');
     p.addEventListener('click', (e) => {
@@ -316,12 +316,16 @@ export class Overlay {
         <span class="rw-desc">${lines}</span>
       </button>`;
     }).join('');
+    // 지난 클리어에서 물려받은 유물은 따로 밝힌다(왜 이미 가지고 있는지 알 수 있게)
+    const heirId = run.heirloom && run.relics.includes(run.heirloom) ? run.heirloom : null;
+    const owned = run.relics.filter((id) => id !== heirId);
     const p = this.panel(`
       <div class="rw-head">
         <h2>${o.title}</h2>
         <div class="rw-req">${o.req}</div>
       </div>
-      ${run.relics.length ? `<div class="rw-build"><span>보유</span>${run.relics.map((id) => relicChip(id)).join('')}</div>` : ''}
+      ${heirId ? `<div class="rw-build heir-note"><span>물려받은 유물</span>${relicChip(heirId)}<small>지난번 클리어 때 고른 유물 · 이번 판을 가지고 시작한다</small></div>` : ''}
+      ${owned.length ? `<div class="rw-build"><span>보유</span>${owned.map((id) => relicChip(id)).join('')}</div>` : ''}
       <div class="rw-cards">${cards}</div>
       <button class="btn btn-primary rw-go" disabled>${o.go}</button>
       ${o.skip ? `<button class="btn" data-a="skip">${o.skip}</button>` : ''}
@@ -544,7 +548,7 @@ export class Overlay {
     let heir = keep.includes(meta.heirloom) ? meta.heirloom : keep[0] || null;
     if (win && heir) this.hooks.setHeirloom(heir);
     const carry = win && keep.length
-      ? `<div class="rs-next carry"><b>${run.unlocked ? `${(run.tier || 0) + 2}단계가 열렸다` : '유물 물려주기'}</b><span>${run.unlocked ? '적이 더 강해집니다. ' : ''}다음 판에 가져갈 유물 하나를 고르세요</span><div>${keep.map((id) => `<button class="heir ${id === heir ? 'sel' : ''}" data-heir="${id}">${relicChip(id)}</button>`).join('')}</div></div>`
+      ? `<div class="rs-next carry"><b>${run.unlocked ? `${(run.tier || 0) + 2}단계가 열렸다` : '유물 물려주기'}</b><span>${run.unlocked ? '적이 더 강해집니다. ' : ''}다음 판을 가지고 시작할 유물 하나를 고르세요</span><div>${keep.map((id) => `<button class="heir ${id === heir ? 'sel' : ''}" data-heir="${id}">${relicChip(id)}</button>`).join('')}</div></div>`
       : '';
     const p = this.panel(`
       <h2 class="${win ? 'win' : 'lose'}">${win ? '날이 밝았다' : '등불이 꺼졌다'}</h2>
