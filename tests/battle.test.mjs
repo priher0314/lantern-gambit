@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createBattle, spin, reroll, rerollFree, canReroll, fireShot, previewShot, endPlayerTurn,
-  nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen, canSnipe, reactCost,
+  nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen, canSnipe, canPick, reactCost,
 } from '../src/core/battle.js';
 import { evaluateReels, evaluateLines } from '../src/core/slot.js';
 import { BATTLES, BASE_STRIP, RELIC_IDS, FRONT, STAMINA, shotStats } from '../src/core/data.js';
@@ -867,6 +867,24 @@ test('캐릭터: 폭탄꾼의 릴에는 절단 대신 폭탄이 있고, 폭탄�
   setShots(st, [['bomb', 1]]);
   fireShot(st, 0, 1);
   assert.deepEqual(st.enemies.map((e) => e.maxHp - e.hp), [0, 2, 0, 3]);
+  // 적을 직접 고르면 그 적에게 떨어진다: 맨 앞(0)도 고를 수 있고, 저격 횟수를 쓰지 않는다
+  st = mk([['kasa', 1, 5], ['kasa', 1, 2], ['kasa', 0, 2], ['kasa', 1, 1]]);
+  setShots(st, [['bomb', 1], ['bomb', 1], ['bomb', 1]]);
+  assert.equal(canPick(st, 0), true);
+  assert.equal(canSnipe(st, 0), false);
+  const snipes = st.snipes;
+  fireShot(st, 0, 1, 0); // 맨 앞(5번 줄)
+  assert.deepEqual(st.enemies.map((e) => e.maxHp - e.hp), [3, 0, 0, 0]);
+  fireShot(st, 1, 1, 1); // 둘째(2번 줄): 옆 레인과 뒤의 적이 함께 휩쓸린다
+  assert.deepEqual(st.enemies.map((e) => e.maxHp - e.hp), [3, 3, 2, 2]);
+  fireShot(st, 2, 1, 9); // 범위를 넘으면 맨 뒤
+  assert.deepEqual(st.enemies.map((e) => e.maxHp - e.hp), [3, 5, 2, 5]);
+  assert.equal(st.snipes, snipes);
+  // 미리보기도 같은 규칙
+  st = mk([['kasa', 1, 5], ['kasa', 1, 1]]);
+  setShots(st, [['bomb', 1]]);
+  assert.deepEqual(Object.keys(previewShot(st, 0, 1, 0).summary.per).map(Number), [st.enemies[0].id]);
+  assert.deepEqual(Object.keys(previewShot(st, 0, 1).summary.per).map(Number), [st.enemies[1].id]);
   // 탈 방패를 무시한다
   st = mk([['mask', 1, 3]]);
   setShots(st, [['bomb', 1]]);

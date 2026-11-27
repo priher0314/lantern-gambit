@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.26';
+export const GAME_VERSION = 'v0.27';
 
 export const ROWS = 7;
 export const LANES = 3;
@@ -335,7 +335,7 @@ export const SYMBOL_INFO = {
   spark: { what: '맞은 적에서 가까운 적으로 번진다.', tip: '적이 뭉쳐 있을 때 좋다.' },
   venom: { what: '중독시켜 매 턴 피해를 준다. 방패를 무시한다.', tip: '체력이 많은 적, 방패를 든 적에게.' },
   lantern: { what: '방어막을 얻는다. 맞으면 방어막이 먼저 깎인다.', tip: '레인이 아니라, 밝게 빛나는 릴 칸을 한 번 더 눌러 쓴다.' },
-  bomb: { what: '레인의 맨 뒤 적에게 떨어져 둥글게 터진다. 방패를 무시한다.', tip: '피해가 크다. 뒤에 숨은 적, 뭉친 적에게.' },
+  bomb: { what: '레인의 맨 뒤 적에게 떨어져 둥글게 터진다. 방패를 무시한다.', tip: '피해가 크다. 적을 직접 누르면 맨 뒤가 아니라 그 적에게 떨어진다.' },
 };
 
 // 입문 판: 처음 하는 사람은 문양 셋·기본 적 하나로 시작해, 밤마다 문양 하나와 적 하나가 늘어난다

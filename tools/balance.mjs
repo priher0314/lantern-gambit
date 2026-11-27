@@ -1,6 +1,6 @@
 // 밸런스 측정: 실력이 다른 봇들이 한 판(밤 생성·길 선택·상점 포함)을 끝까지 돈다.  node tools/balance.mjs
 import {
-  createBattle, spin, reroll, rerollFree, canReroll, fireShot, previewShot, endPlayerTurn, canSnipe, reactCost,
+  createBattle, spin, reroll, rerollFree, canReroll, fireShot, previewShot, endPlayerTurn, canSnipe, canPick, reactCost,
   nextEnemyStep, resolveReaction, resolveCounter,
 } from '../src/core/battle.js';
 import { RUN_LENGTH } from '../src/core/data.js';
@@ -34,13 +34,14 @@ export function playBattle(st, P, r) {
     }
     for (let i = 0; i < st.shots.length && !st.result; i++) {
       let lane = randInt(r, 3);
-      let depth = 0;
+      let depth = null;
       if (rand(r) < P.smart) {
         let best = -1;
-        const depths = canSnipe(st, i) && rand(r) < P.smart ? [0, 1, 2] : [0];
+        // 폭탄은 아무 적이나 고를 수 있다(null = 맨 뒤). 다른 기술은 저격이 남아 있을 때만 뒤쪽을 노린다.
+        const depths = canPick(st, i) ? (rand(r) < P.smart ? [null, 0, 1, 2] : [null]) : canSnipe(st, i) && rand(r) < P.smart ? [0, 1, 2] : [0];
         for (let l = 0; l < 3; l++) {
           for (const d of depths) {
-            const s = score(previewShot(st, i, l, d).summary) - d * 0.01;
+            const s = score(previewShot(st, i, l, d).summary) - (d || 0) * 0.01;
             if (s > best) { best = s; lane = l; depth = d; }
           }
         }

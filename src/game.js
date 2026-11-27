@@ -762,7 +762,7 @@ export class Game {
           const resist = per.some((p) => p.tags.includes('resist'));
           const pushed = per.some((p) => p.pushed);
           const combo = [['shatter', '파쇄'], ['detonate', '감전 폭발'], ['surge', '감전'], ['conduct', '초전도'], ['deepFreeze', '꽁꽁'], ['fester', '독 깊어짐']].filter(([t]) => per.some((p) => p.tags.includes(t))).map(([, n]) => n);
-          text = `${ui.preview.snipe ? '저격 · ' : ''}예상 피해 ${dmg}${kills ? ` · 처치 ${kills}` : ''}${bane ? ' · 약점' : ''}${resist ? ' · 저항' : ''}${pushed ? ' · 밀어냄' : ''}${combo.length ? ' · 조합: ' + combo.join('·') : ''}${per.some((p) => p.blocked) ? ' · 일부 막힘' : ''}`;
+          text = `${ui.preview.snipe && !ui.preview.free ? '저격 · ' : ui.preview.free ? (ui.preview.snipe ? '고른 적에게 · ' : '맨 뒤 적에게 · ') : ''}예상 피해 ${dmg}${kills ? ` · 처치 ${kills}` : ''}${bane ? ' · 약점' : ''}${resist ? ' · 저항' : ''}${pushed ? ' · 밀어냄' : ''}${combo.length ? ' · 조합: ' + combo.join('·') : ''}${per.some((p) => p.blocked) ? ' · 일부 막힘' : ''}`;
         }
       } else if (!ui.preview && sh.symbol !== 'lantern') {
         text += '  ▶ 레인을 누르세요';
@@ -930,8 +930,10 @@ export class Game {
       if (this.ui.phase === 'aim' && !this.ui.counter) {
         // 뒤에 있는 적을 직접 누르면 그 적을 노린다(터치는 노리는 적이 바뀌면 다시 조준부터)
         const depth = this.depthOfView(v, lane);
-        if (touch && this.ui.armedLane === lane && depth !== (this.ui.aimDepth || 0)) this.ui.armedLane = -1;
+        const pick = !!(v && v.lane === lane);
+        if (touch && this.ui.armedLane === lane && (depth !== (this.ui.aimDepth || 0) || pick !== !!this.ui.aimPick)) this.ui.armedLane = -1;
         this.ui.aimDepth = depth;
+        this.ui.aimPick = pick;
       }
       this.tapLane(lane, touch);
     }
@@ -961,10 +963,13 @@ export class Game {
       return;
     }
     if (this.ui.phase === 'aim' && !this.busy) {
-      const depth = lane >= 0 ? this.depthOfView(this.enemyAtPoint(p), lane) : 0;
-      if (lane !== this.ui.hoverLane || depth !== (this.ui.aimDepth || 0)) {
+      const hv = lane >= 0 ? this.enemyAtPoint(p) : null;
+      const depth = lane >= 0 ? this.depthOfView(hv, lane) : 0;
+      const pick = !!(hv && hv.lane === lane);
+      if (lane !== this.ui.hoverLane || depth !== (this.ui.aimDepth || 0) || pick !== !!this.ui.aimPick) {
         this.ui.hoverLane = lane;
         this.ui.aimDepth = depth;
+        this.ui.aimPick = pick;
         this.updatePreview();
       }
     }
@@ -1116,6 +1121,7 @@ export class Game {
     if (this.ui.sel === idx && sh.symbol === 'lantern') return this.fire(1);
     this.ui.sel = idx;
     this.ui.aimDepth = 0;
+    this.ui.aimPick = false;
     this.ui.armedLane = -1;
     this.ui.confirmEnd = false;
     this.audio.play('select');
@@ -1142,6 +1148,7 @@ export class Game {
     if (this.ui.sel === idx && st.shots[idx].symbol === 'lantern') return this.fire(1);
     this.ui.sel = idx;
     this.ui.aimDepth = 0;
+    this.ui.aimPick = false;
     this.ui.armedLane = -1;
     this.ui.confirmEnd = false;
     this.audio.play('select');
@@ -1162,9 +1169,14 @@ export class Game {
   }
 
   // 이 레인에 지금 쏘면 몇 번째 적을 노리게 되는가(0 = 맨 앞). 저격을 못 쓰는 상황이면 0.
+  // 폭탄은 가리킨 적이 있으면 그 적(맨 앞 포함), 없으면 null(= 맨 뒤).
   aimDepthFor(lane) {
     const ui = this.ui;
     const st = this.st;
+    if (st && ui.sel != null && B.canPick(st, ui.sel)) {
+      const n = B.laneTargets(st, lane).length;
+      return ui.aimPick && n > 0 ? Math.max(0, Math.min(ui.aimDepth || 0, n - 1)) : null;
+    }
     if (!st || ui.sel == null || !(ui.aimDepth > 0) || !B.canSnipe(st, ui.sel)) return 0;
     return Math.max(0, Math.min(ui.aimDepth, B.laneTargets(st, lane).length - 1));
   }
@@ -1181,6 +1193,20 @@ export class Game {
     const ui = this.ui;
     const st = this.st;
     if (ui.phase !== 'aim' || this.busy || !st || ui.sel == null) return;
+    if (B.canPick(st, ui.sel)) {
+      const lane = ui.armedLane >= 0 ? ui.armedLane : ui.hoverLane;
+      const max = (lane >= 0 ? B.laneTargets(st, lane).length : Math.max(...[0, 1, 2].map((l) => B.laneTargets(st, l).length))) - 1;
+      const cur = ui.aimPick ? ui.aimDepth || 0 : -1;
+      let next = cur + d;
+      if (wrap && next > max) next = -1;
+      next = clamp(next, -1, max);
+      if (next === cur) return;
+      ui.aimPick = next >= 0;
+      ui.aimDepth = Math.max(0, next);
+      this.audio.play('aim');
+      this.updatePreview();
+      return;
+    }
     if (!B.canSnipe(st, ui.sel)) {
       this.audio.play('deny');
       this.ui.tipText = (st.snipes || 0) <= 0 ? '저격은 턴마다 1번' : '이 공격은 저격할 수 없다(이미 여러 적을 맞힌다)';
@@ -1210,7 +1236,8 @@ export class Game {
       const depth = this.aimDepthFor(lane);
       const pv = B.previewShot(st, ui.sel, lane, depth);
       ui.preview = {
-        snipe: depth > 0 ? B.laneTargets(st, lane)[depth].id : null,
+        snipe: depth > 0 || (depth === 0 && B.canPick(st, ui.sel)) ? B.laneTargets(st, lane)[depth]?.id ?? null : null,
+        free: B.canPick(st, ui.sel), // 폭탄: 직접 고른 것이지 저격이 아니다
         lane, symbol: sh.symbol, gild: sh.gild > 0, summary: pv.summary, cells: pv.summary.cells,
         global: sh.tier === 3 && sh.symbol !== 'blade' && sh.symbol !== 'lantern',
         lanes: sh.symbol === 'lantern' ? [] : sh.tier === 3 && sh.symbol === 'blade' ? [lane - 1, lane, lane + 1].filter((l) => l >= 0 && l < 3) : [lane],
@@ -1263,6 +1290,11 @@ export class Game {
       const later = st.turn >= 2 || this.run.stage > 0;
       // 처음 보는 문양(고른 것부터)
       this.freshSymbolCard();
+      if (st.shots.some((s) => s.symbol === 'bomb' && s.tier < 3) && this.tipsSeen.has('sym-bomb') && this.once('bomb-pick')) {
+        this.ui.tipText = '폭탄: 적을 직접 누르면 그 적에게 떨어진다 (레인만 누르면 맨 뒤)';
+        this.ui.tipUntil = this.now() + 6000;
+        this.updateInfo();
+      }
       if (st.reels.some((r) => r.gilded)) this.conceptCard('gild');
       if (st.rerollCount >= 1 && B.canReroll(st)) this.conceptCard('reroll'); // 한 번 써 본 뒤: 두 번째에는 대가가 있다
       if (later && [0, 1, 2].some((l) => B.laneTargets(st, l).length >= 2)) this.conceptCard('snipe');
@@ -1422,6 +1454,7 @@ export class Game {
     this.refresh();
     const depth = this.aimDepthFor(lane);
     ui.aimDepth = 0;
+    ui.aimPick = false;
     if (st.shots[i].tier >= 2 && st.shots[i].symbol !== 'lantern') await this.cutIn(st.shots[i]);
     const evs = B.fireShot(st, i, lane, depth);
     if (this.coach) this.coach.fired = true;

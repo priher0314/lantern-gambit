@@ -135,14 +135,22 @@ export function laneTargets(st, lane) {
 
 // 저격 중이면 고른 적부터 뒤쪽만 대상이 된다
 let aimFrom = 0;
+let bombAt = null; // 폭탄을 떨어뜨릴 적(레인의 앞에서 몇 번째). null = 고르지 않음 → 맨 뒤
 function shotTargets(st, lane) {
   return laneTargets(st, lane).slice(aimFrom);
 }
 
 // 이 공격으로 맨 앞이 아닌 적을 골라 맞힐 수 있는가(레인 전체·전체 공격·방어막은 고를 필요가 없다)
+// 폭탄은 던질 곳을 고를 수 있다: 레인의 아무 적이나(맨 앞 포함). 저격 횟수를 쓰지 않는다.
+export function canPick(st, shotIndex) {
+  const shot = st.shots[shotIndex];
+  return !!shot && !shot.used && shot.symbol === 'bomb' && shot.tier < 3;
+}
+
 export function canSnipe(st, shotIndex) {
   const shot = st.shots[shotIndex];
   if (!shot || shot.used || (st.snipes || 0) <= 0) return false;
+  if (shot.symbol === 'bomb') return false; // 폭탄은 저격이 아니라 직접 고르기(canPick)
   if (shot.symbol === 'lantern' || shot.tier >= 3) return false;
   if (shot.tier === 2 && shot.symbol !== 'wave' && shot.symbol !== 'spark') return false;
   return true;
@@ -681,10 +689,10 @@ function resolveShot(st, shot, lane, events) {
   }
 
   if (sym === 'bomb') {
-    // 폭탄: 포물선으로 날아가 레인의 맨 뒤 적에게 떨어진다(저격하면 고른 적). 위에서 떨어지므로 방패가 막지 못한다.
+    // 폭탄: 포물선으로 날아가 고른 적에게 떨어진다(고르지 않으면 레인의 맨 뒤 적). 위에서 떨어지므로 방패가 막지 못한다.
     events.push({ ...base, lob: true });
-    const list = shotTargets(st, lane);
-    const first = aimFrom > 0 ? list[0] : list[list.length - 1];
+    const list = laneTargets(st, lane);
+    const first = bombAt != null ? list[Math.min(bombAt, list.length - 1)] : list[list.length - 1];
     const row = first ? first.row : 0;
     const cells = S.area === 'square'
       ? [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
@@ -755,7 +763,10 @@ function resolveShot(st, shot, lane, events) {
   }
 }
 
-export function fireShot(st, shotIndex, lane, depth = 0) {
+// depth: 노릴 적이 레인의 앞에서 몇 번째인가.
+//  - 보통 기술: 0·null = 맨 앞, 1 이상 = 저격(턴마다 횟수 제한)
+//  - 폭탄: null = 맨 뒤(기본), 0 이상 = 그 적(제한 없음)
+export function fireShot(st, shotIndex, lane, depth = null) {
   if (st.phase !== 'aim' || st.result) throw new Error('fireShot: wrong phase');
   const shot = st.shots[shotIndex];
   if (!shot || shot.used) throw new Error('fireShot: invalid shot');
@@ -766,16 +777,19 @@ export function fireShot(st, shotIndex, lane, depth = 0) {
   shotPower = shot.tier >= 2 ? 2 : 1;
   shot.used = false;
   const from = depth > 0 && canSnipe(st, shotIndex) ? Math.min(depth, laneTargets(st, lane).length - 1) : 0;
+  const pick = canPick(st, shotIndex) && depth != null && depth >= 0 ? depth : null;
   shot.used = true;
   if (from > 0) {
     st.snipes--;
     events.push({ type: 'snipe', lane, depth: from, id: laneTargets(st, lane)[from].id });
   }
   aimFrom = Math.max(0, from);
+  bombAt = pick;
   try {
     resolveShot(st, shot, lane, events);
   } finally {
     aimFrom = 0;
+    bombAt = null;
     shotPower = 1;
   }
   checkObjective(st, events);
@@ -818,7 +832,7 @@ export function summarize(events) {
   return { per, guard, heal, cells };
 }
 
-export function previewShot(st, shotIndex, lane, depth = 0) {
+export function previewShot(st, shotIndex, lane, depth = null) {
   const c = clone(st);
   const events = fireShot(c, shotIndex, lane, depth);
   return { events, summary: summarize(events), result: c.result };
