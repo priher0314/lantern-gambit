@@ -2,7 +2,7 @@
 import { randInt, shuffle } from './rng.js';
 import {
   BATTLES, BASE_STRIP, REWARDS, RELICS, RELIC_IDS, FUSIONS, FUSION_IDS,
-  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE, TIER, MAX_TIER, SYMBOL_IDS, TRAIN_MAX, TRAIN_TEXT, CHARACTERS, symbolsOf, SHRINE_COST, REST_HEAL } from './data.js';
+  RUN_LENGTH, NIGHT_NAMES, OBJ_INFO, MODS, COIN, SHOP_PRICES, SYMBOLS, LANES, START_PURSE, TIER, MAX_TIER, SYMBOL_IDS, TRAIN_MAX, TRAIN_TEXT, CHARACTERS, symbolsOf, SHRINE_COST, REST_HEAL, GUIDE } from './data.js';
 
 export function createRun(seed, opt = {}) {
   const run = {
@@ -10,7 +10,10 @@ export function createRun(seed, opt = {}) {
     rng: seed >>> 0 || 1,
     tier: Math.max(0, Math.min(MAX_TIER, opt.tier || 0)), // 단계(높을수록 어렵다)
     heirloom: null, // 지난 판에서 가져온 유물
-    char: CHARACTERS[opt.char] ? opt.char : 'blade', // 캐릭터(고유 기술이 다르다)
+    char: !opt.guided && CHARACTERS[opt.char] ? opt.char : 'blade', // 캐릭터(고유 기술이 다르다)
+    guided: !!opt.guided, // 입문 판: 문양·적·화면이 밤마다 하나씩 늘어난다
+    newSymbol: null, // 이번 밤에 새로 더해진 문양(안내용)
+    lastShop: [], // 지난 상점에 나왔던 유물(되도록 다시 내놓지 않는다)
     symLv: {},
     stage: 0,
     hp: 15,
@@ -26,7 +29,7 @@ export function createRun(seed, opt = {}) {
   };
   // 릴의 절단 자리는 캐릭터의 고유 기술로 채운다
   const sig = CHARACTERS[run.char].sig;
-  run.strips = [0, 1, 2].map(() => makeStrip(run).map((s) => (s === 'blade' ? sig : s)));
+  run.strips = [0, 1, 2].map(() => makeStrip(run, run.guided ? GUIDE.strip : BASE_STRIP).map((s) => (s === 'blade' ? sig : s)));
   if (opt.heirloom && RELICS[opt.heirloom] && !FUSIONS[opt.heirloom] && relicFits(run, opt.heirloom)) {
     run.relics.push(opt.heirloom);
     run.heirloom = opt.heirloom;
@@ -41,7 +44,7 @@ export function createRun(seed, opt = {}) {
 const UNIT_COST = { kasa: 2, drum: 2, archer: 2, mask: 3, bomber: 2, healer: 3, boar: 3 };
 const ELITE_COST = 2;
 const BUDGET = [14, 20, 25, 29, 33]; // 밤이 깊어질수록 적이 많아지고
-const HP_SCALE = [1, 1.15, 1.33, 1.46, 1.6, 1.55]; // 단단해진다(마지막은 보스의 부하들)
+const HP_SCALE = [1, 1.2, 1.42, 1.58, 1.74, 1.7]; // 단단해진다(마지막은 보스의 부하들)
 
 function pickWeighted(r, table) {
   const total = table.reduce((a, [, w]) => a + w, 0);
@@ -65,19 +68,20 @@ export function generateNight(run, stage, risky) {
   const r = { rng: ((run.seed * 977 + stage * 131 + (risky ? 7 : 3)) >>> 0) || 1 };
   // 목표: 첫 밤은 소탕, 그 뒤로는 길마다 다른 목표
   const kinds = ['annihilate', 'survive', 'lanes', 'rush'];
+  const guided = !!run.guided;
   let kind = 'annihilate';
-  if (stage > 0) {
+  if (stage > 0 && !(guided && stage <= GUIDE.doneAt)) {
     const base = (run.seed + stage * 5) % kinds.length;
     kind = kinds[(base + (risky ? 1 + randInt(r, 3) : 0)) % kinds.length];
   }
   // 적 구성
-  const table = [
+  const table = guided ? GUIDE.enemies[stage] : [
     ['kasa', 4], ['drum', stage >= 1 ? 3 : 1], ['archer', 2], ['mask', stage === 0 ? 0 : stage >= 3 ? 3 : 2],
     ['bomber', stage >= 1 ? 2 : 0], ['boar', stage >= 2 ? 2 : 0], ['healer', stage >= 2 ? 1 : 0],
   ].filter(([, w]) => w > 0);
-  let budget = Math.round(BUDGET[stage] * (kind === 'survive' ? 1.15 : 1) * (risky ? 1.1 : 1) * (1 + TIER.budget * tm.tier));
+  let budget = Math.round(BUDGET[stage] * (kind === 'survive' ? 1.15 : 1) * (risky ? 1.1 : 1) * (1 + TIER.budget * tm.tier) * (guided && stage === 0 ? 0.72 : 1)); // 입문 첫 밤은 짧게
   // 정예: 셋째 밤부터(험한 길은 둘째 밤부터) 하나, 다섯째 밤은 둘
-  const elites = stage >= (risky ? 1 : 2) ? (stage >= 4 ? 2 : 1) : 0;
+  const elites = guided && !risky ? 0 : stage >= (risky ? 1 : 2) ? (stage >= 4 ? 2 : 1) : 0;
   budget -= elites * ELITE_COST;
   const types = [];
   while (budget >= 2) {
@@ -86,6 +90,13 @@ export function generateNight(run, stage, risky) {
     if (UNIT_COST[t] > budget) t = 'kasa';
     types.push(t);
     budget -= UNIT_COST[t];
+  }
+  // 입문 판: 그 밤에 처음 나오는 적은 첫 무리에 꼭 선다
+  const freshType = guided ? GUIDE.fresh[stage] : null;
+  if (freshType) {
+    const i = types.indexOf(freshType);
+    if (i > 0) [types[0], types[i]] = [types[i], types[0]];
+    else if (i < 0) types[0] = freshType;
   }
   const total = types.length;
   // 무리(웨이브) 나누기
@@ -126,7 +137,7 @@ export function generateNight(run, stage, risky) {
   }
   const mods = risky ? shuffle(r, Object.keys(MODS)).slice(0, stage >= 3 ? 2 : 1) : [];
   return {
-    id: `n${stage}${risky ? 'r' : 's'}`,
+    id: `n${stage}${risky ? 'r' : 's'}${guided ? 'g' : ''}`,
     stage, risky,
     name: OBJ_INFO[kind].name,
     night: NIGHT_NAMES[stage],
@@ -135,7 +146,7 @@ export function generateNight(run, stage, risky) {
     pullWaves: kind !== 'survive',
     waves: waves.filter((w) => w.units.length),
     mods,
-    hpScale: HP_SCALE[stage] * tm.hp,
+    hpScale: HP_SCALE[stage] * tm.hp * (guided ? 0.9 : 1), // 입문 판은 조금 무르게
     tier: tm.tier, atkUp: tm.atkUp, bossScale: tm.bossScale,
     clearCoins: COIN.clearBase + stage + (risky ? 2 : 0) + TIER.coin * tm.tier,
     coinMult: risky ? COIN.riskyMult : 1,
@@ -144,7 +155,7 @@ export function generateNight(run, stage, risky) {
   };
 }
 
-// 첫 판 따라 하기용 밤: 우산 도깨비 넷과 초롱불 하나
+// 첫 판 따라 하기용 밤: 기본 적(우산 도깨비)만 다섯
 export function tutorialNight() {
   return {
     id: 'tut', stage: 0, risky: false,
@@ -153,10 +164,10 @@ export function tutorialNight() {
     pullWaves: true,
     waves: [
       { at: 1, units: [['kasa', 1, 3], ['kasa', 0, 1], ['kasa', 2, 1]] },
-      { at: 3, units: [['kasa', 1, 0], ['archer', 2, 0]] },
+      { at: 3, units: [['kasa', 1, 0], ['kasa', 2, 0]] },
     ],
     mods: [], hpScale: 1, clearCoins: COIN.clearBase, coinMult: 1,
-    counts: { kasa: 4, archer: 1 }, elites: 0,
+    counts: { kasa: 5 }, elites: 0,
   };
 }
 
@@ -207,7 +218,7 @@ export function rollStops(run) {
 // 쉼터: 쉬기(체력이 가득이면 최대 체력) 또는 문양 수련 둘 중 하나
 export function rollRest(run) {
   const lvOf = (s) => (run.symLv && run.symLv[s]) || 0;
-  const train = pickSome(run, symbolsOf(run.char).filter((s) => lvOf(s) < TRAIN_MAX), 2).map((s) => 'train:' + s);
+  const train = pickSome(run, symbolsOf(run.char).filter((s) => run.strips[0].includes(s) && lvOf(s) < TRAIN_MAX), 2).map((s) => 'train:' + s);
   return [run.hp >= run.maxHp ? 'maxhp' : 'rest', ...train];
 }
 
@@ -239,28 +250,42 @@ export function bankBattle(run, st) {
 
 export function rollShop(run, keepRerolls = 0) {
   const P = SHOP_PRICES;
-  // 진열대는 단출하게: 유물 2칸(융합·강화가 가능하면 둘째 칸에), 소모품 1칸, 회복
-  const fresh = pickSome(run, RELIC_IDS.filter((id) => !run.relics.includes(id) && relicFits(run, id)), 2).map((id) => ({ id, price: P.relic }));
+  // 진열대: 새 유물 2칸(지난 상점에 나왔던 것은 되도록 빼고) + 특별 칸(융합·강화) + 소모품·수련 + 회복
+  const pool = RELIC_IDS.filter((id) => !run.relics.includes(id) && relicFits(run, id));
+  const last = run.lastShop || [];
+  const novel = pool.filter((id) => !last.includes(id));
+  const fresh = pickSome(run, novel.length >= 2 ? novel : pool, 2).map((id) => ({ id, price: P.relic }));
+  run.lastShop = fresh.map((it) => it.id);
+  const done = (items) => ({ items: items.map((it) => ({ ...it, sold: false })), rerolls: keepRerolls });
+  // 입문 판의 첫 상점은 단출하게: 유물 둘과 회복
+  if (run.guided && run.stage <= 1) return done([...fresh, { id: 'heal', price: P.heal }]);
+  const items = [...fresh];
   const fuse = availableFusions(run);
   const upg = run.relics.filter((id) => !FUSIONS[id] && (run.relicLv[id] || 1) < 2);
-  const items = [fresh[0]].filter(Boolean);
   if (fuse.length) items.push({ id: 'fuse:' + fuse[0], price: P.fuse });
   else if (upg.length && randInt(run, 2)) items.push({ id: 'up:' + upg[randInt(run, upg.length)], price: P.up });
-  else if (fresh[1]) items.push(fresh[1]);
+  const special = items.length > fresh.length;
   const charms = Object.keys(REWARDS).filter((k) => REWARDS[k].sym && run.strips[0].includes(REWARDS[k].sym));
   const trimmable = Object.keys(SYMBOLS).filter((s) => s !== 'counter' && run.strips.every((st) => st.filter((x) => x === s).length >= 2));
   const extras = [{ id: 'maxhp', price: P.maxhp }, { id: charms[randInt(run, charms.length)], price: P.charm }];
   if (trimmable.length) extras.push({ id: 'trim:' + trimmable[randInt(run, trimmable.length)], price: P.trim });
-  items.push(extras[randInt(run, extras.length)]);
+  const extra = extras[randInt(run, extras.length)];
   // 수련: 문양 하나를 단련(단계가 오를수록 비싸다)
   const lvOf = (s) => (run.symLv && run.symLv[s]) || 0;
-  const trainable = symbolsOf(run.char).filter((s) => lvOf(s) < TRAIN_MAX);
+  const trainable = symbolsOf(run.char).filter((s) => run.strips[0].includes(s) && lvOf(s) < TRAIN_MAX);
+  let train = null;
   if (trainable.length) {
     const s = trainable[randInt(run, trainable.length)];
-    items.push({ id: 'train:' + s, price: P.train + P.trainStep * lvOf(s) });
+    train = { id: 'train:' + s, price: P.train + P.trainStep * lvOf(s) };
+  }
+  // 특별 칸이 있으면 소모품·수련 중 하나만, 없으면 둘 다(카드는 다섯 장을 넘지 않는다)
+  if (special) items.push(train && randInt(run, 2) ? train : extra);
+  else {
+    items.push(extra);
+    if (train) items.push(train);
   }
   items.push({ id: 'heal', price: P.heal });
-  return { items: items.map((it) => ({ ...it, sold: false })), rerolls: keepRerolls };
+  return done(items);
 }
 
 export const shopRerollCost = (shop) => SHOP_PRICES.reroll + shop.rerolls * 2;
@@ -302,10 +327,23 @@ export function relicFits(run, id) {
   return !need || run.strips.some((s) => s.includes(need));
 }
 
-function makeStrip(run) {
-  let s = shuffle(run, BASE_STRIP);
-  for (let i = 0; i < 300 && !noRepeat(s); i++) s = shuffle(run, BASE_STRIP);
+function makeStrip(run, base = BASE_STRIP) {
+  let s = shuffle(run, base);
+  for (let i = 0; i < 300 && !noRepeat(s); i++) s = shuffle(run, base);
   return s;
+}
+
+// 릴마다 그 문양을 n개씩 끼워 넣는다(같은 문양이 위아래로 붙지 않는 자리를 우선)
+function addSymbol(run, sym, n = 1) {
+  run.strips = run.strips.map((s) => {
+    const c = s.slice();
+    for (let k = 0; k < n; k++) {
+      const ok = [];
+      for (let i = 0; i < c.length; i++) if (c[i] !== sym && c[(i + c.length - 1) % c.length] !== sym) ok.push(i);
+      c.splice(ok.length ? ok[randInt(run, ok.length)] : randInt(run, c.length + 1), 0, sym);
+    }
+    return c;
+  });
 }
 
 export function currentBattle(run) {
@@ -322,7 +360,22 @@ export function battleOptions(run) {
     relicLv: run.relicLv,
     relicProc: run.relicProc,
     symLv: run.symLv || {},
+    // 입문 판: 첫 밤에는 다시 돌리기·저격·상성·빙고가 없고, 저격은 넷째 밤부터
+    ...(run.guided && run.stage === 0 ? { rerolls: 0, snipes: 0, affinity: false, bingo: false } : run.guided && run.stage < GUIDE.doneAt ? { snipes: 0 } : {}),
   };
+}
+
+// 입문 판에서 밤과 밤 사이에 나오는 화면(하나씩 늘어난다)
+// pick: 유물 고르기 / shop: 상점으로 바로 / stops: 갈림길 / paths: 순한 길·험한 길 고르기
+export function betweenNights(run) {
+  if (!run.guided) return { pick: false, shop: false, stops: true, paths: true };
+  const s = run.stage; // 방금 넘긴 밤
+  return { pick: s === 0, shop: s === 1, stops: s >= 2, paths: s >= GUIDE.doneAt };
+}
+
+// 입문 판 첫 유물: 지금 가진 문양으로 쓸 수 있는 유물 셋
+export function rollGuideRelics(run) {
+  return pickSome(run, GUIDE.firstRelics.filter((id) => !run.relics.includes(id) && relicFits(run, id)), 3);
 }
 
 export function recordBattle(run, st) {
@@ -447,21 +500,19 @@ export function applyReward(run, id) {
     run.maxHp += 3;
     run.hp = Math.min(run.maxHp, run.hp + 3);
   }
-  if (r.sym) {
-    run.strips = run.strips.map((s) => {
-      const c = s.slice();
-      const ok = [];
-      for (let i = 0; i < c.length; i++) if (c[i] !== r.sym && c[(i + c.length - 1) % c.length] !== r.sym) ok.push(i);
-      c.splice(ok.length ? ok[randInt(run, ok.length)] : randInt(run, c.length + 1), 0, r.sym);
-      return c;
-    });
-  }
+  if (r.sym) addSymbol(run, r.sym, 1);
   run.picks.push(id);
 }
 
 // 다음 밤으로. def는 길 선택에서 고른 밤(없으면 순한 길).
 export function advance(run, def) {
   run.stage++;
+  run.newSymbol = null;
+  if (run.guided && GUIDE.unlock[run.stage]) {
+    const sym = GUIDE.unlock[run.stage];
+    addSymbol(run, sym, GUIDE.copies[sym]);
+    run.newSymbol = sym;
+  }
   run.def = def || generateNight(run, run.stage, false);
   return run.def;
 }

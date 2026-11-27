@@ -1,12 +1,12 @@
 // 밸런스 측정: 실력이 다른 봇들이 한 판(밤 생성·길 선택·상점 포함)을 끝까지 돈다.  node tools/balance.mjs
 import {
-  createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn, canSnipe, reactCost,
+  createBattle, spin, reroll, rerollFree, canReroll, fireShot, previewShot, endPlayerTurn, canSnipe, reactCost,
   nextEnemyStep, resolveReaction, resolveCounter,
 } from '../src/core/battle.js';
 import { RUN_LENGTH } from '../src/core/data.js';
 import {
   createRun, battleOptions, rollRewards, rollStartRelics, applyReward, recordBattle, advance,
-  rollPaths, bankBattle, rollShop, buyItem, cantBuy, rollStops, rollRest, rollShrine, takeShrine,
+  rollPaths, bankBattle, rollShop, buyItem, cantBuy, rollStops, rollRest, rollShrine, takeShrine, betweenNights, rollGuideRelics,
 } from '../src/core/run.js';
 import { rand, randInt } from '../src/core/rng.js';
 
@@ -25,7 +25,13 @@ export function playBattle(st, P, r) {
   let attacks = 0;
   while (!st.result) {
     spin(st);
-    while (canReroll(st) && rand(r) < P.reroll) reroll(st);
+    // 턴마다 첫 다시 돌리기는 대가가 없다: 결과가 밋밋하면(연결·빙고 없음) 돌린다. 대가가 붙는 두 번째는 가끔만.
+    for (;;) {
+      if (!canReroll(st)) break;
+      const plain = !st.shots.some((s) => s.tier >= 2);
+      if (rerollFree(st) ? !(plain && rand(r) < P.smart) : !(plain && rand(r) < P.reroll * 0.5)) break;
+      reroll(st);
+    }
     for (let i = 0; i < st.shots.length && !st.result; i++) {
       let lane = randInt(r, 3);
       let depth = 0;
@@ -99,8 +105,9 @@ function stopBot(run) {
 }
 
 export function playRun(seed, P, opt = {}) {
-  const run = createRun(seed, { ...opt, char: process.env.CHAR || 'blade' });
-  applyReward(run, rollStartRelics(run)[0]);
+  const guided = !!process.env.GUIDED; // GUIDED=1 → 입문 판
+  const run = createRun(seed, { ...opt, char: process.env.CHAR || 'blade', guided });
+  if (!guided) applyReward(run, rollStartRelics(run)[0]);
   const r = { rng: seed * 101 + 7 };
   const reached = [];
   for (let stage = 0; stage < RUN_LENGTH; stage++) {
@@ -111,9 +118,12 @@ export function playRun(seed, P, opt = {}) {
     if (st.result === 'lose') return { win: false, reached, run };
     bankBattle(run, st);
     if (stage === RUN_LENGTH - 1) break;
-    stopBot(run);
+    const flow = betweenNights(run);
+    if (flow.pick) applyReward(run, rollGuideRelics(run)[0]);
+    else if (flow.shop) shopBot(run);
+    else stopBot(run);
     const paths = rollPaths(run);
-    advance(run, paths.length > 1 && rand(r) < P.risk ? paths[1] : paths[0]);
+    advance(run, flow.paths && paths.length > 1 && rand(r) < P.risk ? paths[1] : paths[0]);
   }
   return { win: true, reached, run };
 }

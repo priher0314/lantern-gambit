@@ -3,7 +3,7 @@
 // 게임 제목(한 곳에서만 바꾸면 된다)
 export const GAME_TITLE = 'SPIN TILL DAWN';
 // 배포할 때마다 올린다. 메인 화면 아래에 표시되어 최신 버전인지 확인할 수 있다.
-export const GAME_VERSION = 'v0.24';
+export const GAME_VERSION = 'v0.25';
 
 export const ROWS = 7;
 export const LANES = 3;
@@ -97,8 +97,8 @@ function baseShotStats(symbol, tier, gild = 0) {
       if (tier === 2) return { dmg: 4 + g, pierce: 99 };
       return { dmg: 5 + g, pierce: 99, sideDmg: 3 + g };
     case 'wave':
-      if (tier === 1) return { dmg: 2 + g, splash: 1 + g, area: 'cross' };
-      if (tier === 2) return { dmg: 3 + g, splash: 2 + g, area: 'square' };
+      if (tier === 1) return { dmg: 2 + g, splash: 1 + g, push: 1 };
+      if (tier === 2) return { dmg: 3 + g, splash: 2 + g, push: 2 };
       return { dmg: 3 + g, push: 1 };
     case 'frost':
       if (tier === 1) return { dmg: 1 + g, freeze: 1 + g };
@@ -132,9 +132,9 @@ export function shotDesc(symbol, tier, gild = 0, lv = 0) {
       if (tier === 2) return `레인 전체 관통 · 피해 ${s.dmg} · 파쇄`;
       return `레인 전체 ${s.dmg} + 양옆 레인 ${s.sideDmg} · 방패 무시`;
     case 'wave':
-      if (tier === 1) return `첫 적 ${s.dmg} · 양옆·뒤 ${s.splash} · 밀어내기`;
-      if (tier === 2) return `첫 적 ${s.dmg} · 주변 8칸 ${s.splash} · 밀어내기`;
-      return `모든 적 ${s.dmg} · 한 칸 밀어내기`;
+      if (tier === 1) return `맨 앞 적 ${s.dmg} · 양옆 레인 ${s.splash} · 맞은 적을 한 칸 밀어냄`;
+      if (tier === 2) return `맨 앞 적 ${s.dmg} · 양옆 레인 ${s.splash} · 맞은 적을 두 칸 밀어냄`;
+      return `모든 적 ${s.dmg} · 한 칸 밀어냄`;
     case 'frost':
       if (tier === 1) return `첫 적 ${s.dmg} · 동결 ${s.freeze}턴 (행동·조준 취소)`;
       if (tier === 2) return `레인 전체 ${s.dmg} · 동결 ${s.freeze}턴`;
@@ -148,8 +148,8 @@ export function shotDesc(symbol, tier, gild = 0, lv = 0) {
       if (tier === 2) return `레인 전체 ${s.dmg} · 중독 ${s.poison}`;
       return `모든 적 ${s.dmg} · 중독 ${s.poison}`;
     case 'bomb':
-      if (tier === 1) return `맨 뒤 적 ${s.dmg} · 앞뒤·양옆 ${s.splash} · 방패 무시`;
-      if (tier === 2) return `맨 뒤 적 ${s.dmg} · 주변 8칸 ${s.splash} · 방패 무시`;
+      if (tier === 1) return `맨 뒤 적 ${s.dmg} · 둘레 4칸 ${s.splash} · 방패 무시`;
+      if (tier === 2) return `맨 뒤 적 ${s.dmg} · 둘레 8칸 ${s.splash} · 방패 무시`;
       return `모든 적 ${s.dmg} · 방패 무시 · 파쇄`;
     case 'lantern':
       if (tier === 1) return `방어막 +${s.guard} · 기력 +1`;
@@ -315,8 +315,8 @@ export const MODS = {
 };
 
 // 코인: 어떻게 싸웠는지에 따라 달라진다
-// 그냥 처치하는 것만으로는 벌리지 않는다. 연속 처치(한 턴 3마리째부터)·퍼펙트·빙고·절약(밤 내내 다시 돌리기를 안 씀)·클리어로 번다.
-export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, thrift: 3, clearBase: 3, riskyMult: 2, elite: 3, comboFrom: 3 };
+// 그냥 처치하는 것만으로는 벌리지 않는다. 연속 처치(한 턴 3마리째부터)·퍼펙트·빙고·클리어로 번다.
+export const COIN = { kill: 0, boss: 0, perfect: 1, bingo: 1, clearBase: 5, riskyMult: 2, elite: 3, comboFrom: 3 };
 export const COIN_LABEL = { kill: '처치', combo: '연속 처치', perfect: '퍼펙트', bingo: '빙고', thrift: '절약', clear: '클리어', elite: '정예 처치' };
 export const START_PURSE = 15; // 유물 대신 고를 수 있는 시작 코인
 export const SHOP_PRICES = { relic: 18, up: 14, fuse: 22, heal: 7, maxhp: 12, charm: 9, trim: 9, reroll: 3, train: 12, trainStep: 4 };
@@ -326,6 +326,34 @@ export const BASE_STRIP = [
   'blade', 'wave', 'frost', 'spark',
   'blade', 'wave', 'frost', 'spark', 'lantern', 'venom',
 ];
+
+// 문양 설명(처음 만났을 때 한 번 보여 준다)
+export const SYMBOL_INFO = {
+  blade: { what: '맨 앞 적부터 꿰뚫어 벤다.', tip: '한 레인에 적이 줄지어 있을 때 좋다.' },
+  wave: { what: '맨 앞 가로줄을 쓸어 뒤로 밀어낸다.', tip: '피해는 작다. 코앞까지 온 적을 밀어내 시간을 번다.' },
+  frost: { what: '적을 얼려 멈춘다. 준비하던 공격도 취소된다.', tip: '언 적을 절단이나 파동, 폭탄으로 치면 파쇄되어 큰 피해.' },
+  spark: { what: '맞은 적에서 가까운 적으로 번진다.', tip: '적이 뭉쳐 있을 때 좋다.' },
+  venom: { what: '중독시켜 매 턴 피해를 준다. 방패를 무시한다.', tip: '체력이 많은 적, 방패를 든 적에게.' },
+  lantern: { what: '방어막을 얻는다. 맞으면 방어막이 먼저 깎인다.', tip: '레인이 아니라, 밝게 빛나는 릴 칸을 한 번 더 눌러 쓴다.' },
+  bomb: { what: '레인의 맨 뒤 적에게 떨어져 둥글게 터진다. 방패를 무시한다.', tip: '피해가 크다. 뒤에 숨은 적, 뭉친 적에게.' },
+};
+
+// 입문 판: 처음 하는 사람은 문양 셋·기본 적 하나로 시작해, 밤마다 문양 하나와 적 하나가 늘어난다
+export const GUIDE = {
+  strip: ['blade', 'wave', 'lantern', 'blade', 'wave', 'blade', 'wave', 'lantern'],
+  unlock: [null, 'frost', 'spark', 'venom'], // 그 밤이 시작될 때 릴에 더해지는 문양
+  copies: { frost: 3, spark: 3, venom: 2 },
+  fresh: [null, 'archer', 'bomber', 'mask', 'drum'], // 그 밤에 처음 나오는 적
+  enemies: [
+    [['kasa', 1]],
+    [['kasa', 4], ['archer', 3]],
+    [['kasa', 3], ['archer', 2], ['bomber', 3]],
+    [['kasa', 4], ['archer', 2], ['bomber', 2], ['mask', 2]],
+    [['kasa', 3], ['archer', 2], ['bomber', 2], ['mask', 2], ['drum', 3]],
+  ],
+  doneAt: 3, // 이 밤(0부터)을 넘기면 입문을 마친 것으로 본다
+  firstRelics: ['whetstone', 'tideBell', 'oilFlask', 'thunderDrum', 'comboFlute'], // 첫 유물 후보: 이미 본 것만으로 이해되는 유물
+};
 
 // 갈림길: 밤과 밤 사이에 한 곳만 들른다
 export const STOPS = {
@@ -353,20 +381,20 @@ export const REWARDS = {
 // id는 저장 데이터와 연결되므로 이름을 바꿔도 그대로 둔다.
 // name/desc = 한국어, en/enDesc = 영어. tag = 계열(작은 배지), proc = 발동 시 화면에 뜨는 짧은 이유, up = II 강화 효과.
 export const RELICS = {
-  frostbite: { name: '살얼음', en: 'Thin Ice', color: '#7cc8ff', tag: '동결', proc: '파쇄 → 주변 동결', desc: '파쇄 시 주변 적 동결', enDesc: 'Shatter freezes nearby enemies', up: '주변 동결 2턴' },
+  frostbite: { name: '살얼음', en: 'Thin Ice', color: '#7cc8ff', tag: '동결', sym: 'frost', proc: '파쇄 → 주변 동결', desc: '파쇄 시 주변 적 동결', enDesc: 'Shatter freezes nearby enemies', up: '주변 동결 2턴' },
   thunderDrum: { name: '벼락북', en: 'Thunder Drum', color: '#ffe45c', tag: '전격', proc: '처치 → 번개', desc: '적 처치 시 가까운 적에게 번개 2', enDesc: 'On kill: 2 lightning damage to the nearest enemy', up: '번개 2 → 4' },
   counterMirror: { name: '손거울', en: 'Hand Mirror', color: '#ffd84a', tag: '되치기', proc: '퍼펙트 막기 → 방어막', desc: '되치기 피해 +2 · 퍼펙트 막기 시 방어막 +1', enDesc: 'Counter damage +2 · Perfect block: +1 Guard', up: '되치기 +4 · 방어막 +2' },
   gamblerCoin: { name: '엽전', en: 'Lucky Coin', color: '#c58cff', tag: '슬롯', proc: '다시 돌림 → 방어막', desc: '다시 돌리기 +1회 · 돌릴 때 방어막 +1', enDesc: '+1 Reroll per turn · Reroll: +1 Guard', up: '+2회 · 방어막 +2' },
   emberWick: { name: '심지', en: 'Wick', color: '#ffb347', tag: '금빛', proc: '', desc: '금빛 릴 1개로 시작 · 금빛 피해 +1', enDesc: 'Start each battle with 1 Gilded reel · Gilded damage +1', up: '금빛 릴 2개 · 피해 +2' },
-  tideBell: { name: '파도 종', en: 'Tide Bell', color: '#4ff0c4', tag: '파동', proc: '직격 → 더 밀어냄', desc: '파동 옆 피해 +1 · 직격한 적을 1칸 더 밀어냄', enDesc: 'Wave splash +1 · Direct hit pushes the enemy 1 more cell', up: '옆 피해 +2' },
+  tideBell: { name: '파도 종', en: 'Tide Bell', color: '#4ff0c4', tag: '파동', sym: 'wave', proc: '직격 → 더 밀어냄', desc: '파동 옆 피해 +1 · 직격한 적을 1칸 더 밀어냄', enDesc: 'Wave splash +1 · Direct hit pushes the enemy 1 more cell', up: '옆 피해 +2' },
   powderKeg: { name: '화약통', en: 'Powder Keg', color: '#ff8a3d', tag: '폭탄', sym: 'bomb', proc: '폭탄 처치 → 기력', desc: '폭탄 주변 피해 +1 · 폭탄 직격으로 처치 시 기력 +1', enDesc: 'Bomb splash +1 · Kill with a direct Bomb hit: +1 Stamina', up: '주변 피해 +2 · 기력 +2' },
   whetstone: { name: '숫돌', en: 'Whetstone', color: '#cfd8ff', tag: '절단', sym: 'blade', proc: '절단 처치 → 방어막', desc: '절단 관통 +1 · 절단 처치 시 방어막 +1', enDesc: 'Slash pierce +1 · Slash kill: +1 Guard', up: '관통 +2 · 방어막 +2' },
   shadowShoes: { name: '짚신', en: 'Straw Shoes', color: '#8fe8ff', tag: '회피', proc: '회피 → 반격', desc: '회피가 쉬워짐 · 회피 시 적에게 2 피해', enDesc: 'Wider dodge window · Dodge: 2 damage to the attacker', up: '회피 반격 4' },
   oilFlask: { name: '기름병', en: 'Oil Flask', color: '#ff9a5a', tag: '방어막', proc: '방어막 → 회복', desc: '방어막 사용 시 체력 +1 · 최대 방어막 +2', enDesc: 'Guard skill: heal 1 · Max Guard +2', up: '체력 +2 · 최대 방어막 +4' },
-  venomFang: { name: '독니', en: 'Fang', color: '#a6f04a', tag: '중독', proc: '처치 → 전염', desc: '중독 +2 · 중독된 적 처치 시 주변 중독 2', enDesc: 'Poison +2 · Killing a poisoned enemy spreads 2 Poison', up: '중독 +4 · 전염 4' },
-  stormRune: { name: '먹구름', en: 'Storm Cloud', color: '#b77cff', tag: '전격', proc: '', desc: '전격 연쇄 +1 · 감전 폭발 +2', enDesc: 'Spark chain +1 · Detonate +2', up: '연쇄 +2 · 폭발 +4' },
+  venomFang: { name: '독니', en: 'Fang', color: '#a6f04a', tag: '중독', sym: 'venom', proc: '처치 → 전염', desc: '중독 +2 · 중독된 적 처치 시 주변 중독 2', enDesc: 'Poison +2 · Killing a poisoned enemy spreads 2 Poison', up: '중독 +4 · 전염 4' },
+  stormRune: { name: '먹구름', en: 'Storm Cloud', color: '#b77cff', tag: '전격', sym: 'spark', proc: '', desc: '전격 연쇄 +1 · 감전 폭발 +2', enDesc: 'Spark chain +1 · Detonate +2', up: '연쇄 +2 · 폭발 +4' },
   bingoBell: { name: '금방울', en: 'Gold Bell', color: '#ffe08a', tag: '빙고', proc: '빙고 → 방어막', desc: '빙고 시 방어막 +2 · 다음 턴 금빛 +1', enDesc: 'Bingo: +2 Guard and +1 Gilded reel next turn', up: '방어막 +4' },
-  iceMirror: { name: '고드름', en: 'Icicle', color: '#bfe6ff', tag: '동결', proc: '', desc: '동결 +1턴 · 언 적이 받는 피해 +1', enDesc: 'Freeze +1 turn · Frozen enemies take +1 damage', up: '+2턴 · 피해 +2' },
+  iceMirror: { name: '고드름', en: 'Icicle', color: '#bfe6ff', tag: '동결', sym: 'frost', proc: '', desc: '동결 +1턴 · 언 적이 받는 피해 +1', enDesc: 'Freeze +1 turn · Frozen enemies take +1 damage', up: '+2턴 · 피해 +2' },
   comboFlute: { name: '피리', en: 'Flute', color: '#ff9ac0', tag: '처치', proc: '연속 처치 → 회복', desc: '한 턴 2번째 처치부터 체력 +1', enDesc: 'From the 2nd kill each turn: heal 1', up: '체력 +2' },
 };
 for (const k in RELICS) RELICS[k].build = RELICS[k].tag; // 예전 필드명 호환
@@ -381,7 +409,7 @@ export const FUSIONS = {
   tempest: { name: '뇌우', en: 'Tempest', a: 'thunderDrum', b: 'stormRune', color: '#ffe45c', proc: '', desc: '벼락북 번개가 적 2명에게', enDesc: 'Thunder Drum strikes 2 enemies' },
   plague: { name: '역병', en: 'Plague', a: 'venomFang', b: 'comboFlute', color: '#a6f04a', proc: '', desc: '중독이 줄어들지 않음', enDesc: 'Poison no longer decays' },
   duel: { name: '맞수', en: 'Rival', a: 'counterMirror', b: 'shadowShoes', color: '#ffd84a', proc: '받아치기 → 전체 피해', desc: '퍼펙트 막기·회피 성공 시 모든 적 1 피해', enDesc: 'Perfect block or dodge: 1 damage to all enemies' },
-  windfall: { name: '대박', en: 'Windfall', a: 'gamblerCoin', b: 'bingoBell', color: '#ffe08a', proc: '', desc: '턴마다 첫 다시 돌리기는 대가 없음', enDesc: 'First reroll each turn has no cost' },
+  windfall: { name: '대박', en: 'Windfall', a: 'gamblerCoin', b: 'bingoBell', color: '#ffe08a', proc: '', desc: '다시 돌리기에 대가가 없음', enDesc: 'Rerolls never have a cost' },
   gale: { name: '칼바람', en: 'Gale', a: 'whetstone', b: 'tideBell', color: '#cfd8ff', proc: '', desc: '절단이 양옆 적에게도 1 피해', enDesc: 'Slash also deals 1 to enemies on both sides' },
   torch: { name: '횃불', en: 'Torch', a: 'emberWick', b: 'oilFlask', color: '#ffb347', proc: '턴 시작 → 방어막', desc: '턴 시작 시 방어막 +1', enDesc: 'Start of turn: +1 Guard' },
 };

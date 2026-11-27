@@ -1,7 +1,7 @@
 // 게임 흐름·입력·연출 재생 담당. 규칙 판정은 전부 core/battle.js가 한다.
 import * as B from './core/battle.js';
-import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT, MAX_TIER, AFFINITY, WEAK_BONUS, RESIST_CUT, STAMINA } from './core/data.js';
-import { createRun, battleOptions, recordBattle, rollStartChoices, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop, tutorialNight, rollStops, rollRest, rollShrine, shrineCost } from './core/run.js';
+import { RUN_LENGTH, ENEMIES, SYMBOLS, SHOT_NAMES, shotDesc, shotStats, RELICS, FUSIONS, EVOLVE_AT, MAX_TIER, AFFINITY, WEAK_BONUS, RESIST_CUT, STAMINA, SYMBOL_INFO, GUIDE } from './core/data.js';
+import { createRun, battleOptions, recordBattle, rollStartChoices, applyReward, advance, generateNight, rollPaths, bankBattle, rollShop, tutorialNight, rollStops, rollRest, rollShrine, shrineCost, betweenNights, rollGuideRelics } from './core/run.js';
 import { SAVE_VERSION } from './save.js';
 import { setLang } from './i18n.js';
 import { judge, lateLimit } from './core/timing.js';
@@ -64,16 +64,16 @@ const CONCEPTS = {
   reroll: {
     kicker: '알아두기', title: '다시 돌리기', color: '#d9a0ff',
     lines: [
-      { label: '효과', text: '공격 전에 릴을 전부 다시 돌린다.' },
-      { label: '대가', text: '버튼에 적힌 일이 먼저 일어난다.', color: '#ffb8c8' },
-      { label: '보상', text: '금빛 릴 +1.', color: '#ffe08a' },
+      { label: '효과', text: '결과가 아쉬우면, 공격하기 전에 릴을 전부 다시 돌린다.' },
+      { label: '첫 번째', text: '턴마다 한 번은 대가가 없다. 마음 편히 쓴다.', color: '#8fffe2' },
+      { label: '두 번째', text: '버튼에 적힌 대가가 먼저 일어난다. 대신 금빛 릴 +1.', color: '#ffb8c8' },
     ],
   },
   gild: {
     kicker: '알아두기', title: '금빛 릴', color: '#ffd27a',
     lines: [
       { label: '효과', text: '그 칸의 공격이 피해 +1, 효과 +1.' },
-      { label: '얻기', text: '다시 돌리기 · 퍼펙트 막기/회피.' },
+      { label: '얻기', text: '퍼펙트 막기/회피 · 한 턴에 두 번째 다시 돌리기.' },
     ],
   },
   coin: {
@@ -82,7 +82,6 @@ const CONCEPTS = {
       { label: '연속 처치', text: '한 턴에 3마리째부터 +1, 5마리째부터 +2.' },
       { label: '퍼펙트', text: '막기·회피를 정확히 하면 +1.' },
       { label: '빙고', text: '한 줄마다 +1.' },
-      { label: '절약', text: '밤 내내 다시 돌리기를 안 쓰면 클리어 때 +3.' },
       { label: '클리어', text: '밤을 넘기면 보너스. 험한 길은 2배.' },
     ],
   },
@@ -95,6 +94,9 @@ const CONCEPTS = {
     ],
   },
 };
+
+// 입문 판: 이 밤(0부터)이 되기 전에는 꺼내지 않는 설명
+const CONCEPT_FROM = { bingo: 1, stamina: 0, gild: 1, reroll: 1, bane: 1, coin: 1, combo: 2, snipe: 3, block: 3 };
 
 const INTENT_TEXT = {
   move: (it) => (it.dash ? '맨 앞까지 돌진한다.' : `${it.steps}칸 다가온다.`),
@@ -161,6 +163,14 @@ export class Game {
     this.strips = [['blade', 'wave', 'frost', 'spark', 'lantern'], ['wave', 'frost', 'spark', 'lantern', 'blade'], ['frost', 'spark', 'lantern', 'blade', 'wave']];
     this.reels = [0, 1, 2].map((i) => ({ pos: i * 2, vel: 0, spinning: false, tween: null, bump: 0, flashT: 0 }));
     this.tipsSeen = new Set(store.meta.tips || []);
+    if (store.meta.guideDone === undefined) {
+      const veteran = (store.meta.best || 0) > GUIDE.doneAt || (store.meta.wins || 0) > 0;
+      store.meta.guideDone = veteran;
+      // 오래 해 온 사람에게 익숙한 문양 설명은 다시 띄우지 않는다(바뀐 파동·폭탄만 한 번 보여 준다)
+      if (veteran) for (const s of ['blade', 'frost', 'spark', 'venom', 'lantern']) this.tipsSeen.add('sym-' + s);
+      store.meta.tips = [...this.tipsSeen];
+      store.save();
+    }
     this.applySettings(store.settings);
     this.resize();
     this.setupTitleScene();
@@ -241,14 +251,15 @@ export class Game {
     const s = seed ?? hashSeed(String(Date.now()));
     const meta0 = this.store.meta;
     const first = !meta0.tutorialDone;
-    // 따라 하기를 마친 뒤부터는 캐릭터를 고른다
-    if (!first && charId === undefined) {
+    // 입문 판(문양·적·화면이 밤마다 하나씩 늘어난다)을 마친 뒤부터 캐릭터를 고른다
+    const guided = !meta0.guideDone;
+    if (!guided && charId === undefined) {
       this.overlay.showCharacters(meta0.lastChar || 'blade', (id) => this.startRun(seed, id));
       return;
     }
     if (charId) meta0.lastChar = charId;
     // 단계와 가져온 유물(첫 판 따라 하기에서는 쓰지 않는다)
-    this.run = createRun(s, first ? {} : { tier: meta0.tier || 0, heirloom: meta0.heirloom || null, char: charId || 'blade' });
+    this.run = createRun(s, guided ? { guided: true } : { tier: meta0.tier || 0, heirloom: meta0.heirloom || null, char: charId || 'blade' });
     // 개발용: ?stage=2 로 특정 전투부터 시작
     const devStage = Number(new URLSearchParams(location.search).get('stage'));
     if (devStage > 0 && devStage < RUN_LENGTH) {
@@ -269,6 +280,8 @@ export class Game {
     this.views.clear();
     this.card = null;
     this.cardQueue = [];
+    // 입문 판은 고를 것 없이 바로 첫 밤으로(유물은 첫 밤을 넘긴 뒤에 고른다)
+    if (this.run.guided) return this.startBattle();
     this.overlay.showPick({
       title: '무엇을 들고 갈까요?',
       req: '유물 하나, 또는 유물 없이 코인',
@@ -328,17 +341,28 @@ export class Game {
     });
   }
 
-  // 쉼터·사당: 하나를 고르고 떠난다
+  // 밤을 넘긴 뒤: 입문 판은 유물 고르기 → 상점 → 갈림길 순으로 하나씩 열린다
+  afterNight(bank) {
+    const flow = betweenNights(this.run);
+    if (flow.pick) this.openRoom('relic', rollGuideRelics(this.run));
+    else if (flow.shop) this.openShop(rollShop(this.run), bank);
+    else this.chooseStop(bank);
+  }
+
+  // 쉼터·사당·첫 유물: 하나를 고르고 떠난다
   openRoom(kind, ids) {
     this.checkpoint('room', { kind, ids });
     const run = this.run;
     const shrine = kind === 'shrine';
     const cost = shrineCost(run);
+    const text = {
+      relic: { title: '유물을 하나 고르세요', req: '유물은 이번 판 내내 힘이 된다', go: '이걸로', plain: true },
+      rest: { title: '쉼터', req: `하나를 고르세요 · 체력 ${run.hp}/${run.maxHp}`, go: '이걸로' },
+      shrine: { title: '도깨비 사당', req: `유물 하나를 받는다 · 체력 ${run.hp} → ${run.hp - cost}`, go: '체력을 바치고 받는다' },
+    }[kind];
     this.overlay.showPick({
-      title: shrine ? '도깨비 사당' : '쉼터',
-      req: shrine ? `유물 하나를 받는다 · 체력 ${run.hp} → ${run.hp - cost}` : `하나를 고르세요 · 체력 ${run.hp}/${run.maxHp}`,
+      ...text,
       ids,
-      go: shrine ? '체력을 바치고 받는다' : '이걸로',
       skip: shrine ? '그냥 지나간다' : null,
       run,
       used: this.store.meta.relicsUsed || [],
@@ -356,7 +380,21 @@ export class Game {
     this.overlay.showShop(this.run, shop, bank, (id) => {
       this.noteRelic(id);
       this.checkpoint('shop', { shop, bank });
-    }, () => this.choosePath());
+    }, () => this.choosePath(), this.once('shop') ? '밤에 번 코인으로 사는 걸세. 유물은 이번 판 내내 힘이 되지.' : null);
+  }
+
+  // 처음 한 번만 참(안내 문구를 한 번만 보여 줄 때 쓴다)
+  once(id) {
+    if (this.tipsSeen.has('once-' + id)) return false;
+    this.learn('once-' + id);
+    return true;
+  }
+
+  learn(id) {
+    if (this.tipsSeen.has(id)) return;
+    this.tipsSeen.add(id);
+    this.store.meta.tips = [...this.tipsSeen];
+    this.store.save();
   }
 
   takeReward(id) {
@@ -405,12 +443,25 @@ export class Game {
   // ───── 첫 판 따라 하기 ─────
   // 지금 눌러야 할 곳과 한 줄 설명을 돌려준다(없으면 null). 입력을 막지는 않는다.
   coachHint() {
-    const c = this.coach;
     const st = this.st;
-    if (!c || c.done || !st || this.mode !== 'battle' || this.card || this.cutin) return null;
+    if (!st || this.mode !== 'battle' || this.card || this.cutin) return null;
     const ui = this.ui;
     const L = this.L;
     const btn = (id) => this.buttons.find((b) => b.id === id);
+    // 막기·회피는 처음 해 볼 때까지 짚어 준다(따라 하기가 끝난 뒤에도)
+    if (ui.phase === 'react' && ui.react && !ui.react.input) {
+      const heavy = ui.react.attack.style === 'heavy';
+      const b = btn(heavy ? 'dodge' : 'guard');
+      if (b && !this.tipsSeen.has(heavy ? 'did-dodge' : 'did-guard')) {
+        return { rect: b, text: heavy ? '붉은 고리는 막을 수 없습니다. 원에 닿는 순간 회피!' : '고리가 원에 닿는 순간 막기! 정확하면 되받아칩니다', key: heavy ? 'K' : 'Space' };
+      }
+    }
+    if (ui.phase === 'aim' && !this.busy && st.shotsFired === 0 && st.rerollCount === 0 && B.canReroll(st) && !this.tipsSeen.has('did-reroll') && btn('reroll')
+      && st.shots.every((s) => s.tier === 1) && !(st.bingos || []).length) {
+      return { rect: btn('reroll'), text: '밋밋하면 다시 돌리기! 첫 번째는 대가 없음' };
+    }
+    const c = this.coach;
+    if (!c || c.done) return null;
     if (ui.phase === 'spin' && !this.busy) {
       return { rect: leverRect(L), text: st.turn === 1 ? '레버를 당겨 이번 턴의 공격을 뽑으세요' : '다시 레버를 당기세요', key: 'Space' };
     }
@@ -419,18 +470,10 @@ export class Game {
       const a = reelRect(L, 0);
       const b = reelRect(L, 2);
       const reels = { x: a.x, y: a.y, w: b.x + b.w - a.x, h: a.h };
-      if (st.turn >= 2 && !c.rerollSeen && st.shotsFired === 0 && B.canReroll(st) && btn('reroll')) {
-        return { rect: btn('reroll'), text: '결과가 아쉬우면 다시 돌리기. 대가가 버튼에 적혀 있습니다. 안 써도 됩니다', key: 'R' };
-      }
       if (st.shots[ui.sel].symbol === 'lantern') return { rect: reels, text: '방어막 문양입니다. 밝은 칸을 한 번 더 누르면 방어막을 얻습니다', key: 'Q W E' };
       if (!c.fired) return { rect: field, text: '가운데 줄 3칸이 이번 턴의 공격입니다. 적이 있는 레인을 눌러 쏘세요', key: '1 2 3' };
       if (st.turn === 1) return { rect: field, text: '남은 공격도 쏘세요. 슬롯의 다른 문양을 누르면 순서를 바꿀 수 있습니다', key: '1 2 3' };
       return null;
-    }
-    if (ui.phase === 'react' && ui.react && !ui.react.input && !c.reacted) {
-      const heavy = ui.react.attack.style === 'heavy';
-      const b = btn(heavy ? 'dodge' : 'guard');
-      if (b) return { rect: b, text: heavy ? '붉은 고리는 회피!' : '고리가 원에 닿는 순간 막기! 정확하면 되받아칩니다', key: heavy ? 'K' : 'Space' };
     }
     return null;
   }
@@ -450,7 +493,7 @@ export class Game {
 
   nextCard() {
     if (this.card || !this.cardQueue.length) return;
-    if (this.coach && !this.coach.done) return;
+    if (this.cardsBlocked()) return;
     if (this.mode !== 'battle' || !(this.ui.phase === 'spin' || this.ui.phase === 'aim')) return;
     this.showCard(this.cardQueue.shift());
   }
@@ -461,24 +504,46 @@ export class Game {
     this.nextCard();
   }
 
+  // 따라 하기의 첫 턴에는 설명 카드를 띄우지 않는다(레버와 쏘기에만 집중)
+  cardsBlocked() {
+    return !!(this.coach && !this.coach.done && this.st && this.st.turn < 2);
+  }
+
+  // 설명은 한 턴에 하나만. 밀린 설명은 다음에 같은 상황이 오면 나온다.
+  // 적의 차례에 생긴 설명은 다음 내 차례가 시작될 때 뜨므로, 다음 턴의 몫으로 센다.
+  takeCardSlot() {
+    const round = (this.cardRound || 0) + (this.inEnemyPhase ? 1 : 0);
+    if ((this.cardSlotRound ?? -1) >= round) return false;
+    this.cardSlotRound = round;
+    return true;
+  }
+
   conceptCard(key) {
     const id = 'card-' + key;
-    if (this.coach && !this.coach.done) return;
-    if (this.tipsSeen.has(id)) return;
-    // 한 턴에 설명은 하나만. 밀린 설명은 다음에 같은 상황이 오면 나온다.
-    const turnKey = `${this.run ? this.run.stage : 0}:${this.st ? this.st.turn : 0}`;
-    if (this.conceptTurn === turnKey) return;
-    this.conceptTurn = turnKey;
-    this.tipsSeen.add(id);
-    this.store.meta.tips = [...this.tipsSeen];
-    this.store.save();
+    if (this.tipsSeen.has(id) || this.cardsBlocked()) return;
+    // 입문 판: 아직 배울 차례가 아닌 설명은 미룬다
+    if (this.run && this.run.guided && this.run.stage < (CONCEPT_FROM[key] || 0)) return;
+    if (!this.takeCardSlot()) return;
+    this.learn(id);
     this.cardQueue.push(key === 'block' ? this.enemyCard('mask', null, '방패에 막혔다!') : CONCEPTS[key]);
+  }
+
+  // 문양을 처음 만났을 때 한 번: 무엇을 하는지, 언제 쓰면 좋은지
+  symbolCard(sym, added = false) {
+    const id = 'sym-' + sym;
+    const info = SYMBOL_INFO[sym];
+    if (!info || this.tipsSeen.has(id) || this.cardsBlocked() || !this.takeCardSlot()) return false;
+    this.learn(id);
+    const lines = [{ label: '효과', text: info.what }, { label: '요령', text: info.tip, color: '#8fffe2' }];
+    if (added) lines.push({ label: '추가', text: '이번 밤부터 릴에 섞여 나온다.', color: '#ffe08a' });
+    this.cardQueue.push({ kicker: added ? '새 문양이 생겼다' : '문양', title: SYMBOLS[sym].name, sym, color: SYMBOLS[sym].fx2, lines });
+    return true;
   }
 
   enemyCard(type, e, kicker) {
     const sp = ENEMIES[type];
     const lines = [{ label: '특징', text: sp.act }, { label: '공략', text: sp.how, color: '#8fffe2' }];
-    const aff = AFFINITY[type];
+    const aff = this.st && this.st.noAffinity ? null : AFFINITY[type]; // 입문 첫 밤에는 상성이 없다
     if (aff && aff.weak) lines.push({ label: '약점', text: `${SYMBOLS[aff.weak].name} (피해 +${WEAK_BONUS})`, color: '#ffd84a' });
     if (aff && aff.resist) lines.push({ label: '저항', text: `${SYMBOLS[aff.resist].name} (직격 피해 -${RESIST_CUT})`, color: '#b8b0c8' });
     if (e && e.elite) lines.unshift({ label: '정예', text: '체력과 공격력이 높다. 처치하면 코인 +3.', color: '#ffd84a' });
@@ -502,19 +567,32 @@ export class Game {
     return { kicker: `유물 · ${R.tag}`, title: R.name + (level >= 3 ? ' III' : level === 2 ? ' II' : ''), relic: id, color: R.color, lines };
   }
 
+  freshSymbolCard() {
+    const st = this.st;
+    if (!st || !st.shots) return false;
+    const first = st.shots.find((s) => !s.used);
+    const fresh = [first && first.symbol, ...st.shots.map((s) => s.symbol)].find((s) => s && SYMBOL_INFO[s] && !this.tipsSeen.has('sym-' + s));
+    return fresh ? this.symbolCard(fresh) : false;
+  }
+
   queueIntros() {
-    if (this.coach && !this.coach.done) return;
+    if (this.cardsBlocked()) return;
+    const st = this.st;
+    // 입문 판: 이번 밤에 새로 더해진 문양부터 알려 준다
+    if (this.run.newSymbol && this.symbolCard(this.run.newSymbol, true)) return;
+    if (this.coach && !this.coach.done) return; // 따라 하기 동안에는 적 설명을 미룬다
+    // 첫 밤에는 문양 설명이 먼저다(적 설명은 문양을 다 본 뒤나 다섯째 턴부터)
+    if (this.run.stage === 0 && st.turn <= 4 && this.run.strips.flat().some((s) => SYMBOL_INFO[s] && !this.tipsSeen.has('sym-' + s))) return;
+    // 처음 만난 적은 한 턴에 하나씩 소개한다
     const seen = new Set(this.store.meta.seenEnemies || []);
-    let changed = false;
-    for (const e of this.st.enemies) {
-      if (!e.alive || seen.has(e.type)) continue;
+    const order = st.enemies.filter((e) => e.alive && !seen.has(e.type)).sort((a, b) => (a.type === 'kasa') - (b.type === 'kasa'));
+    for (const e of order) {
+      if (!this.takeCardSlot()) return;
       seen.add(e.type);
-      changed = true;
-      this.cardQueue.push(this.enemyCard(e.type));
-    }
-    if (changed) {
       this.store.meta.seenEnemies = [...seen];
       this.store.save();
+      this.cardQueue.push(this.enemyCard(e.type));
+      return;
     }
   }
 
@@ -524,8 +602,8 @@ export class Game {
     for (const v of this.views.values()) {
       if (v.dying > 0) continue;
       const q = this.renderer.viewPos(v);
-      if (Math.abs(p.x - q.x) < 40 * q.s + 6 && p.y < q.y + 18 && p.y > q.y - 92 * q.k) {
-        const d = Math.abs(p.y - (q.y - 34 * q.k)) + Math.abs(p.x - q.x) * 0.3;
+      if (Math.abs(p.x - q.x) < 40 * q.s + 6 && p.y < q.y + 18 && p.y > q.y - 102 * q.k) {
+        const d = Math.abs(p.y - (q.y - 38 * q.k)) + Math.abs(p.x - q.x) * 0.3;
         if (d < bestD) { bestD = d; best = v; }
       }
     }
@@ -613,6 +691,8 @@ export class Game {
   }
 
   beginPlayerTurn() {
+    this.cardRound = (this.cardRound || 0) + 1;
+    this.inEnemyPhase = false;
     this.busy = false;
     this.ui.phase = 'spin';
     this.ui.sel = null;
@@ -644,7 +724,7 @@ export class Game {
       if (it && it.kind === 'brace') this.dangers.push({ lane: e.lane, row: e.row, style: 'heavy' });
     }
     this.omenMark = null;
-    if (this.ui.phase === 'aim' && B.canReroll(st) && !(B.has(st, 'windfall') && st.rerollCount === 0)) {
+    if (this.ui.phase === 'aim' && B.canReroll(st) && !B.rerollFree(st)) {
       const d = B.describeOmen(st, st.omens[st.rerollCount]);
       if (d) this.omenMark = d;
     }
@@ -720,7 +800,7 @@ export class Game {
     }
     const aim = ui.phase === 'aim';
     const canRe = aim && B.canReroll(st) && !this.busy;
-    const maxRe = 2 + (st.relics.includes('gamblerCoin') ? 1 : 0);
+    const maxRe = st.rerollMax > 0 ? st.rerollMax + (st.relics.includes('gamblerCoin') ? 1 : 0) : 0;
     let sub;
     let sub2 = null;
     let subColors = null;
@@ -728,17 +808,23 @@ export class Game {
     if (!myTurn) sub = '레버를 당긴 뒤, 결과가 아쉬우면 사용';
     else if (st.shotsFired > 0) sub = '이미 공격을 시작해서 이번 턴은 불가';
     else if (st.rerollsLeft <= 0) sub = '이번 턴 횟수를 다 썼다';
-    else {
+    else if (st.rerollCount === 0) {
+      // 턴마다 첫 번째는 대가도 보상도 없다
+      sub = '이번 턴 첫 번째 — 대가 없음';
+      subColors = ['#8fffe2', '#ffe08a'];
+    } else {
       const d = B.describeOmen(st, st.omens[st.rerollCount]);
-      sub = B.has(st, 'windfall') && st.rerollCount === 0 ? '대가 없음 (대박)' : `대가: ${d ? d.text : '?'}`;
+      sub = B.rerollFree(st) ? '대가 없음 (대박)' : `대가: ${d ? d.text : '?'}`;
       sub2 = '보상: 금빛 릴 +1';
       subColors = ['#ffb8c8', '#ffe08a'];
     }
-    btns.push({ id: 'reroll', x: 14, y, w: 322, h, label: '다시 돌리기', pips: myTurn ? st.rerollsLeft : maxRe, pipMax: maxRe, sub, sub2, subColors, style: 'gamble', enabled: canRe, key: 'R' });
+    // 입문 판 첫 밤에는 다시 돌리기가 없다 → 버튼도 없다
+    const noRe = maxRe === 0;
+    if (!noRe) btns.push({ id: 'reroll', x: 14, y, w: 322, h, label: '다시 돌리기', pips: myTurn ? st.rerollsLeft : maxRe, pipMax: maxRe, sub, sub2, subColors, style: 'gamble', enabled: canRe, key: 'R' });
     const left = B.shotsLeft(st);
     const confirm = ui.confirmEnd;
     btns.push({
-      id: 'end', x: 346, y, w: 180, h,
+      id: 'end', x: noRe ? 14 : 346, y, w: noRe ? 512 : 180, h,
       label: confirm ? '정말 종료?' : '턴 종료',
       sub: !myTurn ? '공격한 뒤 사용' : left ? (confirm ? `공격 ${left}개를 버림` : `남은 공격 ${left}개`) : '공격 완료',
       style: confirm ? 'primary' : 'secondary', enabled: aim && !this.busy, key: 'Enter',
@@ -1150,6 +1236,7 @@ export class Game {
   async doReroll() {
     if (!B.canReroll(this.st) || this.busy || this.ui.phase !== 'aim') return;
     this.busy = true;
+    this.learn('did-reroll');
     this.ui.phase = 'spinning';
     this.ui.preview = null;
     this.refresh();
@@ -1174,8 +1261,10 @@ export class Game {
       const st = this.st;
       const plain = st.shots.every((s) => s.tier === 1) && !(st.bingos || []).length; // 연결도 빙고도 없는 판
       const later = st.turn >= 2 || this.run.stage > 0;
+      // 처음 보는 문양(고른 것부터)
+      this.freshSymbolCard();
       if (st.reels.some((r) => r.gilded)) this.conceptCard('gild');
-      if (later && plain && B.canReroll(st)) this.conceptCard('reroll');
+      if (st.rerollCount >= 1 && B.canReroll(st)) this.conceptCard('reroll'); // 한 번 써 본 뒤: 두 번째에는 대가가 있다
       if (later && [0, 1, 2].some((l) => B.laneTargets(st, l).length >= 2)) this.conceptCard('snipe');
     }
     this.nextCard();
@@ -1197,6 +1286,7 @@ export class Game {
       });
       this.spinDone = () => {
         const top = Math.max(...ev.shots.filter((s) => !s.bonus).map((s) => s.tier));
+        this.freshSymbolCard(); // 처음 보는 문양이 있으면 설명을 준비한다(축하 연출이 끝난 뒤에 뜬다)
         const rects = [0, 1, 2].map((i) => reelRect(this.L, i));
         if (top === 3) {
           const sh = ev.shots[0];
@@ -1248,9 +1338,10 @@ export class Game {
           const sub = level >= 3 ? '빙고 기술이 전부 금빛 잭팟으로!' : level === 2 ? '빙고 기술이 잭팟급으로 강화!' : `보너스 기술 +${SHOT_NAMES[bingos[0].symbol][2]}`;
           this.showBanner(title, sub, 1.4 + level * 0.3, '#ffe08a', 36 + level * 7);
           this.celebrate(level);
-          this.conceptCard('bingo');
+          if (!this.freshSymbolCard()) this.conceptCard('bingo');
         }
-        this.waitReal(bingos.length ? 750 + level * 280 : top >= 2 ? 460 : 120).then(resolve);
+        const queued = this.cardQueue.length > 0;
+        this.waitReal(bingos.length ? (queued ? 1500 + level * 320 : 750 + level * 280) : top === 3 ? (queued ? 1500 : 460) : top === 2 ? (queued ? 900 : 460) : 120).then(resolve);
       };
     });
   }
@@ -1355,8 +1446,8 @@ export class Game {
     const st = this.st;
     if (st.phase !== 'aim') return;
     this.busy = true;
-    if (this.coach && st.turn >= 2) this.coach.rerollSeen = true;
-    if (this.coach && st.turn >= 3 && this.coach.reacted) this.finishCoach();
+    if (this.coach && st.turn >= 2) this.finishCoach(); // 레버·쏘기 따라 하기는 첫 두 턴까지
+    this.inEnemyPhase = true;
     this.ui.phase = 'enemy';
     this.ui.preview = null;
     this.ui.sel = null;
@@ -1408,7 +1499,7 @@ export class Game {
   runReaction(attack) {
     const assist = this.settings.assist ? 1.4 : 1;
     // 따라 하기의 첫 공격은 천천히 들어온다
-    const learn = this.coach && !this.coach.done && !this.coach.reacted ? 1.6 : 1;
+    const learn = !this.tipsSeen.has(attack.style === 'heavy' ? 'did-dodge' : 'did-guard') ? 1.6 : 1;
     const dur = attack.windup * (this.settings.assist ? 1.2 : 1) * learn;
     const now = this.now();
     const v = this.views.get(attack.attackerId);
@@ -1429,6 +1520,7 @@ export class Game {
     const shoes = action === 'dodge' && this.st.relics.includes('shadowShoes') ? 1.3 : 1;
     const grade = judge(action, offset, r.assist * shoes);
     r.input = { action, grade, offset };
+    this.learn(action === 'dodge' ? 'did-dodge' : 'did-guard');
     const P = this.player;
     if (action === 'guard') {
       P.pose = 'guard';
@@ -1623,18 +1715,20 @@ export class Game {
         meta.wins = (meta.wins || 0) + 1;
         // 지금 단계를 넘겼으면 다음 단계가 열린다
         const tier = this.run.tier || 0;
-        this.run.unlocked = tier >= (meta.tier || 0) && tier < MAX_TIER;
+        this.run.unlocked = !this.run.guided && tier >= (meta.tier || 0) && tier < MAX_TIER; // 입문 판 클리어로는 다음 단계가 열리지 않는다
         if (this.run.unlocked) meta.tier = tier + 1;
         this.store.run = null;
+        if (this.run.guided) meta.guideDone = true;
         this.store.save();
         this.mode = 'result';
         this.overlay.showResult(true, this.run, meta);
         return;
       }
+      if (this.run.guided && this.run.stage >= GUIDE.doneAt) meta.guideDone = true; // 입문을 마쳤다: 다음 판부터 캐릭터·시작 유물·모든 문양
       this.store.save();
       this.mode = 'reward';
-      // 밤을 넘기면 갈림길: 상점·쉼터·사당 중 한 곳만 들른다
-      this.chooseStop(bank);
+      // 밤을 넘기면 갈림길: 상점·쉼터·사당 중 한 곳만 들른다(입문 판은 하나씩 열린다)
+      this.afterNight(bank);
     } else {
       const timeUp = st.loseReason === 'time';
       this.audio.play('lose');
@@ -1652,10 +1746,17 @@ export class Game {
   // 다음 밤의 길 고르기(순한 길 / 험한 길)
   choosePath() {
     this.checkpoint('path');
-    this.overlay.showPaths(this.run, rollPaths(this.run), (def) => {
+    const defs = rollPaths(this.run);
+    // 입문 판 초반에는 길을 고르지 않고 순한 길로 간다
+    if (defs.length > 1 && !betweenNights(this.run).paths) {
+      advance(this.run, defs[0]);
+      this.startBattle();
+      return;
+    }
+    this.overlay.showPaths(this.run, defs, (def) => {
       advance(this.run, def);
       this.startBattle();
-    });
+    }, defs.length > 1 && this.once('paths') ? '험한 길은 조건이 붙는 대신 코인을 2배로 번다.' : null);
   }
 
   // 유물 수집 기록(상점 구매 포함)
@@ -1690,7 +1791,7 @@ export class Game {
   impactPoint(v) {
     const p = this.renderer.viewPos(v);
     const h = { kasa: 42, mask: 46, archer: 48, elder: 48, bomber: 40, healer: 40, boar: 34 }[v.type] || 40;
-    return { x: p.x, y: p.y - h * p.k * 0.86, k: p.k };
+    return { x: p.x, y: p.y - h * p.k * 0.95, k: p.k };
   }
 
   playerMuzzle() {
@@ -2048,6 +2149,10 @@ export class Game {
         if (!v) break;
         const steps = Math.abs(ev.to - ev.from);
         this.audio.play('move', { hop: ev.hop });
+        if (ev.type === 'push') {
+          const pp = this.impactPoint(v);
+          fx.text(pp.x, pp.y - 46, steps >= 2 ? '두 칸 밀려남' : '밀려남', { color: '#8fffe2', size: 16, font: 'num', life: 0.9 });
+        }
         if (ev.gust) {
           const gp = this.impactPoint(v);
           fx.text(gp.x, gp.y - 60, '빠른 걸음', { color: '#c9e8ff', size: 18, font: 'num' });
@@ -2281,6 +2386,12 @@ export class Game {
           break;
         }
         this.audio.play('burst');
+        if (ev.sweep) {
+          for (const dir of [0, Math.PI]) {
+            fx.burst(p.x, y, { n: 16, speed: 560, color: ['#8fffe2', '#4ff0c4', '#ffffff'], kind: 'streak', size: 5, life: 0.38, angle: dir, spread: 0.3 });
+            fx.burst(p.x, y + 10, { n: 10, speed: 380, color: ['#d6fff4', '#4ff0c4'], kind: 'dot', size: 4, life: 0.5, angle: dir, spread: 0.2 });
+          }
+        }
         fx.ring(p.x, y, { r0: 10, r1: ev.tier === 2 ? 190 : 130, color: '#4ff0c4', w: 9, life: 0.5, sy: 0.55 });
         fx.ring(p.x, y, { r0: 6, r1: 80, color: '#ffffff', w: 4, life: 0.3 });
         fx.burst(p.x, y, { n: 30, speed: 330, color: ['#8fffe2', '#4ff0c4', '#ffffff'], kind: 'dot', size: 4, life: 0.6, g: 300 });

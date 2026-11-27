@@ -23,7 +23,12 @@ const overlay = new Overlay(document.getElementById('overlay'), {
   },
   abandon: () => game.clearCheckpoint(),
   replayTutorial: () => {
+    // 입문 판을 처음부터: 따라 하기, 단계별 구성, 한 번만 나오는 설명을 모두 되돌린다
     store.meta.tutorialDone = false;
+    store.meta.guideDone = false;
+    store.meta.tips = [];
+    store.meta.seenEnemies = [];
+    game.tipsSeen.clear();
     store.save();
   },
   title: () => {

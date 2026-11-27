@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createBattle, spin, reroll, canReroll, fireShot, previewShot, endPlayerTurn,
+  createBattle, spin, reroll, rerollFree, canReroll, fireShot, previewShot, endPlayerTurn,
   nextEnemyStep, resolveReaction, resolveCounter, previewCounter, computeIntents, decide, alive, describeOmen, canSnipe, reactCost,
 } from '../src/core/battle.js';
 import { evaluateReels, evaluateLines } from '../src/core/slot.js';
@@ -152,18 +152,20 @@ test('같은 시드 + 같은 입력 = 같은 전투 (결정성)', () => {
   assert.equal(play(), play());
 });
 
-test('재굴림: 흉조 예고대로 적용되고 금빛 릴이 늘어남', () => {
+test('재굴림: 턴마다 첫 번째는 대가 없음, 두 번째는 흉조 예고대로 적용되고 금빛 릴이 늘어남', () => {
   const st = mk([['kasa', 1, 2]]);
   spin(st);
-  st.omens = [{ kind: 'hasten', id: st.enemies[0].id }, { kind: 'summon', lane: 2 }];
-  const d = describeOmen(st, st.omens[0]);
-  assert.match(d.text, /전진/);
+  st.omens = [{ kind: 'summon', lane: 2 }, { kind: 'hasten', id: st.enemies[0].id }];
+  assert.equal(rerollFree(st), true);
   reroll(st);
-  assert.equal(st.enemies[0].row, 3);
+  assert.equal(st.enemies[0].row, 2); // 첫 번째: 아무 일도 없다
+  assert.equal(alive(st).length, 1);
+  assert.equal(st.reels.filter((r) => r.gilded).length, 0);
+  assert.equal(rerollFree(st), false);
+  assert.match(describeOmen(st, st.omens[st.rerollCount]).text, /전진/);
+  reroll(st);
+  assert.equal(st.enemies[0].row, 3); // 두 번째: 예고된 대가
   assert.equal(st.reels.filter((r) => r.gilded).length, 1);
-  reroll(st);
-  assert.equal(alive(st).length, 2);
-  assert.equal(st.reels.filter((r) => r.gilded).length, 2);
   assert.equal(canReroll(st), false);
   fireShot(st, 0, 0);
   assert.throws(() => reroll(st));
@@ -565,15 +567,15 @@ test('밤 생성: 같은 판이면 같은 구성, 첫 무리는 간격을 두고
   assert.equal(rollPaths(last)[0].objective.type, 'hunt');
 });
 
-test('코인: 그냥 처치는 0, 연속 처치·퍼펙트·절약·클리어로 번다', () => {
+test('코인: 그냥 처치는 0, 연속 처치·퍼펙트·클리어로 번다(다시 돌려도 손해 없음)', () => {
   let st = mk([['kasa', 0, 3], ['kasa', 1, 3], ['kasa', 2, 3]]);
   st.enemies.forEach((e) => (e.hp = 1));
   st.def.clearCoins = 4;
   setShots(st, [['wave', 1]]);
   fireShot(st, 0, 1);
-  assert.deepEqual(st.coinBy, { combo: 1, thrift: 3, clear: 4 });
+  assert.deepEqual(st.coinBy, { combo: 1, clear: 4 });
   assert.equal(st.result, 'win');
-  // 절약: 다시 돌리기를 한 번이라도 쓰면 없다
+  // 다시 돌리기를 써도 클리어 코인은 그대로
   st = mk([['kasa', 1, 3]]);
   st.def.clearCoins = 4;
   spin(st);
@@ -583,6 +585,7 @@ test('코인: 그냥 처치는 0, 연속 처치·퍼펙트·절약·클리어로
   fireShot(st, 0, 1);
   assert.equal(st.result, 'win');
   assert.equal(st.coinBy.thrift, undefined);
+  assert.equal(st.coinBy.clear, 4);
   // 멧돼지는 앞에 적이 있어도 뛰어넘는다
   st = mk([['boar', 1, 0], ['kasa', 1, 2]]);
   st.enemies[0].charge = true;
@@ -926,4 +929,98 @@ test('사당: 유물을 받고 체력을 바친다(1 아래로는 내려가지 �
   assert.equal(shrineCost(run), 1);
   takeShrine(run, rollShrine(run)[0]);
   assert.equal(run.hp, 1);
+});
+
+// ───────── v0.25: 파동·상점·입문 판 ─────────
+import { betweenNights, rollGuideRelics } from '../src/core/run.js';
+import { GUIDE, SYMBOL_INFO, RELICS as RELICS25 } from '../src/core/data.js';
+
+test('파동: 맨 앞 가로줄만 치고(뒤로는 안 번진다) 맞은 적을 모두 밀어낸다. 큰 파동은 두 칸', () => {
+  let st = mk([['kasa', 1, 3], ['kasa', 0, 3], ['kasa', 2, 3], ['kasa', 1, 2]]);
+  setShots(st, [['wave', 1]]);
+  fireShot(st, 0, 1);
+  const [mid, left, right, back] = st.enemies;
+  assert.equal(mid.hp, mid.maxHp - 2);
+  assert.equal(left.hp, left.maxHp - 1);
+  assert.equal(right.hp, right.maxHp - 1);
+  assert.equal(back.hp, back.maxHp, '뒤의 적은 맞지 않는다');
+  assert.equal(mid.row, 3, '뒤가 막혀 있으면 밀리지 않는다');
+  assert.equal(left.row, 2);
+  assert.equal(right.row, 2);
+  st = mk([['kasa', 1, 4], ['kasa', 2, 4]]);
+  setShots(st, [['wave', 2]]);
+  fireShot(st, 0, 1);
+  assert.equal(st.enemies[0].row, 2);
+  assert.equal(st.enemies[1].row, 2);
+});
+
+test('상점: 새 유물은 늘 두 칸, 지난 상점에 나왔던 유물은 다시 내놓지 않는다', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const run = createRun(seed);
+    run.coins = 99;
+    const a = rollShop(run);
+    const relicsOf = (shop) => shop.items.map((it) => it.id).filter((id) => RELICS25[id] && !RELICS25[id].fusion);
+    const ra = relicsOf(a);
+    assert.equal(ra.length, 2);
+    assert.ok(a.items.length <= 5);
+    buyItem(run, a, 0);
+    const b = rollShop(run);
+    const rb = relicsOf(b);
+    assert.equal(rb.length, 2);
+    assert.ok(rb.every((id) => !ra.includes(id)), '지난 상점의 유물이 다시 나왔다');
+    assert.ok(rb.every((id) => !run.relics.includes(id)));
+  }
+});
+
+test('입문 판: 문양 셋·우산 도깨비로 시작해 밤마다 문양 하나와 적 하나가 늘어난다', () => {
+  for (let seed = 1; seed <= 30; seed++) {
+    const run = createRun(seed, { guided: true, char: 'bomb', tier: 3 });
+    assert.equal(run.char, 'blade');
+    assert.equal(run.tier, 3);
+    const kinds = () => [...new Set(run.strips.flat())].sort();
+    assert.deepEqual(kinds(), ['blade', 'lantern', 'wave']);
+    assert.deepEqual(Object.keys(run.def.counts), ['kasa']);
+    // 첫 밤: 다시 돌리기·저격·상성 없음
+    const o = battleOptions(run);
+    assert.equal(o.rerolls, 0);
+    assert.equal(o.snipes, 0);
+    assert.equal(o.affinity, false);
+    assert.equal(o.bingo, false);
+    const { st } = createBattle(run.def, o);
+    spin(st);
+    assert.equal(canReroll(st), false);
+    assert.equal(canSnipe(st, 0), false);
+    // 유물 후보는 지금 가진 문양으로 쓸 수 있는 것만
+    for (const id of rollGuideRelics(run)) assert.ok(!RELICS25[id].sym || ['blade', 'wave', 'lantern'].includes(RELICS25[id].sym), id);
+    assert.deepEqual(betweenNights(run), { pick: true, shop: false, stops: false, paths: false });
+    const seen = ['kasa'];
+    for (let stage = 1; stage <= 4; stage++) {
+      advance(run);
+      if (GUIDE.unlock[stage]) {
+        assert.equal(run.newSymbol, GUIDE.unlock[stage]);
+        assert.ok(run.strips.every((s) => s.filter((x) => x === GUIDE.unlock[stage]).length === GUIDE.copies[GUIDE.unlock[stage]]));
+      } else assert.equal(run.newSymbol, null);
+      const types = Object.keys(run.def.counts);
+      const fresh = types.filter((t) => !seen.includes(t));
+      assert.deepEqual(fresh, [GUIDE.fresh[stage]], `밤 ${stage + 1}: 새 적은 하나만`);
+      assert.ok(run.def.waves[0].units.some((u) => u[0] === GUIDE.fresh[stage]), '새 적은 첫 무리에 선다');
+      seen.push(...fresh);
+      assert.equal(run.def.elites, 0);
+      if (stage <= GUIDE.doneAt) assert.equal(run.def.objective.type, 'annihilate');
+    }
+    // 넷째 밤까지 문양이 모두 모이면 기본 구성과 같다
+    assert.deepEqual(kinds(), ['blade', 'frost', 'lantern', 'spark', 'venom', 'wave']);
+    assert.equal(run.strips[0].length, BASE_STRIP.length);
+    assert.equal(battleOptions(run).rerolls, undefined);
+  }
+  const b = createRun(3, { guided: true });
+  b.stage = 1;
+  assert.deepEqual(betweenNights(b), { pick: false, shop: true, stops: false, paths: false });
+  assert.equal(rollShop(b).items.length, 3, '입문 판 첫 상점은 유물 둘과 회복');
+  b.stage = 2;
+  assert.deepEqual(betweenNights(b), { pick: false, shop: false, stops: true, paths: false });
+  b.stage = 3;
+  assert.deepEqual(betweenNights(b), { pick: false, shop: false, stops: true, paths: true });
+  assert.deepEqual(betweenNights(createRun(3)), { pick: false, shop: false, stops: true, paths: true });
+  for (const s of ['blade', 'wave', 'frost', 'spark', 'venom', 'lantern', 'bomb']) assert.ok(SYMBOL_INFO[s].what && SYMBOL_INFO[s].tip);
 });

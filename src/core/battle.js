@@ -94,12 +94,15 @@ export function createBattle(def, opt) {
     reels: [],
     shots: [],
     shotsFired: 0,
+    rerollMax: opt.rerolls ?? REROLLS_PER_TURN, // 턴마다 다시 돌릴 수 있는 횟수(입문 첫 밤은 0)
+    snipeMax: opt.snipes ?? SNIPES_PER_TURN,
     rerollsLeft: 0,
     rerollCount: 0,
     turnGild: 0,
     omens: [],
     enemies: [],
-    noAffinity: opt.affinity === false, // 테스트용: 상성 없이 기본 수치만 본다
+    noAffinity: opt.affinity === false, // 상성 없이 기본 수치만 본다(테스트, 입문 첫 밤)
+    noBingo: opt.bingo === false,
     nextId: 1,
     waves: def.waves.map((w) => ({ at: w.at, units: w.units.map((u) => u.slice()), done: false })),
     pullWaves: def.pullWaves !== false,
@@ -223,10 +226,10 @@ function startTurn(st, events) {
     }
   }
   st.phase = 'spin';
-  st.rerollsLeft = REROLLS_PER_TURN + lv(st, 'gamblerCoin');
+  st.rerollsLeft = st.rerollMax > 0 ? st.rerollMax + lv(st, 'gamblerCoin') : 0;
   st.turnKills = 0;
   if (st.turn > 1) st.player.stamina = Math.min(STAMINA.max, (st.player.stamina ?? STAMINA.max) + STAMINA.regen);
-  st.snipes = SNIPES_PER_TURN;
+  st.snipes = st.snipeMax;
   st.rerollCount = 0;
   st.turnGild = 0;
   st.shots = [];
@@ -299,7 +302,7 @@ function rollReels(st, gildCount, events) {
   const top = Math.max(...st.shots.map((s) => s.tier));
   if (top === 3) st.stats.jackpots++;
   else if (top === 2) st.stats.pairs++;
-  st.bingos = evaluateLines(st.grid);
+  st.bingos = st.noBingo ? [] : evaluateLines(st.grid); // 입문 첫 밤에는 빙고 없이 가운데 줄만 본다
   // 1줄 = 빙고(연결급), 2줄 = 더블 빙고(잭팟급), 3줄 이상 = 트리플 빙고(금빛 잭팟)
   const level = st.bingos.length + (top === 3 ? 1 : 0);
   st.bingoLevel = level;
@@ -332,17 +335,20 @@ export function canReroll(st) {
   return st.phase === 'aim' && !st.result && st.shotsFired === 0 && st.rerollsLeft > 0;
 }
 
+// 턴마다 첫 다시 돌리기는 대가가 없다. 두 번째부터는 대가(흉조)가 따르고, 그 대신 금빛 릴이 하나 늘어난다.
+export const rerollFree = (st) => st.rerollCount === 0 || has(st, 'windfall');
+
 export function reroll(st) {
   if (!canReroll(st)) throw new Error('reroll not allowed');
   const events = [];
-  // 융합 [대박]: 턴마다 첫 다시 돌리기는 대가 없음
-  if (has(st, 'windfall') && st.rerollCount === 0) relicEvent(st, events, 'windfall');
+  if (st.rerollCount === 0) events.push({ type: 'freeReroll' });
+  else if (has(st, 'windfall')) relicEvent(st, events, 'windfall'); // 융합 [대박]: 대가 없음
   else applyOmen(st, st.omens[st.rerollCount], events);
   st.rerollCount++;
   st.rerollsLeft--;
   st.stats.rerolls++;
   if (has(st, 'gamblerCoin')) addGuard(st, lv(st, 'gamblerCoin'), events, 'gamblerCoin');
-  rollReels(st, st.turnGild + st.rerollCount, events);
+  rollReels(st, st.turnGild + Math.max(0, st.rerollCount - 1), events);
   return events;
 }
 
@@ -626,11 +632,10 @@ function resolveShot(st, shot, lane, events) {
     events.push({ ...base });
     const first = shotTargets(st, lane)[0];
     const row = first ? first.row : 0;
-    const cells = S.area === 'square'
-      ? [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
-      : [[-1, 0], [1, 0], [0, -1]];
+    // 맨 앞 적과 같은 줄의 양옆 레인까지 쓸어 낸다(뒤쪽으로는 번지지 않는다)
+    const cells = [[-1, 0], [1, 0]];
     const splash = cells.map(([dl, dr]) => [lane + dl, row + dr]).filter(([l, r]) => l >= 0 && l < LANES && r >= 0 && r <= FRONT);
-    events.push({ type: 'burst', lane, row, cells: splash, tier: shot.tier });
+    events.push({ type: 'burst', lane, row, cells: splash, tier: shot.tier, sweep: true });
     // 중심과 주변 대상을 먼저 확정한다(중간에 처치·이동되어도 대상이 바뀌지 않도록)
     const splashTargets = splash.map(([l, r]) => enemyAt(st, l, r)).filter(Boolean);
     const spread = first ? Math.ceil(first.poison / 2) : 0;
@@ -639,18 +644,29 @@ function resolveShot(st, shot, lane, events) {
       // 직격당한 적은 한 칸 밀려난다. 유물 [파도 종]이 있으면 한 칸 더.
       if (!r.blocked && first.alive && !ENEMIES[first.type].boss) {
         const from = first.row;
-        let steps = 1 + (has(st, 'tideBell') ? 1 : 0);
+        let steps = (S.push || 1) + (has(st, 'tideBell') ? 1 : 0);
         while (steps > 0 && first.row > 0 && !enemyAt(st, first.lane, first.row - 1)) {
           first.row--;
           steps--;
         }
         if (first.row !== from) {
-          if (has(st, 'tideBell') && from - first.row > 1) relicEvent(st, events, 'tideBell', { id: first.id });
+          if (has(st, 'tideBell') && from - first.row > (S.push || 1)) relicEvent(st, events, 'tideBell', { id: first.id });
           events.push({ type: 'push', id: first.id, lane: first.lane, from, to: first.row });
         }
       }
     }
     for (const t of splashTargets) hit(st, t, S.splash, { el: 'wave', frontal: false, shatter: false, src: 'splash' }, events);
+    // 휩쓸린 옆 레인의 적도 함께 밀려난다
+    for (const t of splashTargets) {
+      if (!t.alive || ENEMIES[t.type].boss) continue;
+      const from = t.row;
+      let steps = S.push || 1;
+      while (steps > 0 && t.row > 0 && !enemyAt(st, t.lane, t.row - 1)) {
+        t.row--;
+        steps--;
+      }
+      if (t.row !== from) events.push({ type: 'push', id: t.id, lane: t.lane, from, to: t.row });
+    }
     // 반응 [독 확산]: 중독된 적에게 파동 직격 → 휩쓸린 적에게 중독이 번진다
     const wet = splashTargets.filter((t) => t.alive);
     if (spread > 0 && wet.length) {
@@ -1218,7 +1234,6 @@ function win(st, events) {
   if (st.result) return;
   st.result = 'win';
   st.phase = 'over';
-  if (st.stats.rerolls === 0 && st.def.clearCoins > 0) addCoins(st, COIN.thrift, 'thrift', events); // 절약: 한 번도 다시 돌리지 않고 넘긴 밤
   addCoins(st, st.def.clearCoins, 'clear', events);
   events.push({ type: 'win' });
 }

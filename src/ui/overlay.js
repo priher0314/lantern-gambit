@@ -158,18 +158,18 @@ export class Overlay {
         <div class="ht"><b>Lever</b><span>Pull it: the 3 cells of the <em>middle row</em> are this turn's attacks.</span></div>
         <div class="ht"><b>Link · Jackpot</b><span>Two matching neighbors on the middle row make a <em>Link</em>, three make a <em>Jackpot</em>.</span></div>
         <div class="ht"><b>Bingo</b><span>Three matching on the top row, bottom row or a diagonal give a <em>bonus skill</em>. Guard symbols are <em>wild</em>.</span></div>
-        <div class="ht"><b>Reroll</b><span>Twice per turn. The <em class="r">cost</em> is written on the button, and you get <em>+1 Gilded reel</em>.</span></div>
+        <div class="ht"><b>Reroll</b><span>Twice per turn. <em>The first is free</em>. The second has the <em class="r">cost</em> written on the button and gives <em>+1 Gilded reel</em>.</span></div>
         <div class="ht"><b>Gilded reel</b><span>That reel's attack gets +1 damage and +1 effect.</span></div>
         <div class="ht"><b>Aim</b><span>Pick a reel, then click a lane.</span></div>
         <div class="ht"><b>Snipe</b><span>Once per turn, <em>click an enemy in the back</em> to skip the front enemy and hit it. (F key)</span></div>
         <div class="ht"><b>Matchups</b><span>Each enemy has a <em>weakness</em> (+2 damage) and a <em class="r">resistance</em> (-1 direct damage). Pick a skill to see the marks on enemies.</span></div>
-        <div class="ht"><b>Roles</b><span>Slash = pierce / Wave = <em>push back</em>, splash / Frost = cancel actions / Spark = chain / Poison = damage over time</span></div>
+        <div class="ht"><b>Roles</b><span>Slash = pierce / Wave = <em>pushes back</em> the front row / Bomb = lands at the back, <em>round blast</em> / Frost = cancel actions / Spark = chain / Poison = damage over time</span></div>
         <div class="ht"><b>Combos</b><span>Frost → Slash/Wave = <em>Shatter</em> / Frost → Spark = <em>Conduct</em> / Wave (Wet) → Spark = <em>Surge +2</em> / Wave (Wet) → Frost = <em>Deep freeze +1 turn</em> / Poison → Spark = <em>Detonate</em> / Poison → Wave = <em>Spread</em> / Poison → Slash = <em>Poison +2</em></span></div>
         <div class="ht"><b>Stamina</b><span>Block costs 1, Dodge 2. <em class="r">Without enough, you get hit.</em> A perfect dodge costs 1. +1 each turn; Guard symbols restore more.</span></div>
         <div class="ht"><b>Training</b><span>Train a symbol in the shop to strengthen that skill for the whole run.</span></div>
         <div class="ht"><b>Characters</b><span>The <em>Swordhand</em> has Slash (pierces from the front); the <em>Bombardier</em> has Bomb (lands on the rearmost enemy, bursts around it, ignores shields). The other symbols are shared.</span></div>
         <div class="ht"><b>Parry</b><span><em class="g">Gold or orange ring</em> → Block (precise = counter)<br><em class="r">Red ring</em> → Dodge (enemy exposed, double damage)</span></div>
-        <div class="ht"><b>Coins</b><span>Earned from <em>combos</em> (3rd kill in a turn onward), <em>perfects</em> and <em>bingos</em>. Clear a night without rerolling for a <em>thrift</em> bonus. A plain kill pays 0.</span></div>
+        <div class="ht"><b>Coins</b><span>Earned from <em>combos</em> (3rd kill in a turn onward), <em>perfects</em>, <em>bingos</em> and the <em>clear</em> bonus for surviving a night. A plain kill pays 0.</span></div>
         <div class="ht"><b>Crossroads</b><span>After each night, two of <em>Shop</em>, <em>Rest</em> and <em>Shrine</em> are open and you visit <em>only one</em>. The shrine trades HP for a relic.</span></div>
         <div class="ht"><b>Roads</b><span>Each night, choose a <em>Safe Road</em> or a <em class="r">Rough Road</em> (extra condition, double coins).</span></div>
         <div class="ht"><b>Relics</b><span>Upgrade to <em>II</em>; a II relic that triggers 6 times <em>evolves to III</em>. Matching pairs can be <em>fused</em>.</span></div>
@@ -183,18 +183,18 @@ export class Overlay {
         <div class="ht"><b>레버</b><span>당기면 <em>가운데 줄</em> 3칸이 이번 턴의 공격.</span></div>
         <div class="ht"><b>연결·잭팟</b><span>가운데 줄에서 이웃 2칸이 같으면 <em>연결</em>, 3칸이면 <em>잭팟</em>.</span></div>
         <div class="ht"><b>빙고</b><span>위·아래 줄이나 대각선 3칸이 같으면 <em>보너스 기술</em>. 방어막 문양은 <em>조커</em>.</span></div>
-        <div class="ht"><b>다시 돌리기</b><span>턴마다 2번. <em class="r">대가</em>는 버튼에 적혀 있고 <em>금빛 릴 +1</em>.</span></div>
+        <div class="ht"><b>다시 돌리기</b><span>턴마다 2번. <em>첫 번째는 대가 없음</em>. 두 번째는 버튼에 적힌 <em class="r">대가</em>가 따르고 <em>금빛 릴 +1</em>.</span></div>
         <div class="ht"><b>금빛 릴</b><span>그 칸의 공격이 피해 +1, 효과 +1.</span></div>
         <div class="ht"><b>조준</b><span>슬롯의 문양을 고르고 레인을 누른다.</span></div>
         <div class="ht"><b>저격</b><span>턴마다 1번, <em>뒤에 있는 적을 직접 눌러</em> 맨 앞 적을 건너뛰고 맞힌다. (F 키)</span></div>
         <div class="ht"><b>상성</b><span>적마다 <em>약점</em>(피해 +2)과 <em class="r">저항</em>(직격 피해 -1)이 있다. 기술을 고르면 적 옆에 표시된다.</span></div>
-        <div class="ht"><b>역할</b><span>절단 = 관통 / 파동 = <em>밀어내기</em>·주변 피해 / 동결 = 행동 취소 / 전격 = 연쇄 / 중독 = 지속 피해</span></div>
+        <div class="ht"><b>역할</b><span>절단 = 관통 / 파동 = 맨 앞 가로줄을 <em>밀어내기</em> / 폭탄 = 맨 뒤에 떨어져 <em>둥글게 폭발</em> / 동결 = 행동 취소 / 전격 = 연쇄 / 중독 = 지속 피해</span></div>
         <div class="ht"><b>조합</b><span>동결 → 절단·파동 = <em>파쇄</em> / 동결 → 전격 = <em>초전도</em> / 파동(젖음) → 전격 = <em>감전 +2</em> / 파동(젖음) → 동결 = <em>꽁꽁 +1턴</em> / 중독 → 전격 = <em>감전 폭발</em> / 중독 → 파동 = <em>독 확산</em> / 중독 → 절단 = <em>중독 +2</em></span></div>
         <div class="ht"><b>기력</b><span>막기 1, 회피 2. <em class="r">모자라면 맞는다.</em> 퍼펙트 회피는 1. 매 턴 +1, 등불을 쓰면 더 찬다.</span></div>
         <div class="ht"><b>수련</b><span>상점에서 문양을 단련하면 그 기술이 이번 판 내내 강해진다.</span></div>
         <div class="ht"><b>캐릭터</b><span><em>칼잡이</em>는 절단(앞부터 관통), <em>폭탄꾼</em>은 폭탄(맨 뒤 적에게 떨어져 주변까지, 방패 무시). 나머지 문양은 같다.</span></div>
         <div class="ht"><b>받아치기</b><span><em class="g">금빛·주황 고리</em> → 막기 (정확하면 되치기)<br><em class="r">붉은 고리</em> → 회피 (적에게 빈틈, 피해 2배)</span></div>
-        <div class="ht"><b>코인</b><span><em>연속 처치</em>(한 턴 3마리째부터), <em>퍼펙트</em>, <em>빙고</em>로 번다. 밤 내내 다시 돌리기를 안 쓰면 <em>절약</em> 보너스. 그냥 처치하면 0.</span></div>
+        <div class="ht"><b>코인</b><span><em>연속 처치</em>(한 턴 3마리째부터), <em>퍼펙트</em>, <em>빙고</em>, 밤을 넘긴 <em>클리어</em> 보너스로 번다. 그냥 처치하면 0.</span></div>
         <div class="ht"><b>갈림길</b><span>밤을 넘기면 <em>상점</em>·<em>쉼터</em>·<em>사당</em> 중 열린 두 곳에서 <em>한 곳만</em> 들른다. 사당은 체력을 바치고 유물을 받는다.</span></div>
         <div class="ht"><b>길</b><span>밤마다 <em>순한 길</em>과 <em class="r">험한 길</em>(조건 추가, 코인 2배) 중 고른다.</span></div>
         <div class="ht"><b>유물</b><span>강화하면 <em>II</em>, II가 6번 발동하면 <em>III 진화</em>. 짝이 맞는 두 유물은 <em>융합</em>.</span></div>
@@ -299,12 +299,12 @@ export class Overlay {
     const strong = (s) => s.replace(/([+\-]?\d+(?:회|턴|칸|개)?)/g, '<b>$1</b>');
     const cards = o.ids.map((id) => {
       const r = rewardInfo(id);
-      const isNew = r.relic && !r.upgrade && !r.fuse && !o.used.includes(id);
+      const isNew = !o.plain && r.relic && !r.upgrade && !r.fuse && !o.used.includes(id);
       const badge = r.fuse ? '융합' : r.upgrade ? '강화' : r.relic ? r.tag : '소모품';
       let lines = tr(r.desc).split(' · ').map((t) => `<span>${strong(t)}</span>`).join('');
       if (r.fuse) lines += `<span class="rw-hint on">${r.parts[0]} + ${r.parts[1]} · 두 효과는 유지</span>`;
       // 조합 힌트: 이 유물이 무엇과 합쳐지는지 미리 보여준다
-      const fz = r.relic && !r.fuse && !r.upgrade ? fusionOf(r.relicId) : null;
+      const fz = !o.plain && r.relic && !r.fuse && !r.upgrade ? fusionOf(r.relicId) : null;
       if (fz) {
         const other = FUSIONS[fz].a === r.relicId ? FUSIONS[fz].b : FUSIONS[fz].a;
         const have = run.relics.includes(other);
@@ -399,10 +399,10 @@ export class Overlay {
 
   // 상점: 코인으로 유물·강화·회복 등을 산다. 살 수 없는 물건은 접어서 아래로 내린다.
   // 상점: 보따리 도깨비가 물건 4개를 판다(유물 2 · 소모품 1 · 회복)
-  showShop(run, shop, bank, onBought, onDone) {
+  showShop(run, shop, bank, onBought, onDone, hello) {
     const strong = (s) => s.replace(/([+\-]?\d+(?:회|턴|칸|개)?)/g, '<b>$1</b>');
     let mood = 'idle';
-    let say = '어서 오게. 좋은 것만 골라 왔지.';
+    let say = hello || '어서 오게. 좋은 것만 골라 왔지.';
     const render = () => {
       const cards = shop.items.map((it, i) => {
         const r = rewardInfo(it.id);
@@ -416,6 +416,7 @@ export class Overlay {
           if (have) lines += `<span class="rw-hint on">+ ${RELICS[other].name} = ${FUSIONS[fz].name} (보유 중!)</span>`;
         }
         if (r.fuse) lines += `<span class="rw-hint on">${r.parts[0]} + ${r.parts[1]}</span>`;
+        if (r.upgrade) lines += '<span class="rw-hint on">이미 가진 유물을 더 세게</span>';
         const price = it.sold ? '구매함' : why === '체력 가득' ? why : `<i class="coin"></i>${it.price}`;
         return `<button class="rw-card shop-item ${r.relic ? 'is-relic' : ''} ${why ? 'cant' : ''} ${it.sold ? 'sold' : ''}" data-i="${i}" style="--c:${r.relic ? r.color : '#d8a548'}">
           <span class="rw-ic">${r.relic ? `<canvas class="relic-cv" data-relic="${r.relicId}" data-size="48"></canvas>` : `<i data-ic="${r.icon}" data-sz="48"></i>`}</span>
@@ -486,7 +487,7 @@ export class Overlay {
   }
 
   // 길 선택: 다음 밤의 목표·적 구성·조건·보상을 보고 고른다
-  showPaths(run, defs, onPick) {
+  showPaths(run, defs, onPick, hint) {
     let picked = defs.length === 1 ? 0 : null;
     const card = (d, i) => {
       const enemies = d.elites ? `정예 ${d.elites}` : '';
@@ -510,6 +511,7 @@ export class Overlay {
       <div class="rw-head">
         <h2>${defs.length === 1 ? defs[0].night : `${defs[0].night}의 길을 고르세요`}</h2>
         <div class="rw-req">체력 ${run.hp}/${run.maxHp} · 코인 ${run.coins}</div>
+        ${hint ? `<div class="first-hint">${hint}</div>` : ''}
       </div>
       <div class="rw-cards">${defs.map(card).join('')}</div>
       <button class="btn btn-primary rw-go" ${picked == null ? 'disabled' : ''}>출발</button>
@@ -547,6 +549,7 @@ export class Overlay {
     const p = this.panel(`
       <h2 class="${win ? 'win' : 'lose'}">${win ? '날이 밝았다' : '등불이 꺼졌다'}</h2>
       <div class="rs-sub">${win ? `${RUN_LENGTH}번의 밤을 모두 넘겼습니다.` : `${run.def.night} · ${run.def.name} (${reached}/${RUN_LENGTH})`}</div>
+      ${run.guided ? `<div class="first-hint">${meta.guideDone ? '입문을 마쳤습니다. 다음 판부터 캐릭터와 시작 유물을 고르고, 모든 문양으로 시작합니다.' : '입문 판입니다. 넷째 밤을 넘기면 캐릭터 선택과 모든 문양이 열립니다.'}</div>` : ''}
       <div class="rs-build"><span>유물</span>${run.relics.length ? run.relics.map((id) => relicChip(id)).join('') : '없음'}</div>
       <div class="rs-grid">
         <div><b>${t.kills}</b><span>처치</span></div>
@@ -602,7 +605,7 @@ export class Overlay {
       <label class="row">언어 <select data-k="lang"><option value="ko" ${s.lang !== 'en' ? 'selected' : ''}>한국어</option><option value="en" ${s.lang === 'en' ? 'selected' : ''}>English</option></select></label>
       <div class="title-btns">
         <button class="btn btn-primary" data-a="close">닫기</button>
-        ${inBattle ? '<button class="btn" data-a="howto">게임 방법</button><button class="btn" data-a="leave">저장하고 메인으로</button><button class="btn btn-warn" data-a="quit">이 판 포기</button>' : '<button class="btn" data-a="tutorial">따라 하기 다시 보기</button>'}
+        ${inBattle ? '<button class="btn" data-a="howto">게임 방법</button><button class="btn" data-a="leave">저장하고 메인으로</button><button class="btn btn-warn" data-a="quit">이 판 포기</button>' : '<button class="btn" data-a="tutorial">입문 판 다시 하기</button>'}
       </div>
     `, 'settings');
     this.hooks.pause(true);

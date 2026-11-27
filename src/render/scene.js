@@ -1119,7 +1119,7 @@ export class Renderer {
     }
     // 고른 기술과의 상성(약점 ▲ / 저항 ▼)
     const selShot = g.ui.phase === 'aim' && g.ui.sel != null && g.st ? g.st.shots[g.ui.sel] : null;
-    const aff = selShot && !selShot.used ? AFFINITY[v.type] : null;
+    const aff = selShot && !selShot.used && !(g.st && g.st.noAffinity) ? AFFINITY[v.type] : null;
     if (aff && (aff.weak === selShot.symbol || aff.resist === selShot.symbol)) {
       const weak = aff.weak === selShot.symbol;
       const tx = p.x + 40 * p.s;
@@ -1591,7 +1591,9 @@ export class Renderer {
           : [['Space', '레버'], ['Q W E', '릴 선택'], ['1 2 3', '레인'], ['F', '저격'], ['R', '다시 돌리기'], ['Enter', '턴 종료']];
       const y = bot + (L.SH - bot) / 2 + 2;
       ctx.textBaseline = 'middle';
-      const parts = keys.map(([k, label]) => {
+      const stK = g.st;
+      const shownKeys = keys.filter(([, label]) => !(label === '저격' && stK && !stK.snipeMax) && !(label === '다시 돌리기' && stK && !stK.rerollMax));
+      const parts = shownKeys.map(([k, label]) => {
         ctx.font = `11px ${FONTS.num}`;
         const kw = ctx.measureText(k).width + 12;
         ctx.font = `12px ${FONTS.ui}`;
@@ -1906,8 +1908,10 @@ export class Renderer {
     ctx.fillText(`남은 적 ${n}`, W - 12, this.L.hudH + 15);
     // 이번 턴에 남은 저격
     const sn = st.snipes || 0;
-    ctx.fillStyle = sn > 0 ? '#ffd84a' : 'rgba(255,255,255,0.35)';
-    ctx.fillText(`저격 ${sn > 0 ? '●' : '○'}`, W - 12, this.L.hudH + 33);
+    if (st.snipeMax > 0) {
+      ctx.fillStyle = sn > 0 ? '#ffd84a' : 'rgba(255,255,255,0.35)';
+      ctx.fillText(`저격 ${sn > 0 ? '●' : '○'}`, W - 12, this.L.hudH + 33);
+    }
   }
 
   drawInfo(g) {
@@ -2344,7 +2348,7 @@ export class Renderer {
     const x = 10;
     const w = W - 20;
     const y = L.info.y + 6;
-    const portrait = !!(c.enemy || c.relic);
+    const portrait = !!(c.enemy || c.relic || c.sym);
     const tx = x + (portrait ? 108 : 22);
     const tw = w - (tx - x) - 18;
     const lh = 23;
@@ -2397,7 +2401,11 @@ export class Renderer {
       else if (c.enemy === 'drum') drawDrum(ctx, px, pyy + 36, 0.84, { t });
       else if (c.enemy === 'archer') drawArcher(ctx, px, pyy + 42, 0.84, { t });
       else if (c.enemy === 'elder') drawElder(ctx, px, pyy + 42, 0.52, { t });
+      else if (c.enemy === 'bomber') drawBomber(ctx, px, pyy + 36, 0.86, { t });
+      else if (c.enemy === 'healer') drawHealer(ctx, px, pyy + 36, 0.84, { t });
+      else if (c.enemy === 'boar') drawBoar(ctx, px, pyy + 36, 0.74, { t });
       ctx.restore();
+      if (c.sym) drawSymbol(ctx, c.sym, px, pyy, 30);
       if (c.relic) drawRelicIcon(ctx, c.relic, px, pyy, 26);
     }
     ctx.textAlign = 'left';
