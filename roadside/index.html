@@ -1,220 +1,248 @@
-<!DOCTYPE html>
-<html lang="en">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
-		<title>Roadside Story</title>
-		<style>
-html, body, #canvas {
-	margin: 0;
-	padding: 0;
-	border: 0;
+<title>Roadside Story 웹 시험판</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Gowun+Dodum&display=swap">
+<style>
+/* 한 화면짜리 앱: 게임 화면이 전체를 채우고, 시작 전에는 가운데 안내 카드 하나만 보인다. 색은 게임 첫 화면과 맞춘다. */
+:root {
+  color-scheme: light;
+  --bg: #bfe3d8;
+  --card: #f7ecd4;
+  --ink: #3a2e28;
+  --muted: #6d6055;
+  --go: #f4c63d;
+  --go-ink: #2a2008;
+  --bad: #a8392a;
+  --shade: rgba(28, 38, 34, 0.9);
+  --shade-ink: #ffffff;
+  --display: "Do Hyeon", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  --body: "Gowun Dodum", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
 }
-
+html, body { height: 100%; }
 body {
-	color: white;
-	background-color: black;
-	overflow: hidden;
-	touch-action: none;
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--body); font-size: 15px; line-height: 1.55;
+  overflow: hidden; word-break: keep-all; overflow-wrap: anywhere;
 }
-
+#stage {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px); right: env(safe-area-inset-right, 0px);
+  bottom: env(safe-area-inset-bottom, 0px); left: env(safe-area-inset-left, 0px);
+}
 #canvas {
-	display: block;
+  display: block; outline: none; touch-action: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  image-rendering: pixelated;
 }
-
-#canvas:focus {
-	outline: none;
+#intro {
+  position: absolute; inset: 0; z-index: 2; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  padding: 12px 16px; box-sizing: border-box; overflow: auto;
 }
-
-#status, #status-splash, #status-progress {
-	position: absolute;
-	left: 0;
-	right: 0;
+.card {
+  background: var(--card); border: 2px solid var(--ink); border-radius: 6px;
+  box-shadow: 0 4px 0 var(--ink);
+  padding: 16px 18px; width: 100%; max-width: 430px; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 10px; margin: auto;
 }
-
-#status, #status-splash {
-	top: 0;
-	bottom: 0;
+h1 { font-family: var(--display); font-weight: 400; font-size: 1.7rem; line-height: 1.1; margin: 0; }
+.sub { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.what { margin: 0; font-size: 0.95rem; }
+ul { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 2px; font-size: 0.92rem; }
+#go, #stay {
+  font-family: var(--display); font-size: 1.15rem; cursor: pointer;
+  background: var(--go); color: var(--go-ink);
+  border: 2px solid var(--ink); border-radius: 6px; box-shadow: 0 3px 0 var(--ink);
+  padding: 9px 16px;
 }
-
-#status {
-	background-color: #242424;
-	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	align-items: center;
-	visibility: hidden;
+#go:disabled { opacity: 0.55; cursor: default; }
+#go:focus-visible, #stay:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+#bar { height: 10px; border: 2px solid var(--ink); border-radius: 6px; background: var(--bg); overflow: hidden; }
+#fill { height: 100%; width: 0; background: var(--go); }
+#status { margin: 0; font-size: 0.9rem; color: var(--muted); min-height: 1.4em; font-variant-numeric: tabular-nums; }
+#err {
+  margin: 0; white-space: pre-wrap; font-family: var(--body); font-size: 0.82rem;
+  color: var(--bad); border-top: 2px solid var(--bad); padding-top: 8px;
+  max-height: 9em; overflow: auto; -webkit-user-select: text; user-select: text;
 }
-
-#status-splash {
-	max-height: 100%;
-	max-width: 100%;
-	margin: auto;
+#rotate {
+  position: absolute; inset: 0; z-index: 3; background: var(--shade); color: var(--shade-ink);
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; padding: 24px; text-align: center; box-sizing: border-box;
 }
-
-#status-splash.show-image--false {
-	display: none;
+#rotate b { font-family: var(--display); font-weight: 400; font-size: 1.5rem; }
+#rotate p { margin: 0; max-width: 20em; }
+@media (orientation: portrait) and (max-width: 720px) {
+  body.running #rotate:not(.off) { display: flex; }
 }
+</style>
 
-#status-splash.fullsize--true {
-	height: 100%;
-	width: 100%;
-	object-fit: contain;
-}
+<div id="stage">
+  <canvas id="canvas" tabindex="0" hidden>이 브라우저는 게임 화면을 그리지 못합니다.</canvas>
 
-#status-splash.use-filter--false {
-	image-rendering: pixelated;
-}
+  <div id="intro">
+    <div class="card">
+      <h1>Roadside Story</h1>
+      <p class="sub">웹 시험판 · 버전 0.2.2</p>
+      <p class="what">작은 길가 매점을 사람들이 일부러 찾아오는 휴게소로 키우는 경영 게임입니다. 아직 만드는 중인 시험판입니다.</p>
+      <ul>
+        <li>휴대폰은 <strong>가로로 돌려서</strong> 하세요.</li>
+        <li>지을 때는 땅을 눌러 자리를 고른 뒤 [여기에 짓기]를 누릅니다. 두 손가락으로 화면 이동과 확대.</li>
+        <li>진행은 이 기기의 브라우저에만 저장됩니다.</li>
+      </ul>
+      <button id="go" type="button">게임 시작 (약 22MB 내려받기)</button>
+      <div id="bar" hidden><div id="fill"></div></div>
+      <p id="status" role="status"></p>
+      <pre id="err" hidden></pre>
+    </div>
+  </div>
 
-#status-progress, #status-notice {
-	display: none;
-}
+  <div id="rotate">
+    <b>휴대폰을 가로로 돌려 주세요</b>
+    <p>세로 화면에서는 글자가 너무 작아집니다. 화면이 돌아가지 않으면 이 링크를 브라우저에서 열어 보세요.</p>
+    <button id="stay" type="button">세로로 그냥 하기</button>
+  </div>
+</div>
 
-#status-progress {
-	bottom: 10%;
-	width: 50%;
-	margin: 0 auto;
-}
-
-#status-notice {
-	background-color: #5b3943;
-	border-radius: 0.5rem;
-	border: 1px solid #9b3943;
-	color: #e0e0e0;
-	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
-	line-height: 1.3;
-	margin: 0 2rem;
-	overflow: hidden;
-	padding: 1rem;
-	text-align: center;
-	z-index: 1;
-}
-		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
-<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
-
-	</head>
-	<body>
-		<canvas id="canvas">
-			Your browser does not support the canvas tag.
-		</canvas>
-
-		<noscript>
-			Your browser does not support JavaScript.
-		</noscript>
-
-		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
-			<progress id="status-progress"></progress>
-			<div id="status-notice"></div>
-		</div>
-
-		<script src="index.js"></script>
-		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":6758512,"index.wasm":43699190},"focusCanvas":true,"gdextensionLibs":[]};
-const GODOT_THREADS_ENABLED = false;
-const engine = new Engine(GODOT_CONFIG);
-
+<script src="godot.js"></script>
+<script>
 (function () {
-	const statusOverlay = document.getElementById('status');
-	const statusProgress = document.getElementById('status-progress');
-	const statusNotice = document.getElementById('status-notice');
+  var CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7746584,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+  // 큰 파일 두 개는 압축한 뒤 글자(base64)로 바꿔 올린다. 엔진이 원래 이름으로 찾으면 되돌려서 건넨다.
+  var PACKED = {"index.wasm":{"file":"engine.b64.txt","size":13538416},"index.pck":{"file":"game.b64.txt","size":8908564}};
 
-	let initializing = true;
-	let statusMode = '';
+  var canvas = document.getElementById('canvas');
+  var stage = document.getElementById('stage');
+  var intro = document.getElementById('intro');
+  var go = document.getElementById('go');
+  var bar = document.getElementById('bar');
+  var fill = document.getElementById('fill');
+  var statusEl = document.getElementById('status');
+  var errEl = document.getElementById('err');
+  var running = false;
+  var failed = false;
+  var lastErrors = [];
 
-	function setStatusMode(mode) {
-		if (statusMode === mode || !initializing) {
-			return;
-		}
-		if (mode === 'hidden') {
-			statusOverlay.remove();
-			initializing = false;
-			return;
-		}
-		statusOverlay.style.visibility = 'visible';
-		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
-		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
-		statusMode = mode;
-	}
+  // 게임 화면(캔버스)의 화소 수를 화면의 실제 화소에 맞춘다. 엔진은 이 크기를 창 크기로 쓴다.
+  function fit() {
+    var dpr = window.devicePixelRatio || 1;
+    var r = stage.getBoundingClientRect();
+    var w = Math.max(1, Math.floor(r.width * dpr));
+    var h = Math.max(1, Math.floor(r.height * dpr));
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    canvas.style.width = (w / dpr) + 'px';
+    canvas.style.height = (h / dpr) + 'px';
+  }
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', function () { setTimeout(fit, 250); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fit);
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
-	function setStatusNotice(text) {
-		while (statusNotice.lastChild) {
-			statusNotice.removeChild(statusNotice.lastChild);
-		}
-		const lines = text.split('\n');
-		lines.forEach((line) => {
-			statusNotice.appendChild(document.createTextNode(line));
-			statusNotice.appendChild(document.createElement('br'));
-		});
-	}
+  function fail(title, detail) {
+    if (running || failed) return;
+    failed = true;
+    var text = title;
+    if (detail) text += '\n' + (detail.message || String(detail));
+    if (lastErrors.length) text += '\n' + lastErrors.slice(-4).join('\n');
+    errEl.textContent = text;
+    errEl.hidden = false;
+    bar.hidden = true;
+    statusEl.textContent = '아래 빨간 글씨를 그대로 알려 주시면 고칠 수 있습니다.';
+  }
+  window.addEventListener('error', function (e) { if (go.disabled) fail('실행 중 오류가 났습니다.', e.error || e.message); });
+  window.addEventListener('unhandledrejection', function (e) { if (go.disabled) fail('실행 중 오류가 났습니다.', e.reason); });
 
-	function displayFailureNotice(err) {
-		console.error(err);
-		if (err instanceof Error) {
-			setStatusNotice(err.message);
-		} else if (typeof err === 'string') {
-			setStatusNotice(err);
-		} else {
-			setStatusNotice('An unknown error occurred.');
-		}
-		setStatusMode('notice');
-		initializing = false;
-	}
+  var total = 0, got = 0;
+  Object.keys(PACKED).forEach(function (k) { total += PACKED[k].size; });
+  function progress(n) {
+    got += n;
+    var p = Math.min(100, Math.round(100 * got / total));
+    fill.style.width = p + '%';
+    statusEl.textContent = p < 100 ? '내려받는 중 ' + p + '%' : '게임을 준비하는 중입니다. 잠시만 기다려 주세요.';
+  }
 
-	const missing = Engine.getMissingFeatures({
-		threads: GODOT_THREADS_ENABLED,
-	});
+  var realFetch = window.fetch.bind(window);
+  function download(file) {
+    return realFetch(file).then(function (res) {
+      if (!res.ok) throw new Error(file + ' 파일을 받지 못했습니다 (HTTP ' + res.status + ')');
+      if (!res.body || !res.body.getReader) {
+        return res.arrayBuffer().then(function (b) { progress(b.byteLength); return new Uint8Array(b); });
+      }
+      var reader = res.body.getReader(), chunks = [], n = 0;
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) return null;
+          chunks.push(r.value); n += r.value.length; progress(r.value.length);
+          return pump();
+        });
+      }
+      return pump().then(function () {
+        var out = new Uint8Array(n), o = 0;
+        chunks.forEach(function (c) { out.set(c, o); o += c.length; });
+        return out;
+      });
+    });
+  }
+  // 글자(base64)로 받은 것을 원래 바이트로 되돌린다
+  function decode(ascii) {
+    var text = new TextDecoder().decode(ascii);
+    if (Uint8Array.fromBase64) return Uint8Array.fromBase64(text);
+    var out = new Uint8Array(Math.floor(text.length * 3 / 4)), o = 0, STEP = 1 << 20;
+    for (var i = 0; i < text.length; i += STEP) {
+      var bin = atob(text.slice(i, i + STEP));
+      for (var j = 0; j < bin.length; j++) out[o++] = bin.charCodeAt(j);
+    }
+    return out.subarray(0, o);
+  }
+  function unpack(bytes) {
+    // 서버가 이미 풀어서 보내 준 경우도 있어, 압축 표식(1f 8b)이 있을 때만 푼다
+    if (bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      if (typeof DecompressionStream === 'undefined') {
+        throw new Error('이 브라우저는 압축 풀기를 지원하지 않습니다. 브라우저를 최신 버전으로 올려 주세요.');
+      }
+      return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    }
+    return Promise.resolve(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  }
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' ? input : ((input && input.url) || '');
+    var name = url.split('?')[0].split('/').pop();
+    var pk = PACKED[name];
+    if (!pk) return realFetch(input, init);
+    return download(pk.file).then(decode).then(unpack).then(function (buf) {
+      var type = name.slice(-5) === '.wasm' ? 'application/wasm' : 'application/octet-stream';
+      return new Response(buf, { status: 200, headers: { 'Content-Type': type } });
+    });
+  };
 
-	if (missing.length !== 0) {
-		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
-			let serviceWorkerRegistrationPromise;
-			try {
-				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
-			} catch (err) {
-				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
-			}
-			// There's a chance that installing the service worker would fix the issue
-			Promise.race([
-				serviceWorkerRegistrationPromise.then((registration) => {
-					if (registration != null) {
-						return Promise.reject(new Error('Service worker already exists.'));
-					}
-					return registration;
-				}).then(() => engine.installServiceWorker()),
-				// For some reason, `getRegistration()` can stall
-				new Promise((resolve) => {
-					setTimeout(() => resolve(), 2000);
-				}),
-			]).then(() => {
-				// Reload if there was no error.
-				window.location.reload();
-			}).catch((err) => {
-				console.error('Error while registering service worker:', err);
-			});
-		} else {
-			// Display the message as usual
-			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
-			displayFailureNotice(missingMsg + missing.join('\n'));
-		}
-	} else {
-		setStatusMode('progress');
-		engine.startGame({
-			'onProgress': function (current, total) {
-				if (current > 0 && total > 0) {
-					statusProgress.value = current;
-					statusProgress.max = total;
-				} else {
-					statusProgress.removeAttribute('value');
-					statusProgress.removeAttribute('max');
-				}
-			},
-		}).then(() => {
-			setStatusMode('hidden');
-		}, displayFailureNotice);
-	}
+  function start() {
+    go.disabled = true;
+    bar.hidden = false;
+    statusEl.textContent = '내려받는 중 0%';
+    canvas.hidden = false;
+    fit();
+    if (typeof Engine === 'undefined') { fail('게임 엔진 파일(godot.js)을 불러오지 못했습니다.'); return; }
+    var missing = Engine.getMissingFeatures({ threads: false });
+    if (missing.length) { fail('이 브라우저에서는 실행할 수 없습니다.', missing.join('\n')); return; }
+    CONFIG.canvas = canvas;
+    CONFIG.canvasResizePolicy = 0;   // 화면 크기는 위의 fit()이 정한다
+    CONFIG.onPrintError = function () {
+      var line = Array.prototype.slice.call(arguments).join(' ');
+      lastErrors.push(line);
+      console.error(line);
+    };
+    var engine = new Engine(CONFIG);
+    engine.startGame().then(function () {
+      running = true;
+      intro.hidden = true;
+      document.body.classList.add('running');
+      fit();
+      canvas.focus();
+    }, function (e) { fail('게임을 시작하지 못했습니다.', e); });
+  }
+  go.addEventListener('click', start);
+  document.getElementById('stay').addEventListener('click', function () {
+    document.getElementById('rotate').classList.add('off');
+    fit();
+  });
 }());
-		</script>
-	</body>
-</html>
-
+</script>
